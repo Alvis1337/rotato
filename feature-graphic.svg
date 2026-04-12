@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6750A4"/>
+      <stop offset="100%" style="stop-color:#4A90D9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="500" fill="url(#bg)"/>
+
+  <!-- Subtle circle decoration -->
+  <circle cx="820" cy="250" r="320" fill="white" opacity="0.04"/>
+  <circle cx="820" cy="250" r="220" fill="white" opacity="0.04"/>
+
+  <!-- Mini icon on right side -->
+  <!-- Photo frame -->
+  <rect x="700" y="150" width="200" height="165" rx="14" ry="14" fill="white" opacity="0.95"/>
+  <!-- Sky -->
+  <rect x="700" y="150" width="200" height="100" rx="14" ry="14" fill="#AED6F1"/>
+  <rect x="700" y="210" width="200" height="40" fill="#AED6F1"/>
+  <!-- Sun -->
+  <circle cx="858" cy="183" r="18" fill="#F9E04B"/>
+  <!-- Mountains -->
+  <polygon points="700,250 750,185 800,250" fill="#5D8A5E"/>
+  <polygon points="748,250 808,195 868,250" fill="#4A7A4B"/>
+  <polygon points="800,250 850,205 900,250" fill="#5D8A5E"/>
+  <!-- Ground -->
+  <rect x="700" y="250" width="200" height="65" fill="#6AAD6B"/>
+  <!-- Bottom corners -->
+  <rect x="700" y="295" width="14" height="20" fill="#6AAD6B"/>
+  <rect x="886" y="295" width="14" height="20" fill="#6AAD6B"/>
+
+  <!-- Rotation arrows around mini icon -->
+  <path d="M 800 122 A 128 128 0 0 1 902 181"
+        fill="none" stroke="white" stroke-width="18" stroke-linecap="round"/>
+  <polygon points="912,166 892,197 874,172" fill="white"/>
+
+  <path d="M 800 378 A 128 128 0 0 1 698 319"
+        fill="none" stroke="white" stroke-width="18" stroke-linecap="round"/>
+  <polygon points="688,334 708,303 726,328" fill="white"/>
+
+  <!-- App name -->
+  <text x="100" y="240" font-family="sans-serif" font-size="112" font-weight="bold" fill="white" opacity="0.97">Rotato</text>
+
+  <!-- Tagline -->
+  <text x="104" y="300" font-family="sans-serif" font-size="36" fill="white" opacity="0.75">Your photos. Your wallpaper. On rotation.</text>
+</svg>
