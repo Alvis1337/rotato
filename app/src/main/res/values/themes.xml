@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch theme used before Compose takes over -->
+    <style name="Theme.Rotato" parent="android:Theme.DeviceDefault.NoActionBar" />
+</resources>
