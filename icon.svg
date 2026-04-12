@@ -1,49 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6750A4"/>
-      <stop offset="100%" style="stop-color:#4A90D9"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF6A38"/>
+      <stop offset="100%" stop-color="#CC3A00"/>
     </linearGradient>
-    <clipPath id="roundedSquare">
-      <rect width="512" height="512" rx="96" ry="96"/>
-    </clipPath>
   </defs>
 
   <!-- Background -->
-  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#bg)"/>
 
-  <!-- Photo frame -->
-  <rect x="136" y="156" width="240" height="200" rx="18" ry="18" fill="white" opacity="0.95"/>
+  <!--
+    Arc: clockwise from 300° (1 o'clock, start/tail) to ~228° (shortened so
+    the rounded cap butts into the arrowhead base seamlessly).
+    Center (256,256), radius 148. Gap is the 60° window from 240°–300° at top.
+    300° → 228° clockwise = 288° arc → large-arc=1, sweep=1.
 
-  <!-- Sky in photo -->
-  <rect x="136" y="156" width="240" height="120" rx="18" ry="18" fill="#AED6F1"/>
-  <rect x="136" y="236" width="240" height="40" fill="#AED6F1"/>
+    Start at 300°: (256+148*cos300, 256+148*sin300) = (330, 128)
+    End   at 228°: (256+148*cos228, 256+148*sin228) = (157, 146)
+  -->
+  <path d="M 330 128 A 148 148 0 1 1 157 146"
+        fill="none"
+        stroke="white"
+        stroke-width="52"
+        stroke-linecap="round"/>
 
-  <!-- Sun -->
-  <circle cx="310" cy="195" r="22" fill="#F9E04B"/>
+  <!--
+    Arrowhead at the 240° position (11 o'clock), oriented along the
+    clockwise tangent at 240°: direction = (-sin240, cos240) = (0.866, -0.5).
+    Perpendicular = (0.5, 0.866).
 
-  <!-- Mountains -->
-  <polygon points="136,276 196,196 256,276" fill="#5D8A5E"/>
-  <polygon points="196,276 266,206 336,276" fill="#4A7A4B"/>
-  <polygon points="256,276 316,216 376,276" fill="#5D8A5E"/>
-
-  <!-- Ground -->
-  <rect x="136" y="276" width="240" height="80" fill="#7DBE7E" rx="0"/>
-  <rect x="136" y="316" width="240" height="40" fill="#7DBE7E" rx="0"/>
-  <!-- bottom corners of photo -->
-  <rect x="136" y="316" width="240" height="40" fill="#6AAD6B"/>
-
-  <!-- Rotation arrow - top arc (clockwise, top-right) -->
-  <path d="M 256 108
-             A 148 148 0 0 1 371 181"
-        fill="none" stroke="white" stroke-width="28" stroke-linecap="round"/>
-  <!-- Arrow head top-right -->
-  <polygon points="385,163 359,197 343,166" fill="white"/>
-
-  <!-- Rotation arrow - bottom arc (clockwise, bottom-left) -->
-  <path d="M 256 404
-             A 148 148 0 0 1 141 331"
-        fill="none" stroke="white" stroke-width="28" stroke-linecap="round"/>
-  <!-- Arrow head bottom-left -->
-  <polygon points="127,349 153,315 169,346" fill="white"/>
+    Arc end at 240°: (182, 128).
+    Tip   = end + 44*(0.866, -0.5)       = (220, 106)
+    Base  = end - 12*(0.866, -0.5)       = (172, 134)
+    Left  = base + 40*(0.5,  0.866)      = (192, 169)
+    Right = base - 40*(0.5,  0.866)      = (152,  99)
+  -->
+  <polygon points="220,106 192,169 152,99" fill="white"/>
 </svg>
