@@ -11,6 +11,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +32,8 @@ import java.util.Locale
 @Composable
 fun FeedScreen(
     viewModel: FeedViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {}
 ) {
     val feeds by viewModel.feeds.collectAsStateWithLifecycle()
     val addFeedState by viewModel.addFeedState.collectAsStateWithLifecycle()
@@ -104,7 +107,9 @@ fun FeedScreen(
                         feed = feed,
                         syncStatus = syncStatus[feed.id],
                         onSync = { viewModel.syncFeed(feed) },
-                        onDelete = { confirmDeleteId = feed.id }
+                        onRefreshCredentials = { viewModel.refreshCredentials(feed) },
+                        onDelete = { confirmDeleteId = feed.id },
+                        onBrowse = { onBrowseFeed(feed) }
                     )
                 }
             }
@@ -114,9 +119,7 @@ fun FeedScreen(
     if (showAddDialog) {
         AddFeedDialog(
             state = addFeedState,
-            onAdd = { url, headers ->
-                viewModel.addFeed(url, headers)
-            },
+            onAdd = { url -> viewModel.addFeed(url) },
             onDismiss = {
                 viewModel.resetAddFeedState()
                 showAddDialog = false
@@ -163,7 +166,9 @@ private fun FeedCard(
     feed: FeedConfig,
     syncStatus: SyncStatus?,
     onSync: () -> Unit,
-    onDelete: () -> Unit
+    onRefreshCredentials: () -> Unit,
+    onDelete: () -> Unit,
+    onBrowse: () -> Unit = {}
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -202,6 +207,12 @@ private fun FeedCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBrowse) {
+                    Icon(Icons.Default.GridView, contentDescription = "Browse", tint = MaterialTheme.colorScheme.primary)
+                }
+                IconButton(onClick = onRefreshCredentials) {
+                    Icon(Icons.Default.Key, contentDescription = "Refresh credentials", tint = MaterialTheme.colorScheme.outline)
+                }
                 IconButton(onClick = onSync, enabled = syncStatus?.syncing != true) {
                     if (syncStatus?.syncing == true) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -220,95 +231,31 @@ private fun FeedCard(
 @Composable
 private fun AddFeedDialog(
     state: AddFeedState,
-    onAdd: (url: String, headers: Map<String, String>) -> Unit,
+    onAdd: (url: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var url by remember { mutableStateOf("") }
-    // Each entry is a mutable pair: key to value
-    val headerRows = remember { mutableStateListOf<Pair<String, String>>() }
     val busy = state is AddFeedState.Validating
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Add Feed") },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Paste an animebacks feed URL. The API key is fetched automatically from your server.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
                     label = { Text("Feed URL") },
-                    placeholder = { Text("https://example.com/api/feed/my-feed") },
+                    placeholder = { Text("http://192.168.1.x:3000/api/feed/my-feed") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !busy
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Headers",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    TextButton(
-                        onClick = { headerRows.add("" to "") },
-                        enabled = !busy
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
-                headerRows.forEachIndexed { index, (key, value) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = key,
-                            onValueChange = { headerRows[index] = it to value },
-                            label = { Text("Key") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            enabled = !busy
-                        )
-                        OutlinedTextField(
-                            value = value,
-                            onValueChange = { headerRows[index] = key to it },
-                            label = { Text("Value") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            enabled = !busy
-                        )
-                        IconButton(
-                            onClick = { headerRows.removeAt(index) },
-                            enabled = !busy
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Remove header",
-                                tint = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                }
-
-                if (headerRows.isEmpty()) {
-                    Text(
-                        "No headers — tap Add for Cloudflare Access or custom auth",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-
                 if (state is AddFeedState.Error) {
                     Text(state.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -316,18 +263,13 @@ private fun AddFeedDialog(
         },
         confirmButton = {
             Button(
-                onClick = {
-                    val headers = headerRows
-                        .filter { it.first.isNotBlank() }
-                        .associate { it.first to it.second }
-                    onAdd(url, headers)
-                },
+                onClick = { onAdd(url) },
                 enabled = url.isNotBlank() && !busy
             ) {
                 if (busy) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Spacer(Modifier.width(8.dp))
-                    Text("Checking...")
+                    Text("Connecting...")
                 } else {
                     Text("Add")
                 }

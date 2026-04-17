@@ -36,6 +36,15 @@ class FeedPreferences(private val context: Context) {
         }
     }
 
+    suspend fun updateHeaders(id: String, headers: Map<String, String>) {
+        context.dataStore.edit { prefs ->
+            val current = parseFeedsJson(prefs[FEEDS_JSON] ?: "[]").map {
+                if (it.id == id) it.copy(headers = headers) else it
+            }
+            prefs[FEEDS_JSON] = serializeFeedsJson(current)
+        }
+    }
+
     suspend fun updateLastSync(id: String, ms: Long) {
         context.dataStore.edit { prefs ->
             val current = parseFeedsJson(prefs[FEEDS_JSON] ?: "[]").map {

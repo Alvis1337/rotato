@@ -49,27 +49,46 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
     private val _imagesRefreshTick = MutableStateFlow(0)
     val imagesRefreshTick: StateFlow<Int> = _imagesRefreshTick.asStateFlow()
 
-    fun addFeed(url: String, headers: Map<String, String>) {
+    private val _browseFeed = MutableStateFlow<com.chrisalvis.rotato.data.FeedConfig?>(null)
+    val browseFeed: StateFlow<com.chrisalvis.rotato.data.FeedConfig?> = _browseFeed.asStateFlow()
+
+    fun setBrowseFeed(feed: com.chrisalvis.rotato.data.FeedConfig) {
+        _browseFeed.update { feed }
+    }
+
+    fun addFeed(url: String) {
         val trimmedUrl = url.trim()
         if (trimmedUrl.isBlank()) {
             _addFeedState.update { AddFeedState.Error("URL is required") }
             return
         }
-        val trimmedHeaders = headers
-            .mapKeys { it.key.trim() }
-            .mapValues { it.value.trim() }
-            .filter { it.key.isNotBlank() }
         viewModelScope.launch {
             _addFeedState.update { AddFeedState.Validating }
-            val name = feedRepository.fetchFeedName(trimmedUrl, trimmedHeaders)
+            val baseUrl = deriveBaseUrl(trimmedUrl)
+            val apiKey = feedRepository.fetchApiKey(baseUrl) ?: ""
+            val headers = if (apiKey.isNotBlank()) mapOf("Authorization" to "Bearer $apiKey") else emptyMap()
+            val name = feedRepository.fetchFeedName(trimmedUrl, headers)
             if (name == null) {
-                _addFeedState.update { AddFeedState.Error("Could not reach feed — check URL and headers") }
+                _addFeedState.update { AddFeedState.Error("Could not reach feed — check URL and API key in animebacks Settings") }
                 return@launch
             }
-            feedPreferences.addFeed(trimmedUrl, trimmedHeaders, name)
+            feedPreferences.addFeed(trimmedUrl, headers, name)
             _addFeedState.update { AddFeedState.Idle }
         }
     }
+
+    fun refreshCredentials(feed: FeedConfig) {
+        viewModelScope.launch {
+            val baseUrl = deriveBaseUrl(feed.url)
+            val apiKey = feedRepository.fetchApiKey(baseUrl) ?: return@launch
+            if (apiKey.isBlank()) return@launch
+            feedPreferences.updateHeaders(feed.id, mapOf("Authorization" to "Bearer $apiKey"))
+        }
+    }
+
+    private fun deriveBaseUrl(feedUrl: String): String = try {
+        java.net.URL(feedUrl).let { "${it.protocol}://${it.authority}" }
+    } catch (_: Exception) { feedUrl }
 
     fun resetAddFeedState() {
         _addFeedState.update { AddFeedState.Idle }

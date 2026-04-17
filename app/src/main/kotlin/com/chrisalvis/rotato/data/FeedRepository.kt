@@ -3,18 +3,11 @@ package com.chrisalvis.rotato.data
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 private const val TAG = "FeedRepository"
-
-private val httpClient = OkHttpClient.Builder()
-    .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(60, TimeUnit.SECONDS)
-    .build()
 
 data class FeedSyncResult(val added: Int, val skipped: Int, val failed: Int)
 
@@ -24,6 +17,13 @@ class FeedRepository(private val imageDir: File) {
         try {
             val json = getJson(feedUrl.appendQuery("page=1&limit=1"), headers) ?: return@withContext null
             json.optJSONObject("feed")?.optString("name")
+        } catch (_: Exception) { null }
+    }
+
+    suspend fun fetchApiKey(baseUrl: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val json = getJson("$baseUrl/api/settings", emptyMap()) ?: return@withContext null
+            json.optString("feedApiKey", "").ifBlank { null }
         } catch (_: Exception) { null }
     }
 
@@ -99,6 +99,21 @@ class FeedRepository(private val imageDir: File) {
                 return null
             }
             return resp.body!!.bytes()
+        }
+    }
+
+    suspend fun downloadWallpaper(sourceId: String, fullUrl: String): Boolean = withContext(Dispatchers.IO) {
+        val ext = fullUrl.substringAfterLast('.').substringBefore('?').take(5).ifBlank { "jpg" }
+        val destFile = File(imageDir, "${sanitize(sourceId)}.$ext")
+        if (destFile.exists()) return@withContext true
+        return@withContext try {
+            val bytes = downloadBytes(fullUrl) ?: return@withContext false
+            imageDir.mkdirs()
+            destFile.writeBytes(bytes)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "downloadWallpaper failed for $fullUrl", e)
+            false
         }
     }
 
