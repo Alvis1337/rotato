@@ -2,6 +2,7 @@ package com.chrisalvis.rotato.ui
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.RssFeed
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +47,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -69,13 +71,18 @@ import java.io.File
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onNavigateToSettings: () -> Unit
+    feedViewModel: FeedViewModel,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToFeeds: () -> Unit
 ) {
     val images by viewModel.images.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val setNowState by viewModel.setNowState.collectAsStateWithLifecycle()
     val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
+
+    val imagesRefreshTick by feedViewModel.imagesRefreshTick.collectAsStateWithLifecycle()
+    LaunchedEffect(imagesRefreshTick) { if (imagesRefreshTick > 0) viewModel.refreshFromFeeds() }
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
@@ -113,6 +120,9 @@ fun HomeScreen(
                 TopAppBar(
                     title = { Text("Rotato", fontWeight = FontWeight.Bold) },
                     actions = {
+                        IconButton(onClick = onNavigateToFeeds) {
+                            Icon(Icons.Default.RssFeed, contentDescription = "Feeds")
+                        }
                         IconButton(onClick = onNavigateToSettings) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }

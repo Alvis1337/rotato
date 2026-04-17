@@ -66,6 +66,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshFromFeeds() {
+        viewModelScope.launch {
+            _images.update { repository.getImages() }
+        }
+    }
+
     // If rotation was enabled but the work is gone (force stop, reboot killed the chain, etc.)
     // re-enqueue it so the user doesn't have to notice and manually toggle it off and on.
     private fun recoverIfNeeded() {
