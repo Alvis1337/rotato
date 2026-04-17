@@ -16,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,7 +47,8 @@ import com.chrisalvis.rotato.data.RotationInterval
 @Composable
 fun SettingsScreen(
     viewModel: HomeViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToFeeds: () -> Unit = {}
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
@@ -143,6 +146,19 @@ fun SettingsScreen(
                     )
                 ) {
                     Text("Clear All Photos")
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Photo Sources") {
+                FilledTonalButton(
+                    onClick = onNavigateToFeeds,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Manage Feeds")
                 }
             }
 

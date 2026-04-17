@@ -49,20 +49,24 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
     private val _imagesRefreshTick = MutableStateFlow(0)
     val imagesRefreshTick: StateFlow<Int> = _imagesRefreshTick.asStateFlow()
 
-    fun addFeed(url: String, apiKey: String) {
+    fun addFeed(url: String, headers: Map<String, String>) {
         val trimmedUrl = url.trim()
         if (trimmedUrl.isBlank()) {
             _addFeedState.update { AddFeedState.Error("URL is required") }
             return
         }
+        val trimmedHeaders = headers
+            .mapKeys { it.key.trim() }
+            .mapValues { it.value.trim() }
+            .filter { it.key.isNotBlank() }
         viewModelScope.launch {
             _addFeedState.update { AddFeedState.Validating }
-            val name = feedRepository.fetchFeedName(trimmedUrl, apiKey.trim())
+            val name = feedRepository.fetchFeedName(trimmedUrl, trimmedHeaders)
             if (name == null) {
-                _addFeedState.update { AddFeedState.Error("Could not reach feed — check URL and API key") }
+                _addFeedState.update { AddFeedState.Error("Could not reach feed — check URL and headers") }
                 return@launch
             }
-            feedPreferences.addFeed(trimmedUrl, apiKey.trim(), name)
+            feedPreferences.addFeed(trimmedUrl, trimmedHeaders, name)
             _addFeedState.update { AddFeedState.Idle }
         }
     }

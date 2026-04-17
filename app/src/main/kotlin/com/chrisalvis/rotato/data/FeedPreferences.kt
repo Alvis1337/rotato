@@ -19,8 +19,8 @@ class FeedPreferences(private val context: Context) {
         parseFeedsJson(prefs[FEEDS_JSON] ?: "[]")
     }
 
-    suspend fun addFeed(url: String, apiKey: String, name: String): FeedConfig {
-        val feed = FeedConfig(id = UUID.randomUUID().toString(), url = url, apiKey = apiKey, name = name)
+    suspend fun addFeed(url: String, headers: Map<String, String>, name: String): FeedConfig {
+        val feed = FeedConfig(id = UUID.randomUUID().toString(), url = url, headers = headers, name = name)
         context.dataStore.edit { prefs ->
             val current = parseFeedsJson(prefs[FEEDS_JSON] ?: "[]").toMutableList()
             current.add(feed)
@@ -49,10 +49,18 @@ class FeedPreferences(private val context: Context) {
         val arr = JSONArray(json)
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
+            // Migrate legacy apiKey → Authorization Bearer header
+            val headers: Map<String, String> = if (o.has("headers")) {
+                val ho = o.getJSONObject("headers")
+                ho.keys().asSequence().associateWith { ho.getString(it) }
+            } else {
+                val legacy = o.optString("apiKey", "")
+                if (legacy.isNotBlank()) mapOf("Authorization" to "Bearer $legacy") else emptyMap()
+            }
             FeedConfig(
                 id = o.getString("id"),
                 url = o.getString("url"),
-                apiKey = o.optString("apiKey", ""),
+                headers = headers,
                 name = o.optString("name", "Feed"),
                 lastSyncMs = o.optLong("lastSyncMs", 0L)
             )
@@ -65,7 +73,7 @@ class FeedPreferences(private val context: Context) {
                 arr.put(JSONObject().apply {
                     put("id", f.id)
                     put("url", f.url)
-                    put("apiKey", f.apiKey)
+                    put("headers", JSONObject(f.headers))
                     put("name", f.name)
                     put("lastSyncMs", f.lastSyncMs)
                 })

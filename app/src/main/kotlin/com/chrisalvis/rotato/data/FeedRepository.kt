@@ -1,19 +1,28 @@
 package com.chrisalvis.rotato.data
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
+
+private const val TAG = "FeedRepository"
+
+private val httpClient = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(60, TimeUnit.SECONDS)
+    .build()
 
 data class FeedSyncResult(val added: Int, val skipped: Int, val failed: Int)
 
 class FeedRepository(private val imageDir: File) {
 
-    suspend fun fetchFeedName(feedUrl: String, apiKey: String): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchFeedName(feedUrl: String, headers: Map<String, String>): String? = withContext(Dispatchers.IO) {
         try {
-            val json = getJson("$feedUrl?page=1&limit=1", apiKey) ?: return@withContext null
+            val json = getJson(feedUrl.appendQuery("page=1&limit=1"), headers) ?: return@withContext null
             json.optJSONObject("feed")?.optString("name")
         } catch (_: Exception) { null }
     }
@@ -25,7 +34,7 @@ class FeedRepository(private val imageDir: File) {
 
         while (page <= pages) {
             val json = try {
-                getJson("${feed.url}?page=$page&limit=100", feed.apiKey) ?: break
+                getJson(feed.url.appendQuery("page=$page&limit=100"), feed.headers) ?: break
             } catch (_: Exception) { break }
 
             pages = json.optInt("pages", 1).coerceAtLeast(1)
@@ -42,42 +51,59 @@ class FeedRepository(private val imageDir: File) {
                 if (destFile.exists()) { skipped++; continue }
 
                 try {
-                    val bytes = downloadBytes(fullUrl) ?: run { failed++; continue }
+                    val bytes = downloadBytes(fullUrl) ?: run {
+                        Log.w(TAG, "download returned null (non-200): $fullUrl")
+                        failed++
+                        continue
+                    }
                     imageDir.mkdirs()
                     destFile.writeBytes(bytes)
                     added++
-                } catch (_: Exception) { failed++ }
+                } catch (e: Exception) {
+                    Log.e(TAG, "download exception for $fullUrl", e)
+                    failed++
+                }
             }
             page++
         }
         FeedSyncResult(added, skipped, failed)
     }
 
-    private fun getJson(urlString: String, apiKey: String): JSONObject? {
-        val conn = URL(urlString).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-            if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $apiKey")
-            if (conn.responseCode != 200) return null
-            return JSONObject(conn.inputStream.bufferedReader().readText())
-        } finally {
-            conn.disconnect()
+    private fun getJson(urlString: String, headers: Map<String, String>): JSONObject? {
+        val req = Request.Builder()
+            .url(urlString)
+            .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
+            .build()
+        httpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return null
+            return JSONObject(resp.body!!.string())
         }
     }
 
     private fun downloadBytes(urlString: String): ByteArray? {
-        val conn = URL(urlString).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 60_000
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-            if (conn.responseCode != 200) return null
-            return conn.inputStream.readBytes()
-        } finally {
-            conn.disconnect()
+        val host = urlString.substringAfter("://").substringBefore("/")
+        // Danbooru's CDN blocks browser UA on /original/ paths — send no custom headers
+        // and let OkHttp use its default UA (okhttp/x.x.x), which passes through.
+        val req = if (host == "cdn.donmai.us") {
+            Request.Builder().url(urlString).build()
+        } else {
+            Request.Builder()
+                .url(urlString)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("Referer", "https://$host/")
+                .build()
+        }
+        httpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                Log.w(TAG, "download HTTP ${resp.code} for $urlString")
+                return null
+            }
+            return resp.body!!.bytes()
         }
     }
 
     private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 }
+
+private fun String.appendQuery(params: String): String =
+    if (contains('?')) "$this&$params" else "$this?$params"

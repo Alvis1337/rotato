@@ -38,7 +38,8 @@ class MainActivity : ComponentActivity() {
                     composable("settings") {
                         SettingsScreen(
                             viewModel = homeViewModel,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
+                            onNavigateToFeeds = { navController.navigate("feeds") }
                         )
                     }
                     composable("feeds") {

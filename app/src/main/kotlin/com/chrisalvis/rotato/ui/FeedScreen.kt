@@ -3,9 +3,13 @@ package com.chrisalvis.rotato.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
@@ -13,8 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -112,8 +114,8 @@ fun FeedScreen(
     if (showAddDialog) {
         AddFeedDialog(
             state = addFeedState,
-            onAdd = { url, apiKey ->
-                viewModel.addFeed(url, apiKey)
+            onAdd = { url, headers ->
+                viewModel.addFeed(url, headers)
             },
             onDismiss = {
                 viewModel.resetAddFeedState()
@@ -218,23 +220,22 @@ private fun FeedCard(
 @Composable
 private fun AddFeedDialog(
     state: AddFeedState,
-    onAdd: (url: String, apiKey: String) -> Unit,
+    onAdd: (url: String, headers: Map<String, String>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var url by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    var showKey by remember { mutableStateOf(false) }
+    // Each entry is a mutable pair: key to value
+    val headerRows = remember { mutableStateListOf<Pair<String, String>>() }
+    val busy = state is AddFeedState.Validating
 
     AlertDialog(
-        onDismissRequest = { if (state !is AddFeedState.Validating) onDismiss() },
+        onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Add Feed") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Enter the URL for an animebacks feed endpoint and its API key.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
@@ -242,22 +243,72 @@ private fun AddFeedDialog(
                     placeholder = { Text("https://example.com/api/feed/my-feed") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    enabled = state !is AddFeedState.Validating
+                    enabled = !busy
                 )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("API Key") },
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = state !is AddFeedState.Validating,
-                    visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        TextButton(onClick = { showKey = !showKey }) {
-                            Text(if (showKey) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Headers",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TextButton(
+                        onClick = { headerRows.add("" to "") },
+                        enabled = !busy
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Add", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                headerRows.forEachIndexed { index, (key, value) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = key,
+                            onValueChange = { headerRows[index] = it to value },
+                            label = { Text("Key") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !busy
+                        )
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = { headerRows[index] = key to it },
+                            label = { Text("Value") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !busy
+                        )
+                        IconButton(
+                            onClick = { headerRows.removeAt(index) },
+                            enabled = !busy
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Remove header",
+                                tint = MaterialTheme.colorScheme.outline
+                            )
                         }
                     }
-                )
+                }
+
+                if (headerRows.isEmpty()) {
+                    Text(
+                        "No headers — tap Add for Cloudflare Access or custom auth",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+
                 if (state is AddFeedState.Error) {
                     Text(state.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -265,10 +316,15 @@ private fun AddFeedDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(url, apiKey) },
-                enabled = url.isNotBlank() && state !is AddFeedState.Validating
+                onClick = {
+                    val headers = headerRows
+                        .filter { it.first.isNotBlank() }
+                        .associate { it.first to it.second }
+                    onAdd(url, headers)
+                },
+                enabled = url.isNotBlank() && !busy
             ) {
-                if (state is AddFeedState.Validating) {
+                if (busy) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Spacer(Modifier.width(8.dp))
                     Text("Checking...")
@@ -278,9 +334,7 @@ private fun AddFeedDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = state !is AddFeedState.Validating) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
         }
     )
 }
