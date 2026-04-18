@@ -2,8 +2,11 @@ package com.chrisalvis.rotato.ui
 
 import android.app.Application
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,8 +59,14 @@ fun BrowseScreen(
     val hasMore by browseViewModel.hasMore.collectAsStateWithLifecycle()
     val inRotation by browseViewModel.inRotation.collectAsStateWithLifecycle()
     val downloading by browseViewModel.downloading.collectAsStateWithLifecycle()
+    val selectionMode by browseViewModel.selectionMode.collectAsStateWithLifecycle()
+    val selected by browseViewModel.selected.collectAsStateWithLifecycle()
 
-    BackHandler(enabled = selectedList != null) {
+    BackHandler(enabled = selectionMode) {
+        browseViewModel.exitSelectionMode()
+    }
+
+    BackHandler(enabled = !selectionMode && selectedList != null) {
         browseViewModel.clearSelection()
     }
 
@@ -64,13 +75,32 @@ fun BrowseScreen(
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (selectedList != null) browseViewModel.clearSelection()
-                        else onNavigateBack()
+                        when {
+                            selectionMode -> browseViewModel.exitSelectionMode()
+                            selectedList != null -> browseViewModel.clearSelection()
+                            else -> onNavigateBack()
+                        }
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            if (selectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
                 },
-                title = { Text(selectedList?.name ?: feed.name, fontWeight = FontWeight.Bold) }
+                title = {
+                    Text(
+                        if (selectionMode) "${selected.size} selected"
+                        else selectedList?.name ?: feed.name,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                actions = {
+                    if (selectionMode && selected.isNotEmpty()) {
+                        IconButton(onClick = { browseViewModel.downloadSelected() }) {
+                            Icon(Icons.Default.Download, contentDescription = "Download selected")
+                        }
+                    }
+                }
             )
         }
     ) { padding ->
@@ -90,8 +120,15 @@ fun BrowseScreen(
                 hasMore = hasMore,
                 inRotation = inRotation,
                 downloading = downloading,
+                selectionMode = selectionMode,
+                selected = selected,
                 onLoadMore = { browseViewModel.loadMoreIfNeeded() },
-                onToggle = { browseViewModel.toggleRotation(it) },
+                onTap = { wp ->
+                    if (selectionMode) browseViewModel.toggleSelection(wp)
+                    else if (!inRotation.contains(wp.sourceId.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)) && !downloading.contains(wp.sourceId))
+                        browseViewModel.toggleRotation(wp)
+                },
+                onLongPress = { wp -> browseViewModel.enterSelectionMode(wp) },
                 modifier = Modifier.padding(padding)
             )
         }
@@ -152,8 +189,11 @@ private fun WallpaperGridContent(
     hasMore: Boolean,
     inRotation: Set<String>,
     downloading: Set<String>,
+    selectionMode: Boolean,
+    selected: Set<String>,
     onLoadMore: () -> Unit,
-    onToggle: (BrowseWallpaper) -> Unit,
+    onTap: (BrowseWallpaper) -> Unit,
+    onLongPress: (BrowseWallpaper) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val gridState = rememberLazyGridState()
@@ -181,11 +221,15 @@ private fun WallpaperGridContent(
             val sanitizedKey = wp.sourceId.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
             val isInRotation = inRotation.contains(sanitizedKey)
             val isDownloading = downloading.contains(wp.sourceId)
+            val isSelected = selected.contains(wp.sourceId)
             WallpaperThumbnail(
                 wallpaper = wp,
                 isInRotation = isInRotation,
                 isDownloading = isDownloading,
-                onClick = { if (!isInRotation && !isDownloading) onToggle(wp) }
+                isSelected = isSelected,
+                selectionMode = selectionMode,
+                onTap = { onTap(wp) },
+                onLongPress = { onLongPress(wp) }
             )
         }
 
@@ -204,19 +248,28 @@ private fun WallpaperGridContent(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WallpaperThumbnail(
     wallpaper: BrowseWallpaper,
     isInRotation: Boolean,
     isDownloading: Boolean,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    selectionMode: Boolean,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit
 ) {
+    val borderColor = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(enabled = !isInRotation && !isDownloading, onClick = onClick)
+            .then(if (isSelected) Modifier.border(3.dp, borderColor, MaterialTheme.shapes.medium) else Modifier)
+            .combinedClickable(
+                onClick = onTap,
+                onLongClick = onLongPress
+            )
     ) {
         AsyncImage(
             model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
@@ -226,7 +279,20 @@ private fun WallpaperThumbnail(
         )
 
         when {
-            isInRotation -> Box(
+            isSelected -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            isInRotation && !selectionMode -> Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),

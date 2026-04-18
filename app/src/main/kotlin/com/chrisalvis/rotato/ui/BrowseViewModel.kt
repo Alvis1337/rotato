@@ -97,6 +97,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
         _selectedList.update { null }
         _wallpapers.update { emptyList() }
         currentPage = 0
+        exitSelectionMode()
     }
 
     fun loadMoreIfNeeded() {
@@ -121,6 +122,47 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
             } finally {
                 _wallpapersLoading.update { false }
                 loadingMore = false
+            }
+        }
+    }
+
+    // --- Selection mode ---
+    private val _selectionMode = MutableStateFlow(false)
+    val selectionMode: StateFlow<Boolean> = _selectionMode.asStateFlow()
+
+    private val _selected = MutableStateFlow<Set<String>>(emptySet())
+    val selected: StateFlow<Set<String>> = _selected.asStateFlow()
+
+    fun enterSelectionMode(wallpaper: BrowseWallpaper) {
+        _selectionMode.update { true }
+        _selected.update { setOf(wallpaper.sourceId) }
+    }
+
+    fun toggleSelection(wallpaper: BrowseWallpaper) {
+        if (!_selectionMode.value) return
+        _selected.update {
+            if (it.contains(wallpaper.sourceId)) it - wallpaper.sourceId
+            else it + wallpaper.sourceId
+        }
+    }
+
+    fun exitSelectionMode() {
+        _selectionMode.update { false }
+        _selected.update { emptySet() }
+    }
+
+    fun downloadSelected() {
+        val toDownload = wallpapers.value.filter { _selected.value.contains(it.sourceId) }
+        exitSelectionMode()
+        toDownload.forEach { wallpaper ->
+            val key = sanitize(wallpaper.sourceId)
+            if (_inRotation.value.contains(key)) return@forEach
+            if (_downloading.value.contains(wallpaper.sourceId)) return@forEach
+            viewModelScope.launch {
+                _downloading.update { it + wallpaper.sourceId }
+                val ok = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
+                if (ok) _inRotation.update { it + key }
+                _downloading.update { it - wallpaper.sourceId }
             }
         }
     }
