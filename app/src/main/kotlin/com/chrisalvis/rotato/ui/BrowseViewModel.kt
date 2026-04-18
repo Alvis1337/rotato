@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -154,16 +155,23 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
     fun downloadSelected() {
         val toDownload = wallpapers.value.filter { _selected.value.contains(it.sourceId) }
         exitSelectionMode()
-        toDownload.forEach { wallpaper ->
-            val key = sanitize(wallpaper.sourceId)
-            if (_inRotation.value.contains(key)) return@forEach
-            if (_downloading.value.contains(wallpaper.sourceId)) return@forEach
-            viewModelScope.launch {
+        val ctx = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            var saved = 0
+            var failed = 0
+            toDownload.forEach { wallpaper ->
+                if (_downloading.value.contains(wallpaper.sourceId)) return@forEach
                 _downloading.update { it + wallpaper.sourceId }
-                val ok = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
-                if (ok) _inRotation.update { it + key }
+                val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl)
+                if (ok) saved++ else failed++
                 _downloading.update { it - wallpaper.sourceId }
             }
+            val msg = when {
+                failed == 0 -> "Saved $saved photo${if (saved != 1) "s" else ""} to Pictures/Rotato"
+                saved == 0  -> "Failed to save ${failed} photo${if (failed != 1) "s" else ""}"
+                else        -> "Saved $saved, failed $failed"
+            }
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
