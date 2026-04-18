@@ -56,7 +56,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
         _browseFeed.update { feed }
     }
 
-    fun addFeed(url: String) {
+    fun addFeed(url: String, extraHeaders: Map<String, String> = emptyMap()) {
         val trimmedUrl = url.trim()
         if (trimmedUrl.isBlank()) {
             _addFeedState.update { AddFeedState.Error("URL is required") }
@@ -66,7 +66,11 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
             _addFeedState.update { AddFeedState.Validating }
             val baseUrl = deriveBaseUrl(trimmedUrl)
             val apiKey = feedRepository.fetchApiKey(baseUrl) ?: ""
-            val headers = if (apiKey.isNotBlank()) mapOf("Authorization" to "Bearer $apiKey") else emptyMap()
+            // Auto-fetched API key sets Authorization; extra headers can add/override anything else
+            val headers = buildMap {
+                if (apiKey.isNotBlank()) put("Authorization", "Bearer $apiKey")
+                putAll(extraHeaders)
+            }
             val name = feedRepository.fetchFeedName(trimmedUrl, headers)
             if (name == null) {
                 _addFeedState.update { AddFeedState.Error("Could not reach feed — check URL and API key in animebacks Settings") }
