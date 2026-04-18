@@ -15,8 +15,9 @@ class ImageRepository(private val context: Context) {
         get() = File(context.filesDir, "rotato_images").also { it.mkdirs() }
 
     fun getImages(): List<File> {
+        val imageExts = setOf("jpg", "jpeg", "png", "webp", "gif")
         return imageDir.listFiles()
-            ?.filter { it.isFile && it.name.endsWith(".jpg") }
+            ?.filter { it.isFile && it.extension.lowercase() in imageExts }
             ?.sortedBy { it.name }
             ?: emptyList()
     }
