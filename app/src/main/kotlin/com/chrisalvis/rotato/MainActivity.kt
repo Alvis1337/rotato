@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrowseScreen
 import com.chrisalvis.rotato.ui.FeedScreen
 import com.chrisalvis.rotato.ui.FeedViewModel
@@ -51,6 +52,10 @@ class MainActivity : ComponentActivity() {
                             onBrowseFeed = { feed ->
                                 feedViewModel.setBrowseFeed(feed)
                                 navController.navigate("browse")
+                            },
+                            onBrainrotFeed = { feed ->
+                                feedViewModel.setBrainrotFeed(feed)
+                                navController.navigate("brainrot")
                             }
                         )
                     }
@@ -58,6 +63,15 @@ class MainActivity : ComponentActivity() {
                         val feed = feedViewModel.browseFeed.collectAsStateWithLifecycle().value
                         feed?.let {
                             BrowseScreen(
+                                feed = it,
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
+                    }
+                    composable("brainrot") {
+                        val feed = feedViewModel.brainrotFeed.collectAsStateWithLifecycle().value
+                        feed?.let {
+                            BrainrotScreen(
                                 feed = it,
                                 onNavigateBack = { navController.popBackStack() }
                             )

@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
@@ -33,8 +34,9 @@ import java.util.Locale
 fun FeedScreen(
     viewModel: FeedViewModel,
     onNavigateBack: () -> Unit,
-    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {}
-) {
+    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {},
+    onBrainrotFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {}
+){
     val feeds by viewModel.feeds.collectAsStateWithLifecycle()
     val addFeedState by viewModel.addFeedState.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
@@ -109,7 +111,8 @@ fun FeedScreen(
                         onSync = { viewModel.syncFeed(feed) },
                         onRefreshCredentials = { viewModel.refreshCredentials(feed) },
                         onDelete = { confirmDeleteId = feed.id },
-                        onBrowse = { onBrowseFeed(feed) }
+                        onBrowse = { onBrowseFeed(feed) },
+                        onDiscover = { onBrainrotFeed(feed) }
                     )
                 }
             }
@@ -168,7 +171,8 @@ private fun FeedCard(
     onSync: () -> Unit,
     onRefreshCredentials: () -> Unit,
     onDelete: () -> Unit,
-    onBrowse: () -> Unit = {}
+    onBrowse: () -> Unit = {},
+    onDiscover: () -> Unit = {}
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -207,6 +211,9 @@ private fun FeedCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDiscover) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = "Discover", tint = MaterialTheme.colorScheme.tertiary)
+                }
                 IconButton(onClick = onBrowse) {
                     Icon(Icons.Default.GridView, contentDescription = "Browse", tint = MaterialTheme.colorScheme.primary)
                 }

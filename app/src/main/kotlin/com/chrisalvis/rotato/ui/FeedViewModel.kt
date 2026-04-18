@@ -56,6 +56,13 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
         _browseFeed.update { feed }
     }
 
+    private val _brainrotFeed = MutableStateFlow<com.chrisalvis.rotato.data.FeedConfig?>(null)
+    val brainrotFeed: StateFlow<com.chrisalvis.rotato.data.FeedConfig?> = _brainrotFeed.asStateFlow()
+
+    fun setBrainrotFeed(feed: com.chrisalvis.rotato.data.FeedConfig) {
+        _brainrotFeed.update { feed }
+    }
+
     fun addFeed(url: String, extraHeaders: Map<String, String> = emptyMap()) {
         val trimmedUrl = url.trim()
         if (trimmedUrl.isBlank()) {
