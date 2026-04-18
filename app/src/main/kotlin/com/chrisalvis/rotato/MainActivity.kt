@@ -8,6 +8,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chrisalvis.rotato.ui.BrowseScreen
 import com.chrisalvis.rotato.ui.FeedScreen
 import com.chrisalvis.rotato.ui.FeedViewModel
 import com.chrisalvis.rotato.ui.HomeScreen
@@ -45,8 +47,21 @@ class MainActivity : ComponentActivity() {
                     composable("feeds") {
                         FeedScreen(
                             viewModel = feedViewModel,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
+                            onBrowseFeed = { feed ->
+                                feedViewModel.setBrowseFeed(feed)
+                                navController.navigate("browse")
+                            }
                         )
+                    }
+                    composable("browse") {
+                        val feed = feedViewModel.browseFeed.collectAsStateWithLifecycle().value
+                        feed?.let {
+                            BrowseScreen(
+                                feed = it,
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }
