@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
@@ -12,6 +13,8 @@ private const val TAG = "FeedRepository"
 data class FeedSyncResult(val added: Int, val skipped: Int, val failed: Int)
 
 class FeedRepository(private val imageDir: File) {
+
+    private val httpClient = OkHttpClient()
 
     suspend fun fetchFeedName(feedUrl: String, headers: Map<String, String>): String? = withContext(Dispatchers.IO) {
         try {
