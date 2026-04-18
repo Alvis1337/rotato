@@ -17,7 +17,10 @@ class BrowseRepository(
     /** Fetch API key from /api/settings and merge into effective headers. */
     private suspend fun effectiveHeaders(): Map<String, String> = withContext(Dispatchers.IO) {
         if (headers.containsKey("Authorization")) return@withContext headers
-        val req = Request.Builder().url("$baseUrl/api/settings").build()
+        val req = Request.Builder()
+            .url("$baseUrl/api/settings")
+            .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
+            .build()
         val apiKey = runCatching {
             httpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
