@@ -58,6 +58,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
     private var currentPage = 0
     private var currentPages = 1
     private var loadingMore = false
+    private var pageFailed = false
 
     init {
         // Seed inRotation from existing files on disk
@@ -75,6 +76,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
                 _lists.update { browseRepo.fetchLists() }
             } catch (e: Exception) {
                 _listsError.update { "Could not load lists: ${e.message}" }
+                android.util.Log.e("BrowseViewModel", "loadLists error", e)
             } finally {
                 _listsLoading.update { false }
             }
@@ -87,6 +89,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
         currentPage = 0
         currentPages = 1
         loadingMore = false
+        pageFailed = false
         loadNextPage(list.id)
     }
 
@@ -98,7 +101,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
 
     fun loadMoreIfNeeded() {
         val listId = _selectedList.value?.id ?: return
-        if (loadingMore || currentPage >= currentPages) return
+        if (loadingMore || pageFailed || currentPage >= currentPages) return
         loadNextPage(listId)
     }
 
@@ -112,7 +115,9 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
                 currentPage = result.page
                 currentPages = result.pages
                 _hasMore.update { result.page < result.pages }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.e("BrowseViewModel", "loadNextPage error", e)
+                pageFailed = true
             } finally {
                 _wallpapersLoading.update { false }
                 loadingMore = false
