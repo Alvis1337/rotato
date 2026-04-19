@@ -70,4 +70,12 @@ class RotatoPreferences(private val context: Context) {
     suspend fun setHistoryJson(json: String) {
         context.dataStore.edit { it[HISTORY_JSON] = json }
     }
+
+    val setupDone: Flow<Boolean?> = context.dataStore.data.map { prefs ->
+        prefs[SETUP_DONE]
+    }
+
+    suspend fun setSetupDone(done: Boolean = true) {
+        context.dataStore.edit { it[SETUP_DONE] = done }
+    }
 }
