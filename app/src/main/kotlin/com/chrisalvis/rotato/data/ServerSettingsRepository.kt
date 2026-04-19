@@ -130,9 +130,11 @@ class ServerSettingsRepository(
 
     suspend fun generateApiKey(): String? = withContext(Dispatchers.IO) {
         runCatching {
+            val hdrs = authHeader()
             val req = Request.Builder()
                 .url("$baseUrl/api/settings/generate-api-key")
                 .post("".toRequestBody())
+                .applyHeaders(hdrs)
                 .build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
@@ -163,6 +165,7 @@ class ServerSettingsRepository(
 
     suspend fun createFeed(slug: String, name: String): ServerFeed? = withContext(Dispatchers.IO) {
         runCatching {
+            val hdrs = authHeader()
             val body = JSONObject().apply {
                 put("slug", slug.trim())
                 put("name", name.trim())
@@ -170,6 +173,7 @@ class ServerSettingsRepository(
             val req = Request.Builder()
                 .url("$baseUrl/api/feeds")
                 .post(body)
+                .applyHeaders(hdrs)
                 .build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
@@ -235,4 +239,4 @@ class ServerSettingsRepository(
                 }
             }.getOrElse { Pair(false, it.message) }
         }
-}
+

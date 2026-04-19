@@ -179,10 +179,9 @@ private fun ServerSettingsContent(
     onCreateFeed: (String, String) -> Unit,
     onDeleteFeed: (Int) -> Unit
 ) {
-    // Initialize once per screen visit; don't re-key on every field change.
-    // The feedApiKey is synced separately so generating a new key doesn't wipe unsaved edits.
-    var config by remember { mutableStateOf(loaded.config) }
-    var sources by remember { mutableStateOf(loaded.sources) }
+    // Reset form whenever the server sends fresh data (e.g. after reload)
+    var config by remember(loaded) { mutableStateOf(loaded.config) }
+    var sources by remember(loaded) { mutableStateOf(loaded.sources) }
 
     // Only sync feedApiKey when it's externally updated (e.g. after generateApiKey())
     LaunchedEffect(loaded.config.feedApiKey) {

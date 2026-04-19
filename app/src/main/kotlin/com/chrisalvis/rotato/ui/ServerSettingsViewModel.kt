@@ -98,9 +98,8 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 _state.value = current.copy(config = config, sources = sources)
-                val added = r.syncFeeds(feedPrefs)
                 _saving.value = false
-                _snackMessage.value = if (added > 0) "Saved — synced $added feed(s)" else "Settings saved"
+                _snackMessage.value = "Settings saved"
             } else {
                 _saving.value = false
                 _snackMessage.value = "Failed to save settings"
