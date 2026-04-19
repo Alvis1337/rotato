@@ -82,6 +82,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { initWithFirstFeed() }
+        // Reactively start when a feed is added while noFeed is true (no restart needed)
+        viewModelScope.launch {
+            feedPrefs.feeds.collect { feeds ->
+                if (_noFeed.value && feeds.isNotEmpty()) {
+                    switchFeed(feeds.first())
+                }
+            }
+        }
     }
 
     private suspend fun initWithFirstFeed() {

@@ -1,5 +1,7 @@
 package com.chrisalvis.rotato.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -36,6 +39,15 @@ fun ServerSettingsScreen(
     val snackMessage by vm.snackMessage.collectAsStateWithLifecycle()
     val testResults by vm.testResults.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { vm.exportBackup(context, it) } }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.importBackup(context, it) } }
 
     LaunchedEffect(Unit) {
         vm.load()
@@ -58,6 +70,12 @@ fun ServerSettingsScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
+                        Icon(Icons.Default.Upload, contentDescription = "Import backup")
+                    }
+                    IconButton(onClick = { exportLauncher.launch("rotato-backup.json") }) {
+                        Icon(Icons.Default.Download, contentDescription = "Export backup")
+                    }
                     if (state is ServerSettingsState.Loaded || state is ServerSettingsState.Error) {
                         IconButton(onClick = { vm.load() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Reload")

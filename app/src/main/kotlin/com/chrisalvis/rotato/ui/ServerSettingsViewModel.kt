@@ -1,8 +1,11 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.FeedPreferences
 import com.chrisalvis.rotato.data.ServerConfig
 import com.chrisalvis.rotato.data.ServerFeed
@@ -13,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 sealed class ServerSettingsState {
     data object Loading : ServerSettingsState()
@@ -43,14 +48,13 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
     val testResults: StateFlow<Map<String, Boolean?>> = _testResults.asStateFlow()
 
     private var repo: ServerSettingsRepository? = null
+    private var loadJob: Job? = null
 
-    init {
-        load()
-    }
+    init { load() }
 
     fun load() {
-        if (_state.value is ServerSettingsState.Loading) return
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _state.value = ServerSettingsState.Loading
             val feeds = feedPrefs.feeds.first()
             if (feeds.isEmpty()) {
@@ -145,6 +149,124 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
             val (ok, error) = r.testSource(name, apiKey, apiUser)
             _testResults.value = _testResults.value + (name to ok)
             if (!ok && error != null) _snackMessage.value = "$name: $error"
+        }
+    }
+
+    fun exportBackup(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val loaded = _state.value as? ServerSettingsState.Loaded
+                val appFeeds = feedPrefs.feeds.first()
+                val root = JSONObject().apply {
+                    put("version", 1)
+                    put("app_feeds", JSONArray(appFeeds.map { f ->
+                        JSONObject().apply {
+                            put("id", f.id)
+                            put("url", f.url)
+                            put("name", f.name)
+                            put("headers", JSONObject(f.headers))
+                        }
+                    }))
+                    if (loaded != null) {
+                        put("server_sources", JSONArray(loaded.sources.map { s ->
+                            JSONObject().apply {
+                                put("name", s.name)
+                                put("enabled", s.enabled)
+                                put("apiKey", s.apiKey)
+                                put("apiUser", s.apiUser)
+                            }
+                        }))
+                        put("server_feeds", JSONArray(loaded.feeds.map { f ->
+                            JSONObject().apply {
+                                put("id", f.id)
+                                put("slug", f.slug)
+                                put("name", f.name)
+                            }
+                        }))
+                        put("server_config", JSONObject().apply {
+                            put("feedApiKey", loaded.config.feedApiKey)
+                            put("sorting", loaded.config.sorting)
+                            put("minResolution", loaded.config.minResolution)
+                            put("aspectRatio", loaded.config.aspectRatio)
+                            put("searchSuffix", loaded.config.searchSuffix)
+                            put("nsfwMode", loaded.config.nsfwMode)
+                            put("malClientId", loaded.config.malClientId)
+                            put("malClientSecret", loaded.config.malClientSecret)
+                            put("redirectUri", loaded.config.redirectUri)
+                        })
+                    }
+                }
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(root.toString(2).toByteArray())
+                }
+                _snackMessage.value = "Backup exported"
+            } catch (e: Exception) {
+                _snackMessage.value = "Export failed: ${e.message}"
+            }
+        }
+    }
+
+    fun importBackup(context: Context, uri: Uri) {
+        val r = repo
+        viewModelScope.launch {
+            try {
+                val json = context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+                    ?: throw Exception("Could not read file")
+                val root = JSONObject(json)
+
+                // Restore app feeds
+                val appFeedsArr = root.optJSONArray("app_feeds")
+                if (appFeedsArr != null) {
+                    val existing = feedPrefs.feeds.first()
+                    val existingUrls = existing.map { it.url }.toSet()
+                    for (i in 0 until appFeedsArr.length()) {
+                        val fo = appFeedsArr.getJSONObject(i)
+                        val url = fo.getString("url")
+                        if (url !in existingUrls) {
+                            val headers = fo.optJSONObject("headers")?.let { ho ->
+                                ho.keys().asSequence().associateWith { ho.getString(it) }
+                            } ?: emptyMap()
+                            feedPrefs.addFeed(url, headers, fo.optString("name", "Feed"))
+                        }
+                    }
+                }
+
+                // Restore server sources/config
+                if (r != null) {
+                    val sourcesArr = root.optJSONArray("server_sources")
+                    if (sourcesArr != null) {
+                        val sources = (0 until sourcesArr.length()).map { i ->
+                            val so = sourcesArr.getJSONObject(i)
+                            SourceRow(
+                                name = so.getString("name"),
+                                enabled = so.getBoolean("enabled"),
+                                apiKey = so.optString("apiKey", ""),
+                                apiUser = so.optString("apiUser", "")
+                            )
+                        }
+                        r.saveSources(sources)
+                    }
+                    val configObj = root.optJSONObject("server_config")
+                    if (configObj != null) {
+                        val config = ServerConfig(
+                            feedApiKey = configObj.optString("feedApiKey", ""),
+                            sorting = configObj.optString("sorting", "date_added"),
+                            minResolution = configObj.optString("minResolution", ""),
+                            aspectRatio = configObj.optString("aspectRatio", ""),
+                            searchSuffix = configObj.optString("searchSuffix", ""),
+                            nsfwMode = configObj.optBoolean("nsfwMode", false),
+                            malClientId = configObj.optString("malClientId", ""),
+                            malClientSecret = configObj.optString("malClientSecret", ""),
+                            redirectUri = configObj.optString("redirectUri", "")
+                        )
+                        r.saveSettings(config)
+                    }
+                }
+                _snackMessage.value = "Backup restored — reloading…"
+                load()
+            } catch (e: Exception) {
+                _snackMessage.value = "Import failed: ${e.message}"
+            }
         }
     }
 
