@@ -258,11 +258,12 @@ class ServerSettingsRepository(
         }.getOrElse { Log.e(TAG, "syncFeeds failed", it); 0 }
     }
 
-    // TODO: testSource failures are likely User-Agent blocking — server may need to forward the
-    //  client's UA or use a custom one when fetching from sources; investigate 403/empty responses
+    // TODO: testSource failures may still occur if the server doesn't forward a browser-like
+    //  User-Agent when fetching from external sources — that's a server-side fix
     suspend fun testSource(name: String, apiKey: String, apiUser: String): Pair<Boolean, String?> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val hdrs = authHeader()
                 val body = JSONObject().apply {
                     put("source", name)
                     put("apiKey", apiKey)
@@ -271,6 +272,7 @@ class ServerSettingsRepository(
                 val req = Request.Builder()
                     .url("$baseUrl/api/admin/test-source")
                     .post(body)
+                    .applyHeaders(hdrs)
                     .build()
                 http.newCall(req).execute().use { resp ->
                     val j = JSONObject(resp.body!!.string())

@@ -204,6 +204,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun reloadSettings() {
+        viewModelScope.launch {
+            val repo = brainrotRepo ?: return@launch
+            val s = repo.fetchSettings()
+            if (s != _discoverSettings.value) {
+                _discoverSettings.update { s }
+                clearQueue()
+                loadFirst()
+            }
+        }
+    }
+
     private fun loadSources() {
         viewModelScope.launch {
             val repo = brainrotRepo ?: return@launch

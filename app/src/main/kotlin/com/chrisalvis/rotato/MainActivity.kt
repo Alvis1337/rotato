@@ -135,6 +135,16 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("discover") {
+                            val discoverBackStackEntry = it
+                            DisposableEffect(discoverBackStackEntry) {
+                                val observer = LifecycleEventObserver { _, event ->
+                                    if (event == Lifecycle.Event.ON_RESUME) {
+                                        brainrotViewModel.reloadSettings()
+                                    }
+                                }
+                                discoverBackStackEntry.lifecycle.addObserver(observer)
+                                onDispose { discoverBackStackEntry.lifecycle.removeObserver(observer) }
+                            }
                             BrainrotScreen(
                                 externalViewModel = brainrotViewModel,
                                 onNavigateToSettings = {
