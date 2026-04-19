@@ -258,6 +258,8 @@ class ServerSettingsRepository(
         }.getOrElse { Log.e(TAG, "syncFeeds failed", it); 0 }
     }
 
+    // TODO: testSource failures are likely User-Agent blocking — server may need to forward the
+    //  client's UA or use a custom one when fetching from sources; investigate 403/empty responses
     suspend fun testSource(name: String, apiKey: String, apiUser: String): Pair<Boolean, String?> =
         withContext(Dispatchers.IO) {
             runCatching {

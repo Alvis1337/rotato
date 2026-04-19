@@ -88,6 +88,9 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // TODO: saving content filters (minResolution, nsfwMode, sorting, etc.) updates the server
+    //  but doesn't propagate to the active feed's FeedConfig in FeedPreferences — the feed keeps
+    //  stale filter values until the user manually refreshes or restarts
     fun saveAll(config: ServerConfig, sources: List<SourceRow>) {
         val r = repo ?: return
         viewModelScope.launch {
