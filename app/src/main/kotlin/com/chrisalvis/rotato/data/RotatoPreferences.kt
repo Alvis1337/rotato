@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,6 +22,8 @@ class RotatoPreferences(private val context: Context) {
         val SHUFFLE_MODE = booleanPreferencesKey("shuffle_mode")
         val CURRENT_INDEX = intPreferencesKey("current_index")
         val LAST_ROTATION_MS = longPreferencesKey("last_rotation_ms")
+        val WALLPAPER_TARGET = stringPreferencesKey("wallpaper_target")
+        val HISTORY_JSON = stringPreferencesKey("wallpaper_history_json")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data.map { prefs ->
@@ -28,11 +31,16 @@ class RotatoPreferences(private val context: Context) {
             isEnabled = prefs[IS_ENABLED] ?: false,
             intervalMinutes = prefs[INTERVAL_MINUTES] ?: 60,
             shuffleMode = prefs[SHUFFLE_MODE] ?: true,
-            currentIndex = prefs[CURRENT_INDEX] ?: 0
+            currentIndex = prefs[CURRENT_INDEX] ?: 0,
+            wallpaperTarget = prefs[WALLPAPER_TARGET]?.let {
+                runCatching { WallpaperTarget.valueOf(it) }.getOrNull()
+            } ?: WallpaperTarget.BOTH
         )
     }
 
     val lastRotationMs: Flow<Long> = context.dataStore.data.map { it[LAST_ROTATION_MS] ?: 0L }
+
+    val historyJson: Flow<String> = context.dataStore.data.map { it[HISTORY_JSON] ?: "[]" }
 
     suspend fun setEnabled(enabled: Boolean) {
         context.dataStore.edit { it[IS_ENABLED] = enabled }
@@ -50,7 +58,15 @@ class RotatoPreferences(private val context: Context) {
         context.dataStore.edit { it[CURRENT_INDEX] = index }
     }
 
+    suspend fun setWallpaperTarget(target: WallpaperTarget) {
+        context.dataStore.edit { it[WALLPAPER_TARGET] = target.name }
+    }
+
     suspend fun recordRotation() {
         context.dataStore.edit { it[LAST_ROTATION_MS] = System.currentTimeMillis() }
+    }
+
+    suspend fun setHistoryJson(json: String) {
+        context.dataStore.edit { it[HISTORY_JSON] = json }
     }
 }

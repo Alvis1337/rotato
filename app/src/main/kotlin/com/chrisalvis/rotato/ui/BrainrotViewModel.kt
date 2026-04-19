@@ -3,31 +3,30 @@ package com.chrisalvis.rotato.ui
 import android.app.Application
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.chrisalvis.rotato.data.BrainrotRepository
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.DiscoverSettings
 import com.chrisalvis.rotato.data.FeedConfig
+import com.chrisalvis.rotato.data.FeedPreferences
 import com.chrisalvis.rotato.data.RemoteList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.URL
 
-class BrainrotViewModel(
-    app: Application,
-    private val feed: FeedConfig
-) : AndroidViewModel(app) {
+class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val baseUrl = try {
-        URL(feed.url).let { "${it.protocol}://${it.authority}" }
-    } catch (_: Exception) { feed.url }
+    private val feedPrefs = FeedPreferences(app)
 
-    private val brainrotRepo = BrainrotRepository(baseUrl, feed.headers)
+    private val _activeFeed = MutableStateFlow<FeedConfig?>(null)
+    val activeFeed: StateFlow<FeedConfig?> = _activeFeed.asStateFlow()
+
+    private var brainrotRepo: BrainrotRepository? = null
 
     private val _current = MutableStateFlow<BrainrotWallpaper?>(null)
     val current: StateFlow<BrainrotWallpaper?> = _current.asStateFlow()
@@ -37,6 +36,9 @@ class BrainrotViewModel(
 
     private val _noResults = MutableStateFlow(false)
     val noResults: StateFlow<Boolean> = _noResults.asStateFlow()
+
+    private val _noFeed = MutableStateFlow(false)
+    val noFeed: StateFlow<Boolean> = _noFeed.asStateFlow()
 
     private val _sessionSaved = MutableStateFlow(0)
     val sessionSaved: StateFlow<Int> = _sessionSaved.asStateFlow()
@@ -64,6 +66,29 @@ class BrainrotViewModel(
     private var prefetchJob: Job? = null
 
     init {
+        viewModelScope.launch { initWithFirstFeed() }
+    }
+
+    private suspend fun initWithFirstFeed() {
+        val feeds = feedPrefs.feeds.first()
+        if (feeds.isEmpty()) {
+            _noFeed.update { true }
+            _loading.update { false }
+            return
+        }
+        val feed = feeds.first()
+        switchFeed(feed)
+    }
+
+    fun switchFeed(feed: FeedConfig) {
+        _activeFeed.update { feed }
+        val baseUrl = try {
+            URL(feed.url).let { "${it.protocol}://${it.authority}" }
+        } catch (_: Exception) { feed.url }
+        brainrotRepo = BrainrotRepository(baseUrl, feed.headers)
+        seenIds.clear()
+        nextCard = null
+        _noFeed.update { false }
         loadLists()
         loadSettings()
         loadFirst()
@@ -71,9 +96,10 @@ class BrainrotViewModel(
 
     private fun loadFirst() {
         viewModelScope.launch {
+            val repo = brainrotRepo ?: return@launch
             _loading.update { true }
             _noResults.update { false }
-            val wp = brainrotRepo.fetchWallpaper(seenIds)
+            val wp = repo.fetchWallpaper(seenIds)
             if (wp != null) seenIds.add(wp.id)
             _current.update { wp }
             _noResults.update { wp == null }
@@ -84,7 +110,8 @@ class BrainrotViewModel(
 
     private fun loadLists() {
         viewModelScope.launch {
-            val result = brainrotRepo.fetchLists()
+            val repo = brainrotRepo ?: return@launch
+            val result = repo.fetchLists()
             _lists.update { result }
             if (_selectedListId.value == null && result.isNotEmpty()) {
                 _selectedListId.update { result.first().id }
@@ -95,7 +122,8 @@ class BrainrotViewModel(
     private fun prefetchNext() {
         prefetchJob?.cancel()
         prefetchJob = viewModelScope.launch {
-            val wp = brainrotRepo.fetchWallpaper(seenIds)
+            val repo = brainrotRepo ?: return@launch
+            val wp = repo.fetchWallpaper(seenIds)
             if (wp != null) seenIds.add(wp.id)
             nextCard = wp
         }
@@ -103,6 +131,7 @@ class BrainrotViewModel(
 
     private fun advanceCard() {
         viewModelScope.launch {
+            val repo = brainrotRepo ?: return@launch
             val nxt = nextCard
             nextCard = null
             if (nxt != null) {
@@ -113,7 +142,7 @@ class BrainrotViewModel(
             } else {
                 _loading.update { true }
                 _current.update { null }
-                val wp = brainrotRepo.fetchWallpaper(seenIds)
+                val wp = repo.fetchWallpaper(seenIds)
                 if (wp != null) seenIds.add(wp.id)
                 _current.update { wp }
                 _noResults.update { wp == null }
@@ -125,20 +154,21 @@ class BrainrotViewModel(
 
     private fun loadSettings() {
         viewModelScope.launch {
-            val s = brainrotRepo.fetchSettings()
+            val repo = brainrotRepo ?: return@launch
+            val s = repo.fetchSettings()
             _discoverSettings.update { s }
         }
     }
 
     fun saveSettings(settings: DiscoverSettings) {
         viewModelScope.launch {
+            val repo = brainrotRepo ?: return@launch
             _settingsSaving.update { true }
-            val ok = brainrotRepo.updateSettings(settings)
+            val ok = repo.updateSettings(settings)
             val ctx = getApplication<Application>().applicationContext
             if (ok) {
                 _discoverSettings.update { settings }
                 Toast.makeText(ctx, "Settings saved", Toast.LENGTH_SHORT).show()
-                // Refresh feed with new settings
                 seenIds.clear()
                 nextCard = null
                 loadFirst()
@@ -158,10 +188,11 @@ class BrainrotViewModel(
     fun addToList(listId: Int) {
         if (_busy.value) return
         val wp = _current.value ?: return
+        val repo = brainrotRepo ?: return
         _busy.update { true }
         _selectedListId.update { listId }
         viewModelScope.launch {
-            val ok = brainrotRepo.addToList(listId, wp)
+            val ok = repo.addToList(listId, wp)
             val ctx = getApplication<Application>().applicationContext
             if (ok) {
                 val listName = _lists.value.find { it.id == listId }?.name ?: "list"
@@ -187,12 +218,3 @@ class BrainrotViewModel(
     }
 }
 
-class BrainrotViewModelFactory(
-    private val app: Application,
-    private val feed: FeedConfig
-) : ViewModelProvider.Factory {
-    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-        @Suppress("UNCHECKED_CAST")
-        return BrainrotViewModel(app, feed) as T
-    }
-}

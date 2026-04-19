@@ -1,10 +1,17 @@
 package com.chrisalvis.rotato.data
 
+enum class WallpaperTarget(val label: String) {
+    HOME_ONLY("Home screen only"),
+    LOCK_ONLY("Lock screen only"),
+    BOTH("Home & lock screen")
+}
+
 data class RotatoSettings(
     val isEnabled: Boolean = false,
     val intervalMinutes: Int = 60,
     val shuffleMode: Boolean = true,
-    val currentIndex: Int = 0
+    val currentIndex: Int = 0,
+    val wallpaperTarget: WallpaperTarget = WallpaperTarget.BOTH
 )
 
 enum class RotationInterval(val minutes: Int, val label: String) {

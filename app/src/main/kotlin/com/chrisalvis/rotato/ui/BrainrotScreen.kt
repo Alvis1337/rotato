@@ -1,7 +1,6 @@
 package com.chrisalvis.rotato.ui
 
-import android.app.Application
-import android.widget.Toast
+import android.content.Intent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -11,13 +10,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -26,32 +25,36 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.DiscoverSettings
 import com.chrisalvis.rotato.data.FeedConfig
+import com.chrisalvis.rotato.data.FeedPreferences
 import com.chrisalvis.rotato.data.RemoteList
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrainrotScreen(
-    feed: FeedConfig,
-    onNavigateBack: () -> Unit
+    externalViewModel: BrainrotViewModel? = null,
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val vm: BrainrotViewModel = viewModel(
-        key = feed.id,
-        factory = BrainrotViewModelFactory(context.applicationContext as Application, feed)
-    )
+    val vm: BrainrotViewModel = externalViewModel ?: viewModel()
 
     val current by vm.current.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
+    val noFeed by vm.noFeed.collectAsStateWithLifecycle()
     val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
     val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
@@ -59,14 +62,18 @@ fun BrainrotScreen(
     val busy by vm.busy.collectAsStateWithLifecycle()
     val discoverSettings by vm.discoverSettings.collectAsStateWithLifecycle()
     val settingsSaving by vm.settingsSaving.collectAsStateWithLifecycle()
+    val activeFeed by vm.activeFeed.collectAsStateWithLifecycle()
 
     var showListPicker by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
 
     val onAddToList: () -> Unit = {
         when {
-            lists.isEmpty() -> Toast.makeText(context, "No lists found — create one on the website first", Toast.LENGTH_LONG).show()
+            lists.isEmpty() -> android.widget.Toast.makeText(
+                context, "No lists found — create one on the website first", android.widget.Toast.LENGTH_LONG
+            ).show()
             lists.size == 1 -> vm.addToList(lists.first().id)
             else -> showListPicker = true
         }
@@ -76,10 +83,7 @@ fun BrainrotScreen(
         ListPickerDialog(
             lists = lists,
             selectedListId = selectedListId,
-            onSelect = { listId ->
-                showListPicker = false
-                vm.addToList(listId)
-            },
+            onSelect = { listId -> showListPicker = false; vm.addToList(listId) },
             onDismiss = { showListPicker = false }
         )
     }
@@ -88,71 +92,51 @@ fun BrainrotScreen(
         DiscoverSettingsDialog(
             settings = discoverSettings,
             saving = settingsSaving,
-            onSave = { updated ->
-                vm.saveSettings(updated)
-                showSettings = false
-            },
+            activeFeed = activeFeed,
+            onSwitchFeed = { vm.switchFeed(it) },
+            onSave = { updated -> vm.saveSettings(updated); showSettings = false },
             onDismiss = { showSettings = false }
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                title = { Text("Discover", fontWeight = FontWeight.Bold) },
-                actions = {
-                    Row(
-                        modifier = Modifier.padding(end = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (sessionSaved > 0) {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("📌 $sessionSaved", style = MaterialTheme.typography.labelSmall) }
-                            )
-                        }
-                        if (sessionSkipped > 0) {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("✕ $sessionSkipped", style = MaterialTheme.typography.labelSmall) }
-                            )
-                        }
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Tune, contentDescription = "Discover settings")
-                        }
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center
-        ) {
-            when {
-                noResults -> NoResultsState(onRetry = { vm.retry() })
-                loading && current == null -> CircularProgressIndicator()
-                current != null -> {
-                    key(current!!.id) {
-                        SwipeCard(
-                            wallpaper = current!!,
-                            loading = loading,
-                            busy = busy,
-                            showInfo = showInfo,
-                            onToggleInfo = { showInfo = !showInfo },
-                            onSkip = { vm.skip() },
-                            onAddToList = onAddToList,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+    if (showPreview && current != null) {
+        FullScreenPreviewDialog(
+            wallpaper = current!!,
+            onDismiss = { showPreview = false }
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        when {
+            noFeed -> NoFeedState(onNavigateToSettings = onNavigateToSettings)
+            noResults -> NoResultsState(onRetry = { vm.retry() })
+            loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
+            }
+            current != null -> {
+                key(current!!.id) {
+                    FullScreenSwipeCard(
+                        wallpaper = current!!,
+                        loading = loading,
+                        busy = busy,
+                        showInfo = showInfo,
+                        sessionSaved = sessionSaved,
+                        sessionSkipped = sessionSkipped,
+                        onToggleInfo = { showInfo = !showInfo },
+                        onSkip = { vm.skip() },
+                        onAddToList = onAddToList,
+                        onShare = {
+                            val url = current!!.pageUrl.ifBlank { current!!.fullUrl }
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, url)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
+                        },
+                        onOpenSettings = { showSettings = true },
+                        onTapImage = { showPreview = true },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }
@@ -160,14 +144,19 @@ fun BrainrotScreen(
 }
 
 @Composable
-private fun SwipeCard(
+private fun FullScreenSwipeCard(
     wallpaper: BrainrotWallpaper,
     loading: Boolean,
     busy: Boolean,
     showInfo: Boolean,
+    sessionSaved: Int,
+    sessionSkipped: Int,
     onToggleInfo: () -> Unit,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
+    onShare: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onTapImage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -180,277 +169,272 @@ private fun SwipeCard(
     val saveAlpha = (xOffset.value / threshold).coerceIn(0f, 1f)
     val skipAlpha = (-xOffset.value / threshold).coerceIn(0f, 1f)
 
-    Column(modifier = modifier) {
-        // Swipeable card
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .graphicsLayer {
-                    translationX = xOffset.value
-                    rotationZ = (xOffset.value / screenWidthPx) * 10f
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            coroutineScope.launch { xOffset.snapTo(xOffset.value + dragAmount.x) }
-                        },
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                when {
-                                    xOffset.value > threshold -> {
-                                        xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                                        onAddToList()
-                                        xOffset.snapTo(0f)
-                                    }
-                                    xOffset.value < -threshold -> {
-                                        xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
-                                        onSkip()
-                                        xOffset.snapTo(0f)
-                                    }
-                                    else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                translationX = xOffset.value
+                rotationZ = (xOffset.value / screenWidthPx) * 6f
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        coroutineScope.launch { xOffset.snapTo(xOffset.value + dragAmount.x) }
+                    },
+                    onDragEnd = {
+                        coroutineScope.launch {
+                            when {
+                                xOffset.value > threshold -> {
+                                    xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
+                                    onAddToList()
+                                    xOffset.snapTo(0f)
                                 }
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
+                                xOffset.value < -threshold -> {
+                                    xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
+                                    onSkip()
+                                    xOffset.snapTo(0f)
+                                }
+                                else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
                             }
                         }
-                    )
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            // Parse resolution into aspect ratio so the inner card is always the right shape
-            val aspectRatio = remember(wallpaper.resolution) {
-                val parts = wallpaper.resolution.split("x", "×")
-                val w = parts.getOrNull(0)?.trim()?.toFloatOrNull()
-                val h = parts.getOrNull(1)?.trim()?.toFloatOrNull()
-                if (w != null && h != null && h > 0f) w / h else 16f / 9f
-            }
-
-            // Inner card sized by image aspect ratio — avoids top/bottom clipping
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(aspectRatio)
-                    .clip(MaterialTheme.shapes.extraLarge)
-            ) {
-                // Main image — use fullUrl so we get the actual wallpaper, not the cropped thumb
-                val context = LocalContext.current
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl })
-                        .placeholderMemoryCacheKey(wallpaper.thumbUrl)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-            // Loading shimmer when fetching next card
-            if (loading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = Color.White)
-                }
-            }
-
-            // Save to list overlay (right swipe)
-            if (saveAlpha > 0.02f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.75f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Bookmark,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(72.dp)
-                        )
-                        Text(
-                            "Save to List",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
-                        )
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
+                        }
                     }
-                }
-            }
-
-            // Skip overlay (left swipe)
-            if (skipAlpha > 0.02f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.75f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(72.dp)
-                        )
-                        Text(
-                            "Skip",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
-                }
-            }
-
-            // Source badge (top-left)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), MaterialTheme.shapes.small)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    wallpaper.source.replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White
                 )
             }
+    ) {
+        // Full-screen wallpaper image
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl })
+                .placeholderMemoryCacheKey(wallpaper.thumbUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable { onTapImage() }
+        )
 
-            // Info overlay (bottom, toggled)
-            if (showInfo) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.78f))
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    if (wallpaper.resolution.isNotBlank()) {
-                        Text(
-                            wallpaper.resolution,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFF90CAF9)
-                        )
-                    }
-                    if (wallpaper.tags.isNotEmpty()) {
-                        Text(
-                            wallpaper.tags.take(8).joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.85f),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (wallpaper.pageUrl.isNotBlank()) {
-                        Text(
-                            wallpaper.pageUrl,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.5f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
+        // Loading overlay
+        if (loading) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator(color = Color.White) }
+        }
+
+        // Save overlay (right swipe)
+        if (saveAlpha > 0.02f) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.8f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
+                    Text("Save to List", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
                 }
             }
         }
 
-        // Hint text
-        Text(
-            text = "← skip  ·  swipe right or 📌 to save to list",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(bottom = 4.dp)
-        )
+        // Skip overlay (left swipe)
+        if (skipAlpha > 0.02f) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.8f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
+                    Text("Skip", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+                }
+            }
+        }
 
-        // Action buttons
-        Row(
+        // Top gradient overlay — stats + settings
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .align(Alignment.TopCenter)
+                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Skip
-            FilledTonalIconButton(
-                onClick = {
-                    if (!busy) coroutineScope.launch {
-                        xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
-                        onSkip()
-                        xOffset.snapTo(0f)
-                    }
-                },
-                modifier = Modifier.size(56.dp),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                ),
-                enabled = !busy
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Skip",
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.size(26.dp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (sessionSaved > 0) StatChip("📌 $sessionSaved")
+                    if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Tune, contentDescription = "Settings", tint = Color.White)
+                }
+            }
+        }
+
+        // Bottom gradient overlay — source badge + info + action buttons
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        wallpaper.source.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (wallpaper.resolution.isNotBlank()) {
+                        Text(wallpaper.resolution, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+                    }
+                }
+            }
+
+            if (showInfo && wallpaper.tags.isNotEmpty()) {
+                Text(
+                    wallpaper.tags.take(10).joinToString("  ·  "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.8f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Info toggle
-            FilledTonalIconButton(
-                onClick = onToggleInfo,
-                modifier = Modifier.size(44.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(20.dp))
-            }
+                ActionButton(
+                    icon = Icons.Default.Close,
+                    label = "Skip",
+                    onClick = {
+                        if (!busy) coroutineScope.launch {
+                            xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
+                            onSkip()
+                            xOffset.snapTo(0f)
+                        }
+                    },
+                    enabled = !busy,
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    size = 52
+                )
 
-            // Save to list (big center button)
-            FilledIconButton(
-                onClick = {
-                    if (!busy) coroutineScope.launch {
-                        xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                        onAddToList()
-                        xOffset.snapTo(0f)
-                    }
-                },
-                modifier = Modifier.size(64.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                ),
-                enabled = !busy
-            ) {
-                if (busy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Icon(
-                        Icons.Default.Bookmark,
-                        contentDescription = "Save to list",
-                        modifier = Modifier.size(30.dp)
-                    )
+                ActionButton(
+                    icon = Icons.Default.Info,
+                    label = "Info",
+                    onClick = onToggleInfo,
+                    enabled = true,
+                    containerColor = if (showInfo) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f)
+                                     else Color.White.copy(alpha = 0.15f),
+                    contentColor = Color.White,
+                    size = 44
+                )
+
+                FilledIconButton(
+                    onClick = {
+                        if (!busy) coroutineScope.launch {
+                            xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
+                            onAddToList()
+                            xOffset.snapTo(0f)
+                        }
+                    },
+                    modifier = Modifier.size(64.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    enabled = !busy
+                ) {
+                    if (busy) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    else Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(30.dp))
                 }
+
+                ActionButton(
+                    icon = Icons.Default.Share,
+                    label = "Share",
+                    onClick = onShare,
+                    enabled = true,
+                    containerColor = Color.White.copy(alpha = 0.15f),
+                    contentColor = Color.White,
+                    size = 44
+                )
+
+                Spacer(Modifier.size(52.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatChip(text: String) {
+    Box(
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.5f), MaterialTheme.shapes.small)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = Color.White)
+    }
+}
+
+@Composable
+private fun ActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    containerColor: Color,
+    contentColor: Color,
+    size: Int
+) {
+    FilledIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(size.dp),
+        enabled = enabled,
+        colors = IconButtonDefaults.filledIconButtonColors(containerColor = containerColor, contentColor = contentColor)
+    ) {
+        Icon(icon, contentDescription = label, modifier = Modifier.size((size * 0.45f).dp))
+    }
+}
+
+@Composable
+private fun FullScreenPreviewDialog(
+    wallpaper: BrainrotWallpaper,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { onDismiss() }) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl })
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(28.dp))
             }
         }
     }
@@ -473,43 +457,34 @@ private fun ListPickerDialog(
                         headlineContent = { Text(list.name) },
                         supportingContent = { Text("${list.count} wallpapers") },
                         leadingContent = {
-                            if (list.id == selectedListId) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Default.Bookmark,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.outline
-                                )
-                            }
+                            Icon(
+                                if (list.id == selectedListId) Icons.Default.CheckCircle else Icons.Default.Bookmark,
+                                contentDescription = null,
+                                tint = if (list.id == selectedListId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
                         },
-                        modifier = Modifier
-                            .clip(MaterialTheme.shapes.medium)
-                            .clickable { onSelect(list.id) }
+                        modifier = Modifier.clip(MaterialTheme.shapes.medium).clickable { onSelect(list.id) }
                     )
                     HorizontalDivider()
                 }
             }
         },
         confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DiscoverSettingsDialog(
-    settings: com.chrisalvis.rotato.data.DiscoverSettings,
+    settings: DiscoverSettings,
     saving: Boolean,
-    onSave: (com.chrisalvis.rotato.data.DiscoverSettings) -> Unit,
+    activeFeed: FeedConfig?,
+    onSwitchFeed: (FeedConfig) -> Unit,
+    onSave: (DiscoverSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var sorting by remember(settings) { mutableStateOf(settings.sorting) }
     var minResolution by remember(settings) { mutableStateOf(settings.minResolution) }
     var aspectRatio by remember(settings) { mutableStateOf(settings.aspectRatio) }
@@ -517,18 +492,48 @@ private fun DiscoverSettingsDialog(
 
     val sortOptions = listOf("relevance", "date_added", "views", "favorites", "random")
     val resolutionOptions = listOf("1920x1080", "2560x1440", "3840x2160", "1280x720")
-    val aspectOptions = listOf("" to "Any", "16x9" to "16:9", "9x16" to "9:16", "4x3" to "4:3", "1x1" to "1:1")
+    val aspectOptions = listOf("" to "Any", "16x9" to "16:9", "9x16" to "9:16 (Mobile)", "4x3" to "4:3", "1x1" to "1:1")
 
     var sortExpanded by remember { mutableStateOf(false) }
     var resExpanded by remember { mutableStateOf(false) }
     var arExpanded by remember { mutableStateOf(false) }
+    var feedExpanded by remember { mutableStateOf(false) }
+
+    val feeds = remember { mutableStateOf<List<FeedConfig>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val prefs = FeedPreferences(context.applicationContext)
+        feeds.value = prefs.feeds.first()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Discover Settings") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Sort by
+                if (feeds.value.size > 1) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Feed", style = MaterialTheme.typography.labelMedium)
+                        ExposedDropdownMenuBox(expanded = feedExpanded, onExpandedChange = { feedExpanded = it }) {
+                            OutlinedTextField(
+                                value = activeFeed?.name ?: "None",
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(feedExpanded) },
+                                modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                                singleLine = true
+                            )
+                            ExposedDropdownMenu(expanded = feedExpanded, onDismissRequest = { feedExpanded = false }) {
+                                feeds.value.forEach { f ->
+                                    DropdownMenuItem(
+                                        text = { Text(f.name) },
+                                        onClick = { onSwitchFeed(f); feedExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Sort by", style = MaterialTheme.typography.labelMedium)
                     ExposedDropdownMenuBox(expanded = sortExpanded, onExpandedChange = { sortExpanded = it }) {
@@ -548,7 +553,6 @@ private fun DiscoverSettingsDialog(
                     }
                 }
 
-                // Min resolution
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Min resolution", style = MaterialTheme.typography.labelMedium)
                     ExposedDropdownMenuBox(expanded = resExpanded, onExpandedChange = { resExpanded = it }) {
@@ -567,7 +571,6 @@ private fun DiscoverSettingsDialog(
                     }
                 }
 
-                // Aspect ratio
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
                     ExposedDropdownMenuBox(expanded = arExpanded, onExpandedChange = { arExpanded = it }) {
@@ -587,7 +590,6 @@ private fun DiscoverSettingsDialog(
                     }
                 }
 
-                // NSFW toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -603,14 +605,7 @@ private fun DiscoverSettingsDialog(
         },
         confirmButton = {
             Button(
-                onClick = {
-                    onSave(com.chrisalvis.rotato.data.DiscoverSettings(
-                        sorting = sorting,
-                        minResolution = minResolution,
-                        aspectRatio = aspectRatio,
-                        nsfwMode = nsfwMode
-                    ))
-                },
+                onClick = { onSave(DiscoverSettings(sorting = sorting, minResolution = minResolution, aspectRatio = aspectRatio, nsfwMode = nsfwMode)) },
                 enabled = !saving
             ) {
                 if (saving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -622,30 +617,43 @@ private fun DiscoverSettingsDialog(
 }
 
 @Composable
+private fun NoFeedState(onNavigateToSettings: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
+            Text("No feed configured", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                "Add an animebacks feed in Settings → Manage Feeds to start discovering wallpapers",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center
+            )
+            Button(onClick = onNavigateToSettings) { Text("Go to Settings") }
+        }
+    }
+}
+
+@Composable
 private fun NoResultsState(onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            Icons.Default.ImageNotSupported,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.outline
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "No wallpapers found",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "Check that sources are enabled in your animebacks settings",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onRetry) { Text("Retry") }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(Icons.Default.ImageNotSupported, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
+            Text("No wallpapers found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Check that sources are enabled in your animebacks settings",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center
+            )
+            Button(onClick = onRetry) { Text("Retry") }
+        }
     }
 }

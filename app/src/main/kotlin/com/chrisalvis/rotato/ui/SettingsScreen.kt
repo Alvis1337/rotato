@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chrisalvis.rotato.data.RotationInterval
+import com.chrisalvis.rotato.data.WallpaperTarget
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,6 +133,24 @@ fun SettingsScreen(
                         checked = settings.shuffleMode,
                         onCheckedChange = { viewModel.setShuffleMode(it) }
                     )
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Wallpaper Target") {
+                WallpaperTarget.entries.forEach { target ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = settings.wallpaperTarget == target,
+                            onClick = { viewModel.setWallpaperTarget(target) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(target.label)
+                    }
                 }
             }
 

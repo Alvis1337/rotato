@@ -1,18 +1,31 @@
 package com.chrisalvis.rotato.worker
 
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.WallpaperManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.chrisalvis.rotato.MainActivity
+import com.chrisalvis.rotato.R
+import com.chrisalvis.rotato.RotatoApp
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.WallpaperHistoryItem
+import com.chrisalvis.rotato.data.WallpaperTarget
+import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
@@ -43,15 +56,33 @@ class WallpaperWorker(
                 ?: return Result.failure()
 
             val wallpaperManager = WallpaperManager.getInstance(applicationContext)
-            wallpaperManager.setBitmap(
-                bitmap,
-                null,
-                true,
-                WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
-            )
-            bitmap.recycle()
+            val flags = when (settings.wallpaperTarget) {
+                WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
+                WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
+                WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+            }
+            wallpaperManager.setBitmap(bitmap, null, true, flags)
 
             prefs.recordRotation()
+
+            // Record in history (keep last 20)
+            val history = historyFromJson(prefs.historyJson.first()).toMutableList()
+            history.add(0, WallpaperHistoryItem(
+                thumbUrl = targetFile.absolutePath,
+                fullUrl = targetFile.absolutePath,
+                source = "local",
+                timestamp = System.currentTimeMillis()
+            ))
+            prefs.setHistoryJson(history.take(20).toJson())
+
+            // Post "wallpaper changed" notification
+            postWallpaperSetNotification(bitmap)
+            bitmap.recycle()
+
+            // Warn if pool is running low
+            if (images.size in 1..4) {
+                postLowQueueNotification(images.size)
+            }
 
             // Sub-15-min intervals can't use PeriodicWorkRequest (OS enforces 15 min floor).
             // Instead, each worker schedules its own successor.
@@ -64,6 +95,71 @@ class WallpaperWorker(
         } catch (e: Exception) {
             Result.retry()
         }
+    }
+
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val notification = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WORKER)
+            .setContentTitle("Changing wallpaper…")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .build()
+        return ForegroundInfo(NOTIF_ID_WORKER, notification)
+    }
+
+    private fun postWallpaperSetNotification(bitmap: Bitmap) {
+        val nm = applicationContext.getSystemService(NotificationManager::class.java)
+        if (!nm.areNotificationsEnabled()) return
+
+        // Tap notification → open app
+        val openIntent = PendingIntent.getActivity(
+            applicationContext, 0,
+            Intent(applicationContext, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Skip action → enqueue next worker immediately
+        val skipIntent = PendingIntent.getBroadcast(
+            applicationContext, 1,
+            Intent(applicationContext, SkipWallpaperReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val thumb = Bitmap.createScaledBitmap(bitmap, 128, 72, true)
+        val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WALLPAPER_SET)
+            .setContentTitle("Wallpaper changed")
+            .setContentText("Tap to open Rotato")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setLargeIcon(thumb)
+            .setStyle(NotificationCompat.BigPictureStyle().bigPicture(thumb))
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .addAction(0, "Skip", skipIntent)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        nm.notify(NOTIF_ID_WALLPAPER_SET, notif)
+    }
+
+    private fun postLowQueueNotification(count: Int) {
+        val nm = applicationContext.getSystemService(NotificationManager::class.java)
+        if (!nm.areNotificationsEnabled()) return
+
+        val openIntent = PendingIntent.getActivity(
+            applicationContext, 2,
+            Intent(applicationContext, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_LOW_QUEUE)
+            .setContentTitle("Wallpaper queue is low")
+            .setContentText("Only $count photo${if (count == 1) "" else "s"} left — add more to keep rotating")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+
+        nm.notify(NOTIF_ID_LOW_QUEUE, notif)
     }
 
     private fun scheduleNextRun(intervalMinutes: Long) {
@@ -104,5 +200,8 @@ class WallpaperWorker(
     companion object {
         const val KEY_INTERVAL_MINUTES = "interval_minutes"
         const val CHAIN_WORK_NAME = "rotato_chain"
+        private const val NOTIF_ID_WORKER = 1000
+        private const val NOTIF_ID_WALLPAPER_SET = 1001
+        private const val NOTIF_ID_LOW_QUEUE = 1002
     }
 }

@@ -137,6 +137,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setWallpaperTarget(target: com.chrisalvis.rotato.data.WallpaperTarget) {
+        viewModelScope.launch {
+            preferences.setWallpaperTarget(target)
+        }
+    }
+
     fun clearAll() {
         viewModelScope.launch {
             cancelRotation()
