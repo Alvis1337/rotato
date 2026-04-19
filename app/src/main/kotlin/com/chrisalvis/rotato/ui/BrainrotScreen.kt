@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.RemoteList
@@ -55,9 +57,20 @@ fun BrainrotScreen(
     val lists by vm.lists.collectAsStateWithLifecycle()
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val discoverSettings by vm.discoverSettings.collectAsStateWithLifecycle()
+    val settingsSaving by vm.settingsSaving.collectAsStateWithLifecycle()
 
     var showListPicker by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+
+    val onAddToList: () -> Unit = {
+        when {
+            lists.isEmpty() -> Toast.makeText(context, "No lists found — create one on the website first", Toast.LENGTH_LONG).show()
+            lists.size == 1 -> vm.addToList(lists.first().id)
+            else -> showListPicker = true
+        }
+    }
 
     if (showListPicker) {
         ListPickerDialog(
@@ -71,6 +84,18 @@ fun BrainrotScreen(
         )
     }
 
+    if (showSettings) {
+        DiscoverSettingsDialog(
+            settings = discoverSettings,
+            saving = settingsSaving,
+            onSave = { updated ->
+                vm.saveSettings(updated)
+                showSettings = false
+            },
+            onDismiss = { showSettings = false }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -81,25 +106,25 @@ fun BrainrotScreen(
                 },
                 title = { Text("Discover", fontWeight = FontWeight.Bold) },
                 actions = {
-                    if (sessionSaved > 0 || sessionSkipped > 0) {
-                        Row(
-                            modifier = Modifier.padding(end = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (sessionSaved > 0) {
-                                AssistChip(
-                                    onClick = {},
-                                    label = { Text("♥ $sessionSaved", style = MaterialTheme.typography.labelSmall) },
-                                    leadingIcon = null
-                                )
-                            }
-                            if (sessionSkipped > 0) {
-                                AssistChip(
-                                    onClick = {},
-                                    label = { Text("✕ $sessionSkipped", style = MaterialTheme.typography.labelSmall) }
-                                )
-                            }
+                    Row(
+                        modifier = Modifier.padding(end = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (sessionSaved > 0) {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("📌 $sessionSaved", style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                        if (sessionSkipped > 0) {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("✕ $sessionSkipped", style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Default.Tune, contentDescription = "Discover settings")
                         }
                     }
                 }
@@ -116,7 +141,6 @@ fun BrainrotScreen(
                 noResults -> NoResultsState(onRetry = { vm.retry() })
                 loading && current == null -> CircularProgressIndicator()
                 current != null -> {
-                    // key() causes full recomposition (and state reset) when wallpaper ID changes
                     key(current!!.id) {
                         SwipeCard(
                             wallpaper = current!!,
@@ -125,14 +149,7 @@ fun BrainrotScreen(
                             showInfo = showInfo,
                             onToggleInfo = { showInfo = !showInfo },
                             onSkip = { vm.skip() },
-                            onSaveToRotation = { vm.saveToRotation() },
-                            onAddToList = {
-                                when {
-                                    lists.isEmpty() -> vm.saveToRotation()
-                                    lists.size == 1 -> vm.addToList(lists.first().id)
-                                    else -> showListPicker = true
-                                }
-                            },
+                            onAddToList = onAddToList,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -150,7 +167,6 @@ private fun SwipeCard(
     showInfo: Boolean,
     onToggleInfo: () -> Unit,
     onSkip: () -> Unit,
-    onSaveToRotation: () -> Unit,
     onAddToList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -175,7 +191,6 @@ private fun SwipeCard(
                     translationX = xOffset.value
                     rotationZ = (xOffset.value / screenWidthPx) * 10f
                 }
-                .clip(MaterialTheme.shapes.extraLarge)
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDrag = { change, dragAmount ->
@@ -187,7 +202,7 @@ private fun SwipeCard(
                                 when {
                                     xOffset.value > threshold -> {
                                         xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                                        onSaveToRotation()
+                                        onAddToList()
                                         xOffset.snapTo(0f)
                                     }
                                     xOffset.value < -threshold -> {
@@ -205,15 +220,36 @@ private fun SwipeCard(
                             }
                         }
                     )
-                }
+                },
+            contentAlignment = Alignment.Center
         ) {
-            // Main image
-            AsyncImage(
-                model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
+            // Parse resolution into aspect ratio so the inner card is always the right shape
+            val aspectRatio = remember(wallpaper.resolution) {
+                val parts = wallpaper.resolution.split("x", "×")
+                val w = parts.getOrNull(0)?.trim()?.toFloatOrNull()
+                val h = parts.getOrNull(1)?.trim()?.toFloatOrNull()
+                if (w != null && h != null && h > 0f) w / h else 16f / 9f
+            }
+
+            // Inner card sized by image aspect ratio — avoids top/bottom clipping
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(aspectRatio)
+                    .clip(MaterialTheme.shapes.extraLarge)
+            ) {
+                // Main image — use fullUrl so we get the actual wallpaper, not the cropped thumb
+                val context = LocalContext.current
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl })
+                        .placeholderMemoryCacheKey(wallpaper.thumbUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
 
             // Loading shimmer when fetching next card
             if (loading) {
@@ -227,7 +263,7 @@ private fun SwipeCard(
                 }
             }
 
-            // Save overlay (right swipe)
+            // Save to list overlay (right swipe)
             if (saveAlpha > 0.02f) {
                 Box(
                     modifier = Modifier
@@ -240,13 +276,13 @@ private fun SwipeCard(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            Icons.Default.Favorite,
+                            Icons.Default.Bookmark,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(72.dp)
                         )
                         Text(
-                            "Add to Rotation",
+                            "Save to List",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleLarge
@@ -334,12 +370,13 @@ private fun SwipeCard(
                         )
                     }
                 }
+                }
             }
         }
 
         // Hint text
         Text(
-            text = "← skip  ·  swipe right or ♥ to add to rotation  ·  📌 to save to list",
+            text = "← skip  ·  swipe right or 📌 to save to list",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier
@@ -386,12 +423,12 @@ private fun SwipeCard(
                 Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(20.dp))
             }
 
-            // Save to rotation (big center button)
+            // Save to list (big center button)
             FilledIconButton(
                 onClick = {
                     if (!busy) coroutineScope.launch {
                         xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                        onSaveToRotation()
+                        onAddToList()
                         xOffset.snapTo(0f)
                     }
                 },
@@ -409,28 +446,11 @@ private fun SwipeCard(
                     )
                 } else {
                     Icon(
-                        Icons.Default.Favorite,
-                        contentDescription = "Add to rotation",
+                        Icons.Default.Bookmark,
+                        contentDescription = "Save to list",
                         modifier = Modifier.size(30.dp)
                     )
                 }
-            }
-
-            // Add to list (save to animebacks)
-            FilledTonalIconButton(
-                onClick = { if (!busy) onAddToList() },
-                modifier = Modifier.size(56.dp),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ),
-                enabled = !busy
-            ) {
-                Icon(
-                    Icons.Default.Bookmark,
-                    contentDescription = "Add to list",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(26.dp)
-                )
             }
         }
     }
@@ -479,6 +499,125 @@ private fun ListPickerDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DiscoverSettingsDialog(
+    settings: com.chrisalvis.rotato.data.DiscoverSettings,
+    saving: Boolean,
+    onSave: (com.chrisalvis.rotato.data.DiscoverSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var sorting by remember(settings) { mutableStateOf(settings.sorting) }
+    var minResolution by remember(settings) { mutableStateOf(settings.minResolution) }
+    var aspectRatio by remember(settings) { mutableStateOf(settings.aspectRatio) }
+    var nsfwMode by remember(settings) { mutableStateOf(settings.nsfwMode) }
+
+    val sortOptions = listOf("relevance", "date_added", "views", "favorites", "random")
+    val resolutionOptions = listOf("1920x1080", "2560x1440", "3840x2160", "1280x720")
+    val aspectOptions = listOf("" to "Any", "16x9" to "16:9", "9x16" to "9:16", "4x3" to "4:3", "1x1" to "1:1")
+
+    var sortExpanded by remember { mutableStateOf(false) }
+    var resExpanded by remember { mutableStateOf(false) }
+    var arExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Discover Settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Sort by
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Sort by", style = MaterialTheme.typography.labelMedium)
+                    ExposedDropdownMenuBox(expanded = sortExpanded, onExpandedChange = { sortExpanded = it }) {
+                        OutlinedTextField(
+                            value = sorting,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sortExpanded) },
+                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            singleLine = true
+                        )
+                        ExposedDropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+                            sortOptions.forEach { opt ->
+                                DropdownMenuItem(text = { Text(opt) }, onClick = { sorting = opt; sortExpanded = false })
+                            }
+                        }
+                    }
+                }
+
+                // Min resolution
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Min resolution", style = MaterialTheme.typography.labelMedium)
+                    ExposedDropdownMenuBox(expanded = resExpanded, onExpandedChange = { resExpanded = it }) {
+                        OutlinedTextField(
+                            value = minResolution,
+                            onValueChange = { minResolution = it },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(resExpanded) },
+                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryEditable).fillMaxWidth(),
+                            singleLine = true
+                        )
+                        ExposedDropdownMenu(expanded = resExpanded, onDismissRequest = { resExpanded = false }) {
+                            resolutionOptions.forEach { opt ->
+                                DropdownMenuItem(text = { Text(opt) }, onClick = { minResolution = opt; resExpanded = false })
+                            }
+                        }
+                    }
+                }
+
+                // Aspect ratio
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
+                    ExposedDropdownMenuBox(expanded = arExpanded, onExpandedChange = { arExpanded = it }) {
+                        OutlinedTextField(
+                            value = aspectOptions.find { it.first == aspectRatio }?.second ?: aspectRatio.ifBlank { "Any" },
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(arExpanded) },
+                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            singleLine = true
+                        )
+                        ExposedDropdownMenu(expanded = arExpanded, onDismissRequest = { arExpanded = false }) {
+                            aspectOptions.forEach { (value, label) ->
+                                DropdownMenuItem(text = { Text(label) }, onClick = { aspectRatio = value; arExpanded = false })
+                            }
+                        }
+                    }
+                }
+
+                // NSFW toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("NSFW", style = MaterialTheme.typography.bodyMedium)
+                        Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Switch(checked = nsfwMode, onCheckedChange = { nsfwMode = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(com.chrisalvis.rotato.data.DiscoverSettings(
+                        sorting = sorting,
+                        minResolution = minResolution,
+                        aspectRatio = aspectRatio,
+                        nsfwMode = nsfwMode
+                    ))
+                },
+                enabled = !saving
+            ) {
+                if (saving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                else Text("Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

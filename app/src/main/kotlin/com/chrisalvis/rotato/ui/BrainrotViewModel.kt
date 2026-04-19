@@ -7,8 +7,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.chrisalvis.rotato.data.BrainrotRepository
 import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.DiscoverSettings
 import com.chrisalvis.rotato.data.FeedConfig
-import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.RemoteList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
 import java.net.URL
 
 class BrainrotViewModel(
@@ -29,9 +28,6 @@ class BrainrotViewModel(
     } catch (_: Exception) { feed.url }
 
     private val brainrotRepo = BrainrotRepository(baseUrl, feed.headers)
-    private val feedRepo = FeedRepository(
-        File(app.filesDir, "rotato_images").also { it.mkdirs() }
-    )
 
     private val _current = MutableStateFlow<BrainrotWallpaper?>(null)
     val current: StateFlow<BrainrotWallpaper?> = _current.asStateFlow()
@@ -57,12 +53,19 @@ class BrainrotViewModel(
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    private val _discoverSettings = MutableStateFlow(DiscoverSettings())
+    val discoverSettings: StateFlow<DiscoverSettings> = _discoverSettings.asStateFlow()
+
+    private val _settingsSaving = MutableStateFlow(false)
+    val settingsSaving: StateFlow<Boolean> = _settingsSaving.asStateFlow()
+
     private val seenIds = mutableListOf<String>()
     private var nextCard: BrainrotWallpaper? = null
     private var prefetchJob: Job? = null
 
     init {
         loadLists()
+        loadSettings()
         loadFirst()
     }
 
@@ -120,28 +123,36 @@ class BrainrotViewModel(
         }
     }
 
+    private fun loadSettings() {
+        viewModelScope.launch {
+            val s = brainrotRepo.fetchSettings()
+            _discoverSettings.update { s }
+        }
+    }
+
+    fun saveSettings(settings: DiscoverSettings) {
+        viewModelScope.launch {
+            _settingsSaving.update { true }
+            val ok = brainrotRepo.updateSettings(settings)
+            val ctx = getApplication<Application>().applicationContext
+            if (ok) {
+                _discoverSettings.update { settings }
+                Toast.makeText(ctx, "Settings saved", Toast.LENGTH_SHORT).show()
+                // Refresh feed with new settings
+                seenIds.clear()
+                nextCard = null
+                loadFirst()
+            } else {
+                Toast.makeText(ctx, "Failed to save settings", Toast.LENGTH_SHORT).show()
+            }
+            _settingsSaving.update { false }
+        }
+    }
+
     fun skip() {
         if (_busy.value) return
         _sessionSkipped.update { it + 1 }
         advanceCard()
-    }
-
-    fun saveToRotation() {
-        if (_busy.value) return
-        val wp = _current.value ?: return
-        _busy.update { true }
-        viewModelScope.launch {
-            val ok = feedRepo.downloadWallpaper(wp.id, wp.fullUrl)
-            val ctx = getApplication<Application>().applicationContext
-            if (ok) {
-                _sessionSaved.update { it + 1 }
-                Toast.makeText(ctx, "Added to rotation", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(ctx, "Download failed", Toast.LENGTH_SHORT).show()
-            }
-            _busy.update { false }
-            advanceCard()
-        }
     }
 
     fun addToList(listId: Int) {

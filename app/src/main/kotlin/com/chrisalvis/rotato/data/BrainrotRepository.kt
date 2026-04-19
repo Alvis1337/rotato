@@ -12,6 +12,13 @@ import org.json.JSONObject
 
 private const val TAG = "BrainrotRepository"
 
+data class DiscoverSettings(
+    val sorting: String = "relevance",
+    val minResolution: String = "1920x1080",
+    val aspectRatio: String = "",
+    val nsfwMode: Boolean = false
+)
+
 class BrainrotRepository(
     private val baseUrl: String,
     private val headers: Map<String, String>
@@ -122,7 +129,7 @@ class BrainrotRepository(
                 .apply { hdrs.forEach { (k, v) -> addHeader(k, v) } }
                 .build()
             httpClient.newCall(req).execute().use { resp ->
-                Log.d(TAG, "addToList $listId: ${resp.code}")
+                Log.d(TAG, "addToList $listId: ${resp.code} body=${resp.body?.string()?.take(200)}")
                 resp.isSuccessful
             }
         } catch (e: Exception) {
@@ -131,7 +138,54 @@ class BrainrotRepository(
         }
     }
 
+    suspend fun fetchSettings(): DiscoverSettings = withContext(Dispatchers.IO) {
+        try {
+            val hdrs = effectiveHeaders()
+            val req = Request.Builder()
+                .url("$baseUrl/api/settings")
+                .apply { hdrs.forEach { (k, v) -> addHeader(k, v) } }
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext DiscoverSettings()
+                val j = JSONObject(resp.body!!.string())
+                DiscoverSettings(
+                    sorting = j.optString("sorting", "relevance").ifBlank { "relevance" },
+                    minResolution = j.optString("minResolution", "1920x1080").ifBlank { "1920x1080" },
+                    aspectRatio = j.optString("aspectRatio", ""),
+                    nsfwMode = j.optBoolean("nsfwMode", false)
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSettings failed", e)
+            DiscoverSettings()
+        }
+    }
+
+    suspend fun updateSettings(settings: DiscoverSettings): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val hdrs = effectiveHeaders()
+            val body = JSONObject().apply {
+                put("sorting", settings.sorting)
+                put("minResolution", settings.minResolution)
+                put("aspectRatio", settings.aspectRatio)
+                put("nsfwMode", settings.nsfwMode)
+            }.toString().toRequestBody("application/json".toMediaType())
+            val req = Request.Builder()
+                .url("$baseUrl/api/settings")
+                .post(body)
+                .apply { hdrs.forEach { (k, v) -> addHeader(k, v) } }
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                Log.d(TAG, "updateSettings: ${resp.code}")
+                resp.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateSettings failed", e)
+            false
+        }
+    }
+
     companion object {
-        private const val TAG = "BrainrotRepository"
+        // no duplicate TAG here — top-level TAG constant is used by all functions
     }
 }
