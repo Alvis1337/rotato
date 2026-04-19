@@ -24,37 +24,68 @@ class BrainrotRepository(
     private val headers: Map<String, String>
 ) {
     private val httpClient = OkHttpClient()
+    @Volatile private var cachedHeaders: Map<String, String>? = null
 
-    private suspend fun effectiveHeaders(): Map<String, String> = withContext(Dispatchers.IO) {
-        if (headers.containsKey("Authorization")) return@withContext headers
-        val req = Request.Builder()
-            .url("$baseUrl/api/settings")
-            .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
-            .build()
-        val apiKey = runCatching {
+    private suspend fun effectiveHeaders(): Map<String, String> {
+        cachedHeaders?.let { return it }
+        return withContext(Dispatchers.IO) {
+            if (headers.containsKey("Authorization")) return@withContext headers.also { cachedHeaders = it }
+            val req = Request.Builder()
+                .url("$baseUrl/api/settings")
+                .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
+                .build()
+            val apiKey = runCatching {
+                httpClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    JSONObject(resp.body!!.string()).optString("feedApiKey", "").ifBlank { null }
+                }
+            }.getOrNull()
+            val resolved = if (apiKey.isNullOrBlank()) {
+                Log.w(TAG, "No API key found in /api/settings")
+                headers
+            } else {
+                buildMap {
+                    put("Authorization", "Bearer $apiKey")
+                    putAll(headers)
+                }
+            }
+            cachedHeaders = resolved
+            resolved
+        }
+    }
+
+    suspend fun fetchSources(): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val hdrs = effectiveHeaders()
+            val req = Request.Builder()
+                .url("$baseUrl/api/sources")
+                .apply { hdrs.forEach { (k, v) -> addHeader(k, v) } }
+                .build()
             httpClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
-                JSONObject(resp.body!!.string()).optString("feedApiKey", "").ifBlank { null }
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val arr = JSONArray(resp.body!!.string())
+                (0 until arr.length()).mapNotNull { i ->
+                    val obj = arr.getJSONObject(i)
+                    if (obj.optBoolean("enabled", false)) obj.optString("name").takeIf { it.isNotBlank() } else null
+                }
             }
-        }.getOrNull()
-        if (apiKey.isNullOrBlank()) {
-            Log.w(TAG, "No API key found in /api/settings")
-            headers
-        } else {
-            buildMap {
-                put("Authorization", "Bearer $apiKey")
-                putAll(headers)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSources failed", e)
+            emptyList()
         }
     }
 
     suspend fun fetchWallpaper(
-        exclude: List<String> = emptyList()
+        exclude: List<String> = emptyList(),
+        sources: List<String> = emptyList()
     ): BrainrotWallpaper? = withContext(Dispatchers.IO) {
         try {
             val sb = StringBuilder("$baseUrl/api/brainrot?q=anime")
             if (exclude.isNotEmpty()) {
                 sb.append("&exclude=${exclude.takeLast(60).joinToString(",")}")
+            }
+            if (sources.isNotEmpty()) {
+                sb.append("&sources=${sources.joinToString(",")}")
             }
             val hdrs = effectiveHeaders()
             val req = Request.Builder()

@@ -4,6 +4,8 @@ import android.app.Application
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import coil.imageLoader
+import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.BrainrotRepository
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.DiscoverSettings
@@ -61,9 +63,22 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _settingsSaving = MutableStateFlow(false)
     val settingsSaving: StateFlow<Boolean> = _settingsSaving.asStateFlow()
 
+    private val _availableSources = MutableStateFlow<List<String>>(emptyList())
+    val availableSources: StateFlow<List<String>> = _availableSources.asStateFlow()
+
+    private val _selectedSources = MutableStateFlow<Set<String>>(emptySet())
+    val selectedSources: StateFlow<Set<String>> = _selectedSources.asStateFlow()
+
     private val seenIds = mutableListOf<String>()
-    private var nextCard: BrainrotWallpaper? = null
-    private var prefetchJob: Job? = null
+
+    /** Cards buffered and ready to display, pre-fetched from the server. */
+    private val cardQueue = ArrayDeque<BrainrotWallpaper>()
+    private val queueTargetSize = 8
+    private val queueRefillThreshold = 3
+    private var fillJob: Job? = null
+
+    private val _nextWallpaper = MutableStateFlow<BrainrotWallpaper?>(null)
+    val nextWallpaper: StateFlow<BrainrotWallpaper?> = _nextWallpaper.asStateFlow()
 
     init {
         viewModelScope.launch { initWithFirstFeed() }
@@ -86,12 +101,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             URL(feed.url).let { "${it.protocol}://${it.authority}" }
         } catch (_: Exception) { feed.url }
         brainrotRepo = BrainrotRepository(baseUrl, feed.headers)
-        seenIds.clear()
-        nextCard = null
+        clearQueue()
         _noFeed.update { false }
         loadLists()
         loadSettings()
+        loadSources()
         loadFirst()
+    }
+
+    private fun clearQueue() {
+        fillJob?.cancel()
+        fillJob = null
+        cardQueue.clear()
+        seenIds.clear()
+        _nextWallpaper.update { null }
     }
 
     private fun loadFirst() {
@@ -99,12 +122,35 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val repo = brainrotRepo ?: return@launch
             _loading.update { true }
             _noResults.update { false }
-            val wp = repo.fetchWallpaper(seenIds)
+            val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList())
             if (wp != null) seenIds.add(wp.id)
             _current.update { wp }
             _noResults.update { wp == null }
             _loading.update { false }
-            if (wp != null) prefetchNext()
+            if (wp != null) fillQueue()
+        }
+    }
+
+    /** Fills the card queue up to [queueTargetSize] in the background, warming Coil's cache. */
+    private fun fillQueue() {
+        if (fillJob?.isActive == true) return
+        fillJob = viewModelScope.launch {
+            val repo = brainrotRepo ?: return@launch
+            val ctx = getApplication<Application>().applicationContext
+            while (cardQueue.size < queueTargetSize) {
+                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList())
+                    ?: break // no more results
+                seenIds.add(wp.id)
+                val url = wp.fullUrl.ifBlank { wp.thumbUrl }
+                if (url.isNotBlank()) {
+                    ctx.imageLoader.enqueue(
+                        ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
+                    )
+                }
+                cardQueue.addLast(wp)
+                // Expose next card for the background layer as soon as the first queued item arrives
+                if (cardQueue.size == 1) _nextWallpaper.update { wp }
+            }
         }
     }
 
@@ -119,37 +165,27 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun prefetchNext() {
-        prefetchJob?.cancel()
-        prefetchJob = viewModelScope.launch {
-            val repo = brainrotRepo ?: return@launch
-            val wp = repo.fetchWallpaper(seenIds)
-            if (wp != null) seenIds.add(wp.id)
-            nextCard = wp
-        }
-    }
-
     private fun advanceCard() {
-        viewModelScope.launch {
-            val repo = brainrotRepo ?: return@launch
-            val nxt = nextCard
-            nextCard = null
-            if (nxt != null) {
-                _current.update { nxt }
-                _noResults.update { false }
-                _loading.update { false }
-                prefetchNext()
-            } else {
+        val nxt = cardQueue.removeFirstOrNull()
+        _nextWallpaper.update { cardQueue.firstOrNull() }
+        if (nxt != null) {
+            _current.update { nxt }
+            _noResults.update { false }
+            _loading.update { false }
+        } else {
+            // Queue was empty — fetch directly and show loading
+            viewModelScope.launch {
+                val repo = brainrotRepo ?: return@launch
                 _loading.update { true }
                 _current.update { null }
-                val wp = repo.fetchWallpaper(seenIds)
+                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList())
                 if (wp != null) seenIds.add(wp.id)
                 _current.update { wp }
                 _noResults.update { wp == null }
                 _loading.update { false }
-                if (wp != null) prefetchNext()
             }
         }
+        if (cardQueue.size < queueRefillThreshold) fillQueue()
     }
 
     private fun loadSettings() {
@@ -158,6 +194,29 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val s = repo.fetchSettings()
             _discoverSettings.update { s }
         }
+    }
+
+    private fun loadSources() {
+        viewModelScope.launch {
+            val repo = brainrotRepo ?: return@launch
+            val sources = repo.fetchSources()
+            _availableSources.update { sources }
+            _selectedSources.update { emptySet() }
+        }
+    }
+
+    fun toggleSource(name: String) {
+        _selectedSources.update { prev ->
+            if (prev.contains(name)) prev - name else prev + name
+        }
+        clearQueue()
+        loadFirst()
+    }
+
+    fun clearSourceFilter() {
+        _selectedSources.update { emptySet() }
+        clearQueue()
+        loadFirst()
     }
 
     fun saveSettings(settings: DiscoverSettings) {
@@ -169,8 +228,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             if (ok) {
                 _discoverSettings.update { settings }
                 Toast.makeText(ctx, "Settings saved", Toast.LENGTH_SHORT).show()
-                seenIds.clear()
-                nextCard = null
+                clearQueue()
                 loadFirst()
             } else {
                 Toast.makeText(ctx, "Failed to save settings", Toast.LENGTH_SHORT).show()
@@ -212,8 +270,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun retry() {
         _noResults.update { false }
-        seenIds.clear()
-        nextCard = null
+        clearQueue()
         loadFirst()
     }
 }

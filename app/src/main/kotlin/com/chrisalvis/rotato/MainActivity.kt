@@ -23,11 +23,12 @@ import androidx.navigation.compose.rememberNavController
 import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.BrowseScreen
-import com.chrisalvis.rotato.ui.FeedScreen
 import com.chrisalvis.rotato.ui.FeedViewModel
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
+import com.chrisalvis.rotato.ui.ServerSettingsScreen
+import com.chrisalvis.rotato.ui.ServerSettingsViewModel
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,12 +40,13 @@ class MainActivity : ComponentActivity() {
                 val homeViewModel: HomeViewModel = viewModel()
                 val feedViewModel: FeedViewModel = viewModel()
                 val brainrotViewModel: BrainrotViewModel = viewModel()
+                val serverSettingsViewModel: ServerSettingsViewModel = viewModel()
                 val navController = rememberNavController()
 
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                val libraryRoutes = setOf("home", "feeds", "browse")
+                val libraryRoutes = setOf("home", "browse")
                 val selectedTab = when {
                     currentRoute == "discover" -> 0
                     currentRoute in libraryRoutes -> 1
@@ -53,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Hide bottom nav on full-screen detail routes
-                val showBottomBar = currentRoute !in setOf("browse")
+                val showBottomBar = currentRoute !in setOf("browse", "server-settings")
 
                 Scaffold(
                     contentWindowInsets = WindowInsets(0),
@@ -110,9 +112,10 @@ class MainActivity : ComponentActivity() {
                             BrainrotScreen(
                                 externalViewModel = brainrotViewModel,
                                 onNavigateToSettings = {
-                                    navController.navigate("feeds") {
+                                    navController.navigate("home") {
                                         popUpTo("discover") { saveState = true }
                                         launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             )
@@ -121,37 +124,25 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 viewModel = homeViewModel,
                                 feedViewModel = feedViewModel,
-                                onNavigateToSettings = {
-                                    navController.navigate("settings") {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onNavigateToFeeds = { navController.navigate("feeds") }
+                                onBrowseFeed = { feed ->
+                                    feedViewModel.setBrowseFeed(feed)
+                                    navController.navigate("browse")
+                                }
                             )
                         }
                         composable("settings") {
                             SettingsScreen(
                                 viewModel = homeViewModel,
                                 onNavigateBack = { navController.popBackStack() },
-                                onNavigateToFeeds = { navController.navigate("feeds") }
+                                onNavigateToServerSettings = {
+                                    navController.navigate("server-settings")
+                                }
                             )
                         }
-                        composable("feeds") {
-                            FeedScreen(
-                                viewModel = feedViewModel,
+                        composable("server-settings") {
+                            ServerSettingsScreen(
                                 onNavigateBack = { navController.popBackStack() },
-                                onBrowseFeed = { feed ->
-                                    feedViewModel.setBrowseFeed(feed)
-                                    navController.navigate("browse")
-                                },
-                                onBrainrotFeed = { feed ->
-                                    feedViewModel.setBrainrotFeed(feed)
-                                    brainrotViewModel.switchFeed(feed)
-                                    navController.navigate("discover") {
-                                        popUpTo("discover") { inclusive = true }
-                                        launchSingleTop = true
-                                    }
-                                }
+                                vm = serverSettingsViewModel
                             )
                         }
                         composable("browse") {

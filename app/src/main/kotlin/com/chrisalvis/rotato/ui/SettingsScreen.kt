@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
 import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
@@ -16,7 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -49,7 +50,7 @@ import com.chrisalvis.rotato.data.WallpaperTarget
 fun SettingsScreen(
     viewModel: HomeViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToFeeds: () -> Unit = {}
+    onNavigateToServerSettings: () -> Unit = {}
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
@@ -156,6 +157,19 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
+            SettingsSection(title = "Server") {
+                FilledTonalButton(
+                    onClick = onNavigateToServerSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Manage Server Settings")
+                }
+            }
+
+            HorizontalDivider()
+
             SettingsSection(title = "Danger Zone") {
                 OutlinedButton(
                     onClick = { showClearDialog = true },
@@ -165,19 +179,6 @@ fun SettingsScreen(
                     )
                 ) {
                     Text("Clear All Photos")
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Photo Sources") {
-                FilledTonalButton(
-                    onClick = onNavigateToFeeds,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Manage Feeds")
                 }
             }
 

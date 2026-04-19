@@ -9,11 +9,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,16 +32,8 @@ import java.util.Locale
 fun FeedScreen(
     viewModel: FeedViewModel,
     onNavigateBack: () -> Unit,
-    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {},
-    onBrainrotFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {}
-){
-    val feeds by viewModel.feeds.collectAsStateWithLifecycle()
-    val addFeedState by viewModel.addFeedState.collectAsStateWithLifecycle()
-    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
-
-    var showAddDialog by remember { mutableStateOf(false) }
-    var confirmDeleteId by remember { mutableStateOf<String?>(null) }
-
+    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {}
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -53,19 +43,34 @@ fun FeedScreen(
                     }
                 },
                 title = { Text("Feeds", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add feed")
-                    }
-                }
             )
         }
     ) { padding ->
+        FeedBody(
+            viewModel = viewModel,
+            onBrowseFeed = onBrowseFeed,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
+
+@Composable
+internal fun FeedBody(
+    viewModel: FeedViewModel,
+    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val feeds by viewModel.feeds.collectAsStateWithLifecycle()
+    val addFeedState by viewModel.addFeedState.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var confirmDeleteId by remember { mutableStateOf<String?>(null) }
+
+    Box(modifier = modifier.fillMaxSize()) {
         if (feeds.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -98,21 +103,29 @@ fun FeedScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { showAddDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Feed")
+                        }
+                    }
+                }
                 items(feeds, key = { it.id }) { feed ->
                     FeedCard(
                         feed = feed,
                         syncStatus = syncStatus[feed.id],
                         onSync = { viewModel.syncFeed(feed) },
-                        onRefreshCredentials = { viewModel.refreshCredentials(feed) },
                         onDelete = { confirmDeleteId = feed.id },
-                        onBrowse = { onBrowseFeed(feed) },
-                        onDiscover = { onBrainrotFeed(feed) }
+                        onBrowse = { onBrowseFeed(feed) }
                     )
                 }
             }
@@ -128,13 +141,6 @@ fun FeedScreen(
                 showAddDialog = false
             }
         )
-
-        // Auto-close on success
-        LaunchedEffect(addFeedState) {
-            if (addFeedState is AddFeedState.Idle && showAddDialog) {
-                // Only close if we were validating (i.e. user hit Add and it succeeded)
-            }
-        }
     }
 
     // Close dialog when add succeeds (transition from Validating → Idle)
@@ -169,10 +175,8 @@ private fun FeedCard(
     feed: FeedConfig,
     syncStatus: SyncStatus?,
     onSync: () -> Unit,
-    onRefreshCredentials: () -> Unit,
     onDelete: () -> Unit,
-    onBrowse: () -> Unit = {},
-    onDiscover: () -> Unit = {}
+    onBrowse: () -> Unit = {}
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -211,14 +215,8 @@ private fun FeedCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDiscover) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = "Discover", tint = MaterialTheme.colorScheme.tertiary)
-                }
                 IconButton(onClick = onBrowse) {
                     Icon(Icons.Default.GridView, contentDescription = "Browse", tint = MaterialTheme.colorScheme.primary)
-                }
-                IconButton(onClick = onRefreshCredentials) {
-                    Icon(Icons.Default.Key, contentDescription = "Refresh credentials", tint = MaterialTheme.colorScheme.outline)
                 }
                 IconButton(onClick = onSync, enabled = syncStatus?.syncing != true) {
                     if (syncStatus?.syncing == true) {

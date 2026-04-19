@@ -3,12 +3,13 @@ package com.chrisalvis.rotato.ui
 import android.content.Intent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -33,6 +35,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.DiscoverSettings
@@ -63,29 +66,21 @@ fun BrainrotScreen(
     val discoverSettings by vm.discoverSettings.collectAsStateWithLifecycle()
     val settingsSaving by vm.settingsSaving.collectAsStateWithLifecycle()
     val activeFeed by vm.activeFeed.collectAsStateWithLifecycle()
+    val availableSources by vm.availableSources.collectAsStateWithLifecycle()
+    val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
+    val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
 
-    var showListPicker by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
-    var showPreview by remember { mutableStateOf(false) }
+    var showZoom by remember { mutableStateOf(false) }
 
     val onAddToList: () -> Unit = {
         when {
             lists.isEmpty() -> android.widget.Toast.makeText(
                 context, "No lists found — create one on the website first", android.widget.Toast.LENGTH_LONG
             ).show()
-            lists.size == 1 -> vm.addToList(lists.first().id)
-            else -> showListPicker = true
+            else -> vm.addToList(selectedListId ?: lists.first().id)
         }
-    }
-
-    if (showListPicker) {
-        ListPickerDialog(
-            lists = lists,
-            selectedListId = selectedListId,
-            onSelect = { listId -> showListPicker = false; vm.addToList(listId) },
-            onDismiss = { showListPicker = false }
-        )
     }
 
     if (showSettings) {
@@ -93,27 +88,45 @@ fun BrainrotScreen(
             settings = discoverSettings,
             saving = settingsSaving,
             activeFeed = activeFeed,
+            lists = lists,
+            selectedListId = selectedListId,
+            onSelectList = { vm.setSelectedList(it) },
+            availableSources = availableSources,
+            selectedSources = selectedSources,
             onSwitchFeed = { vm.switchFeed(it) },
+            onToggleSource = { vm.toggleSource(it) },
             onSave = { updated -> vm.saveSettings(updated); showSettings = false },
             onDismiss = { showSettings = false }
-        )
-    }
-
-    if (showPreview && current != null) {
-        FullScreenPreviewDialog(
-            wallpaper = current!!,
-            onDismiss = { showPreview = false }
         )
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         when {
             noFeed -> NoFeedState(onNavigateToSettings = onNavigateToSettings)
-            noResults -> NoResultsState(onRetry = { vm.retry() })
+            noResults -> NoResultsState(
+                onRetry = { vm.retry() },
+                selectedSources = selectedSources,
+                onClearFilter = { vm.clearSourceFilter() }
+            )
             loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
             current != null -> {
+                // Always render a background image behind the swipe card.
+                // Prefer the preloaded next card; fall back to the current card
+                // (already in Coil memory cache) so the background is never black.
+                val bgWallpaper = nextWallpaper?.takeIf { it.id != current!!.id } ?: current!!
+                val bgUrl = bgWallpaper.fullUrl.ifBlank { bgWallpaper.thumbUrl }
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(bgUrl)
+                        .memoryCacheKey(bgUrl)
+                        .diskCacheKey(bgUrl)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
                 key(current!!.id) {
                     FullScreenSwipeCard(
                         wallpaper = current!!,
@@ -122,9 +135,11 @@ fun BrainrotScreen(
                         showInfo = showInfo,
                         sessionSaved = sessionSaved,
                         sessionSkipped = sessionSkipped,
+                        selectedListName = lists.find { it.id == selectedListId }?.name,
                         onToggleInfo = { showInfo = !showInfo },
                         onSkip = { vm.skip() },
                         onAddToList = onAddToList,
+                        onImageTap = { showZoom = true },
                         onShare = {
                             val url = current!!.pageUrl.ifBlank { current!!.fullUrl }
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -134,8 +149,13 @@ fun BrainrotScreen(
                             context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
                         },
                         onOpenSettings = { showSettings = true },
-                        onTapImage = { showPreview = true },
                         modifier = Modifier.fillMaxSize()
+                    )
+                }
+                if (showZoom) {
+                    ZoomImageDialog(
+                        wallpaper = current!!,
+                        onDismiss = { showZoom = false }
                     )
                 }
             }
@@ -151,12 +171,13 @@ private fun FullScreenSwipeCard(
     showInfo: Boolean,
     sessionSaved: Int,
     sessionSkipped: Int,
+    selectedListName: String?,
     onToggleInfo: () -> Unit,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
+    onImageTap: () -> Unit,
     onShare: () -> Unit,
     onOpenSettings: () -> Unit,
-    onTapImage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -169,212 +190,269 @@ private fun FullScreenSwipeCard(
     val saveAlpha = (xOffset.value / threshold).coerceIn(0f, 1f)
     val skipAlpha = (-xOffset.value / threshold).coerceIn(0f, 1f)
 
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                translationX = xOffset.value
-                rotationZ = (xOffset.value / screenWidthPx) * 6f
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        coroutineScope.launch { xOffset.snapTo(xOffset.value + dragAmount.x) }
-                    },
-                    onDragEnd = {
-                        coroutineScope.launch {
-                            when {
-                                xOffset.value > threshold -> {
-                                    xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                                    onAddToList()
-                                    xOffset.snapTo(0f)
-                                }
-                                xOffset.value < -threshold -> {
-                                    xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
-                                    onSkip()
-                                    xOffset.snapTo(0f)
-                                }
-                                else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
-                            }
-                        }
-                    },
-                    onDragCancel = {
-                        coroutineScope.launch {
-                            xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
-                        }
-                    }
-                )
-            }
-    ) {
-        // Full-screen wallpaper image
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl })
-                .placeholderMemoryCacheKey(wallpaper.thumbUrl)
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
+    Box(modifier = modifier) {
+        // ── Swipeable image layer (only this translates) ──────────────────────
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { onTapImage() }
-        )
+                .graphicsLayer {
+                    translationX = xOffset.value
+                    rotationZ = (xOffset.value / screenWidthPx) * 6f
+                }
+                // Black background fills the letterbox gaps from ContentScale.Fit
+                // so the background layer never bleeds through
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            coroutineScope.launch { xOffset.snapTo(xOffset.value + dragAmount.x) }
+                        },
+                        onDragEnd = {
+                            coroutineScope.launch {
+                                when {
+                                    xOffset.value > threshold -> {
+                                        xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
+                                        onAddToList()
+                                    }
+                                    xOffset.value < -threshold -> {
+                                        xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
+                                        onSkip()
+                                    }
+                                    else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            coroutineScope.launch {
+                                xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
+                            }
+                        }
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onImageTap() })
+                }
+        ) {
+            val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
+            var imageLoading by remember { mutableStateOf(false) }
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(imageUrl)
+                    .memoryCacheKey(imageUrl)
+                    .diskCacheKey(imageUrl)
+                    .placeholderMemoryCacheKey(wallpaper.thumbUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                onState = { imageLoading = it is AsyncImagePainter.State.Loading },
+                modifier = Modifier.fillMaxSize()
+            )
 
-        // Loading overlay
-        if (loading) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) { CircularProgressIndicator(color = Color.White) }
-        }
+            // Small non-blocking spinner — only shown when image genuinely isn't cached
+            if (imageLoading) {
+                CircularProgressIndicator(
+                    color = Color.White.copy(alpha = 0.85f),
+                    strokeWidth = 2.dp,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .align(Alignment.Center)
+                )
+            }
 
-        // Save overlay (right swipe)
-        if (saveAlpha > 0.02f) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.8f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
-                    Text("Save to List", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+            // Save overlay (right swipe)
+            if (saveAlpha > 0.02f) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
+                        Text(
+                            if (selectedListName != null) "Save to \"$selectedListName\"" else "Save to List",
+                            color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall
+                        )
+                    }
                 }
             }
-        }
 
-        // Skip overlay (left swipe)
-        if (skipAlpha > 0.02f) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.8f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
-                    Text("Skip", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+            // Skip overlay (left swipe)
+            if (skipAlpha > 0.02f) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
+                        Text("Skip", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+                    }
                 }
             }
-        }
+        } // end inner swipeable Box
 
-        // Top gradient overlay — stats + settings
+        // Top gradient overlay — session stats (fixed)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
+                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)))
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                    if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
-                }
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Default.Tune, contentDescription = "Settings", tint = Color.White)
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+                ) {
+                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
+                if (sessionSkipped > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    StatChip("✕ $sessionSkipped")
                 }
             }
         }
 
-        // Bottom gradient overlay — source badge + info + action buttons
+        // Bottom gradient overlay — source/title + action buttons
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.3f to Color.Black.copy(alpha = 0.5f),
+                        1f to Color.Black.copy(alpha = 0.92f)
+                    )
+                )
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp, top = 48.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Source chip + resolution
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = sourceColor(wallpaper.source).copy(alpha = 0.85f)
+                ) {
                     Text(
                         wallpaper.source.replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontWeight = FontWeight.SemiBold
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
-                    if (wallpaper.resolution.isNotBlank()) {
-                        Text(wallpaper.resolution, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
-                    }
+                }
+                if (wallpaper.resolution.isNotBlank()) {
+                    Text(
+                        wallpaper.resolution,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.55f)
+                    )
                 }
             }
 
-            if (showInfo && wallpaper.tags.isNotEmpty()) {
+            // Anime/title from tags
+            val titleTags = wallpaper.tags
+                .map { it.replace('_', ' ').split(" ").joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } } }
+                .take(3)
+            if (titleTags.isNotEmpty()) {
                 Text(
-                    wallpaper.tags.take(10).joinToString("  ·  "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.8f),
+                    titleTags.joinToString("  ·  "),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
+            // Expanded tags row
+            if (showInfo && wallpaper.tags.size > 3) {
+                Text(
+                    wallpaper.tags.drop(3).take(8).joinToString("  ·  ") { it.replace('_', ' ') },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.65f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Action buttons row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ActionButton(
-                    icon = Icons.Default.Close,
-                    label = "Skip",
+                // Skip
+                OutlinedIconButton(
                     onClick = {
                         if (!busy) coroutineScope.launch {
                             xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
                             onSkip()
-                            xOffset.snapTo(0f)
                         }
                     },
                     enabled = !busy,
-                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    size = 52
-                )
+                    modifier = Modifier.size(52.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Skip", tint = Color.White, modifier = Modifier.size(22.dp))
+                }
 
-                ActionButton(
-                    icon = Icons.Default.Info,
-                    label = "Info",
+                // Info
+                OutlinedIconButton(
                     onClick = onToggleInfo,
-                    enabled = true,
-                    containerColor = if (showInfo) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f)
-                                     else Color.White.copy(alpha = 0.15f),
-                    contentColor = Color.White,
-                    size = 44
-                )
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(
+                        1.5.dp,
+                        if (showInfo) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        tint = if (showInfo) MaterialTheme.colorScheme.primary else Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
 
+                // Save (primary action)
                 FilledIconButton(
                     onClick = {
                         if (!busy) coroutineScope.launch {
                             xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
                             onAddToList()
-                            xOffset.snapTo(0f)
                         }
                     },
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(68.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
                     enabled = !busy
                 ) {
-                    if (busy) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    else Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(30.dp))
+                    if (busy) CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    else Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
                 }
 
-                ActionButton(
-                    icon = Icons.Default.Share,
-                    label = "Share",
+                // Share
+                OutlinedIconButton(
                     onClick = onShare,
-                    enabled = true,
-                    containerColor = Color.White.copy(alpha = 0.15f),
-                    contentColor = Color.White,
-                    size = 44
-                )
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
+                }
 
-                Spacer(Modifier.size(52.dp))
+                // Settings
+                OutlinedIconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.size(52.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(22.dp))
+                }
             }
         }
     }
@@ -392,86 +470,11 @@ private fun StatChip(text: String) {
 }
 
 @Composable
-private fun ActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    enabled: Boolean,
-    containerColor: Color,
-    contentColor: Color,
-    size: Int
-) {
-    FilledIconButton(
-        onClick = onClick,
-        modifier = Modifier.size(size.dp),
-        enabled = enabled,
-        colors = IconButtonDefaults.filledIconButtonColors(containerColor = containerColor, contentColor = contentColor)
-    ) {
-        Icon(icon, contentDescription = label, modifier = Modifier.size((size * 0.45f).dp))
-    }
-}
-
-@Composable
-private fun FullScreenPreviewDialog(
-    wallpaper: BrainrotWallpaper,
-    onDismiss: () -> Unit
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { onDismiss() }) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl })
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-            )
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(28.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ListPickerDialog(
-    lists: List<RemoteList>,
-    selectedListId: Int?,
-    onSelect: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Save to list") },
-        text = {
-            LazyColumn {
-                items(lists, key = { it.id }) { list ->
-                    ListItem(
-                        headlineContent = { Text(list.name) },
-                        supportingContent = { Text("${list.count} wallpapers") },
-                        leadingContent = {
-                            Icon(
-                                if (list.id == selectedListId) Icons.Default.CheckCircle else Icons.Default.Bookmark,
-                                contentDescription = null,
-                                tint = if (list.id == selectedListId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                            )
-                        },
-                        modifier = Modifier.clip(MaterialTheme.shapes.medium).clickable { onSelect(list.id) }
-                    )
-                    HorizontalDivider()
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+private fun sourceColor(source: String): Color = when (source.lowercase()) {
+    "wallhaven" -> Color(0xFF1565C0)
+    "konachan"  -> Color(0xFF6A1B9A)
+    "danbooru"  -> Color(0xFF2E7D32)
+    else        -> Color(0xFF37474F)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -480,7 +483,13 @@ private fun DiscoverSettingsDialog(
     settings: DiscoverSettings,
     saving: Boolean,
     activeFeed: FeedConfig?,
+    lists: List<RemoteList>,
+    selectedListId: Int?,
+    onSelectList: (Int) -> Unit,
+    availableSources: List<String>,
+    selectedSources: Set<String>,
     onSwitchFeed: (FeedConfig) -> Unit,
+    onToggleSource: (String) -> Unit,
     onSave: (DiscoverSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -498,6 +507,7 @@ private fun DiscoverSettingsDialog(
     var resExpanded by remember { mutableStateOf(false) }
     var arExpanded by remember { mutableStateOf(false) }
     var feedExpanded by remember { mutableStateOf(false) }
+    var listExpanded by remember { mutableStateOf(false) }
 
     val feeds = remember { mutableStateOf<List<FeedConfig>>(emptyList()) }
     LaunchedEffect(Unit) {
@@ -531,6 +541,51 @@ private fun DiscoverSettingsDialog(
                                 }
                             }
                         }
+                    }
+                }
+
+                if (lists.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Save to list", style = MaterialTheme.typography.labelMedium)
+                        ExposedDropdownMenuBox(expanded = listExpanded, onExpandedChange = { listExpanded = it }) {
+                            OutlinedTextField(
+                                value = lists.find { it.id == selectedListId }?.name ?: "None",
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(listExpanded) },
+                                modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                                singleLine = true
+                            )
+                            ExposedDropdownMenu(expanded = listExpanded, onDismissRequest = { listExpanded = false }) {
+                                lists.forEach { list ->
+                                    DropdownMenuItem(
+                                        text = { Text("${list.name}  (${list.count})") },
+                                        onClick = { onSelectList(list.id); listExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (availableSources.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Sources (session)", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            availableSources.forEach { src ->
+                                FilterChip(
+                                    selected = selectedSources.contains(src),
+                                    onClick = { onToggleSource(src) },
+                                    label = { Text(src.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                        Text(
+                            if (selectedSources.isEmpty()) "All sources active"
+                            else "Only: ${selectedSources.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } }}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selectedSources.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
 
@@ -638,7 +693,11 @@ private fun NoFeedState(onNavigateToSettings: () -> Unit) {
 }
 
 @Composable
-private fun NoResultsState(onRetry: () -> Unit) {
+private fun NoResultsState(
+    onRetry: () -> Unit,
+    selectedSources: Set<String> = emptySet(),
+    onClearFilter: () -> Unit = {}
+) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -647,13 +706,91 @@ private fun NoResultsState(onRetry: () -> Unit) {
         ) {
             Icon(Icons.Default.ImageNotSupported, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
             Text("No wallpapers found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                "Check that sources are enabled in your animebacks settings",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
-                textAlign = TextAlign.Center
+            if (selectedSources.isNotEmpty()) {
+                Text(
+                    "No results from ${selectedSources.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } }}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center
+                )
+                Button(onClick = onClearFilter) { Text("Clear source filter") }
+            } else {
+                Text(
+                    "Check that sources are enabled in your animebacks settings",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center
+                )
+                Button(onClick = onRetry) { Text("Retry") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoomImageDialog(
+    wallpaper: BrainrotWallpaper,
+    onDismiss: () -> Unit
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 8f)
+        offset += panChange * scale
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > 1f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = 2.5f
+                            }
+                        }
+                    )
+                }
+        ) {
+            val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(imageUrl)
+                    .memoryCacheKey(imageUrl)
+                    .diskCacheKey(imageUrl)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offset.x
+                        translationY = offset.y
+                    }
+                    .transformable(state = transformState)
             )
-            Button(onClick = onRetry) { Text("Retry") }
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
         }
     }
 }

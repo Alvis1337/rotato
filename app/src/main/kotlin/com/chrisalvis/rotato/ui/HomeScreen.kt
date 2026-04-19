@@ -2,7 +2,6 @@ package com.chrisalvis.rotato.ui
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.material.icons.filled.RssFeed
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,7 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
@@ -44,13 +43,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +67,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import coil.compose.AsyncImage
+import com.chrisalvis.rotato.data.FeedConfig
+import com.chrisalvis.rotato.data.RotatoSettings
+import com.dragselectcompose.core.DragSelectState
 import com.dragselectcompose.core.gridDragSelect
 import com.dragselectcompose.core.rememberDragSelectState
 import java.io.File
@@ -72,8 +79,7 @@ import java.io.File
 fun HomeScreen(
     viewModel: HomeViewModel,
     feedViewModel: FeedViewModel,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToFeeds: () -> Unit
+    onBrowseFeed: (FeedConfig) -> Unit = {}
 ) {
     val images by viewModel.images.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -86,6 +92,8 @@ fun HomeScreen(
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
+
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     BackHandler(enabled = inSelectionMode) { dragSelectState.disableSelectionMode() }
 
@@ -116,18 +124,6 @@ fun HomeScreen(
                         }
                     }
                 )
-            } else {
-                TopAppBar(
-                    title = { Text("Rotato", fontWeight = FontWeight.Bold) },
-                    actions = {
-                        IconButton(onClick = onNavigateToFeeds) {
-                            Icon(Icons.Default.RssFeed, contentDescription = "Feeds")
-                        }
-                        IconButton(onClick = onNavigateToSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
-                        }
-                    }
-                )
             }
         }
     ) { padding ->
@@ -136,87 +132,135 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            RotationStatusCard(
-                isEnabled = settings.isEnabled,
-                imageCount = images.size,
-                intervalMinutes = settings.intervalMinutes,
-                lastRotationMs = lastRotationMs,
-                onToggle = { viewModel.setRotationEnabled(!settings.isEnabled) },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-
-            if (isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Icon(Icons.Default.Wallpaper, contentDescription = null) },
+                    text = { Text("Library") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.RssFeed, contentDescription = null) },
+                    text = { Text("Feeds") }
+                )
             }
 
-            if (images.isEmpty()) {
-                EmptyState(modifier = Modifier.weight(1f))
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    state = dragSelectState.gridState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .gridDragSelect(items = images, state = dragSelectState),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(images, key = { it.absolutePath }) { file ->
-                        val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
-                        ImageThumbnail(
-                            file = file,
-                            isSelected = isSelected,
-                            inSelectionMode = inSelectionMode
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { viewModel.setWallpaperNow() },
-                    enabled = images.isNotEmpty() && setNowState == SetNowState.IDLE,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(14.dp)
-                ) {
-                    when (setNowState) {
-                        SetNowState.SETTING -> {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Setting...")
-                        }
-                        SetNowState.DONE -> {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Done!")
-                        }
-                        SetNowState.ERROR -> Text("Failed — retry?")
-                        SetNowState.IDLE -> {
-                            Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Set Now")
-                        }
-                    }
-                }
-                Button(
-                    onClick = {
+            when (selectedTab) {
+                0 -> LibraryContent(
+                    viewModel = viewModel,
+                    images = images,
+                    settings = settings,
+                    isLoading = isLoading,
+                    setNowState = setNowState,
+                    lastRotationMs = lastRotationMs,
+                    dragSelectState = dragSelectState,
+                    inSelectionMode = inSelectionMode,
+                    onPhotoPick = {
                         photoPicker.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(14.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add Photos")
+                    }
+                )
+                1 -> FeedBody(
+                    viewModel = feedViewModel,
+                    onBrowseFeed = onBrowseFeed
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryContent(
+    viewModel: HomeViewModel,
+    images: List<File>,
+    settings: RotatoSettings,
+    isLoading: Boolean,
+    setNowState: SetNowState,
+    lastRotationMs: Long,
+    dragSelectState: DragSelectState<File>,
+    inSelectionMode: Boolean,
+    onPhotoPick: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        RotationStatusCard(
+            isEnabled = settings.isEnabled,
+            imageCount = images.size,
+            intervalMinutes = settings.intervalMinutes,
+            lastRotationMs = lastRotationMs,
+            onToggle = { viewModel.setRotationEnabled(!settings.isEnabled) },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        if (isLoading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (images.isEmpty()) {
+            EmptyState(modifier = Modifier.weight(1f))
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                state = dragSelectState.gridState,
+                modifier = Modifier
+                    .weight(1f)
+                    .gridDragSelect(items = images, state = dragSelectState),
+                contentPadding = PaddingValues(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(images, key = { it.absolutePath }) { file ->
+                    val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
+                    ImageThumbnail(
+                        file = file,
+                        isSelected = isSelected,
+                        inSelectionMode = inSelectionMode
+                    )
                 }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { viewModel.setWallpaperNow() },
+                enabled = images.isNotEmpty() && setNowState == SetNowState.IDLE,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(14.dp)
+            ) {
+                when (setNowState) {
+                    SetNowState.SETTING -> {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Setting...")
+                    }
+                    SetNowState.DONE -> {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Done!")
+                    }
+                    SetNowState.ERROR -> Text("Failed — retry?")
+                    SetNowState.IDLE -> {
+                        Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Set Now")
+                    }
+                }
+            }
+            Button(
+                onClick = onPhotoPick,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(14.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Add Photos")
             }
         }
     }
