@@ -182,6 +182,7 @@ private fun FullScreenSwipeCard(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val xOffset = remember { Animatable(0f) }
+    var isAnimating by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val config = LocalConfiguration.current
     val screenWidthPx = remember(config) { with(density) { config.screenWidthDp.dp.toPx() } }
@@ -202,7 +203,8 @@ private fun FullScreenSwipeCard(
                 // Black background fills the letterbox gaps from ContentScale.Fit
                 // so the background layer never bleeds through
                 .background(Color.Black)
-                .pointerInput(Unit) {
+                .pointerInput(isAnimating) {
+                    if (isAnimating) return@pointerInput
                     detectDragGestures(
                         onDrag = { change, dragAmount ->
                             change.consume()
@@ -212,10 +214,12 @@ private fun FullScreenSwipeCard(
                             coroutineScope.launch {
                                 when {
                                     xOffset.value > threshold -> {
+                                        isAnimating = true
                                         xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
                                         onAddToList()
                                     }
                                     xOffset.value < -threshold -> {
+                                        isAnimating = true
                                         xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
                                         onSkip()
                                     }
@@ -391,12 +395,15 @@ private fun FullScreenSwipeCard(
                 // Skip
                 OutlinedIconButton(
                     onClick = {
-                        if (!busy) coroutineScope.launch {
-                            xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
-                            onSkip()
+                        if (!isAnimating) {
+                            isAnimating = true
+                            coroutineScope.launch {
+                                xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
+                                onSkip()
+                            }
                         }
                     },
-                    enabled = !busy,
+                    enabled = !isAnimating,
                     modifier = Modifier.size(52.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
@@ -423,17 +430,19 @@ private fun FullScreenSwipeCard(
                 // Save (primary action)
                 FilledIconButton(
                     onClick = {
-                        if (!busy) coroutineScope.launch {
-                            xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                            onAddToList()
+                        if (!isAnimating) {
+                            isAnimating = true
+                            coroutineScope.launch {
+                                xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
+                                onAddToList()
+                            }
                         }
                     },
                     modifier = Modifier.size(68.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    enabled = !busy
+                    enabled = !isAnimating
                 ) {
-                    if (busy) CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    else Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
+                    Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
                 }
 
                 // Share

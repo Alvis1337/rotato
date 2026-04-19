@@ -255,20 +255,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (_busy.value) return
         val wp = _current.value ?: return
         val repo = brainrotRepo ?: return
-        _busy.update { true }
         _selectedListId.update { listId }
+        _sessionSaved.update { it + 1 }
+        // Advance the card immediately so the user isn't locked out while the network call runs
+        advanceCard()
         viewModelScope.launch {
             val ok = repo.addToList(listId, wp)
             val ctx = getApplication<Application>().applicationContext
+            val listName = _lists.value.find { it.id == listId }?.name ?: "list"
             if (ok) {
-                val listName = _lists.value.find { it.id == listId }?.name ?: "list"
-                _sessionSaved.update { it + 1 }
                 Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
             } else {
+                _sessionSaved.update { it - 1 }
                 Toast.makeText(ctx, "Failed to save to list", Toast.LENGTH_SHORT).show()
             }
-            _busy.update { false }
-            advanceCard()
         }
     }
 
