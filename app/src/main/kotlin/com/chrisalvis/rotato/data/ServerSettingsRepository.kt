@@ -28,7 +28,9 @@ class ServerSettingsRepository(
         apiKey?.let { return it }
         return withContext(Dispatchers.IO) {
             runCatching {
-                val req = Request.Builder().url("$baseUrl/api/settings").build()
+                val req = Request.Builder().url("$baseUrl/api/settings")
+                    .applyHeaders(extraHeaders)
+                    .build()
                 http.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) return@use null
                     JSONObject(resp.body!!.string()).optString("feedApiKey", "").ifBlank { null }
@@ -38,8 +40,11 @@ class ServerSettingsRepository(
     }
 
     private suspend fun authHeader(): Map<String, String> {
-        val key = resolveApiKey() ?: return emptyMap()
-        return mapOf("Authorization" to "Bearer $key")
+        val key = resolveApiKey()
+        return buildMap {
+            if (!key.isNullOrBlank()) put("Authorization", "Bearer $key")
+            putAll(extraHeaders)
+        }
     }
 
     private fun Request.Builder.applyHeaders(headers: Map<String, String>): Request.Builder =
@@ -47,7 +52,9 @@ class ServerSettingsRepository(
 
     suspend fun fetchSettings(): ServerConfig = withContext(Dispatchers.IO) {
         runCatching {
-            val req = Request.Builder().url("$baseUrl/api/settings").build()
+            val req = Request.Builder().url("$baseUrl/api/settings")
+                .applyHeaders(extraHeaders)
+                .build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext ServerConfig()
                 val j = JSONObject(resp.body!!.string())
@@ -92,7 +99,9 @@ class ServerSettingsRepository(
 
     suspend fun fetchSources(): List<SourceRow> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = Request.Builder().url("$baseUrl/api/sources").build()
+            val req = Request.Builder().url("$baseUrl/api/sources")
+                .applyHeaders(extraHeaders)
+                .build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext emptyList()
                 val arr = JSONArray(resp.body!!.string())
@@ -150,7 +159,9 @@ class ServerSettingsRepository(
 
     suspend fun fetchFeeds(): List<ServerFeed> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = Request.Builder().url("$baseUrl/api/feeds").build()
+            val req = Request.Builder().url("$baseUrl/api/feeds")
+                .applyHeaders(extraHeaders)
+                .build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext emptyList()
                 val arr = JSONArray(resp.body!!.string())
@@ -227,14 +238,19 @@ class ServerSettingsRepository(
             }
 
             serverFeeds.forEach { sf ->
+                val properUrl = "$baseUrl/api/feed/${sf.slug}"
                 if (sf.slug !in existingSlugs) {
                     feedPrefs.addFeed(
-                        url = baseUrl,
+                        url = properUrl,
                         headers = hdrs,
                         name = sf.name,
                         serverSlug = sf.slug
                     )
                     added++
+                } else {
+                    // Migrate existing feeds that were stored with just the base URL
+                    existingFeeds.firstOrNull { it.serverSlug == sf.slug && it.url == baseUrl }
+                        ?.let { feedPrefs.updateFeedUrl(it.id, properUrl) }
                 }
             }
 

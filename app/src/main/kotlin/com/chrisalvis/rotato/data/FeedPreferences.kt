@@ -2,8 +2,10 @@ package com.chrisalvis.rotato.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -15,9 +17,9 @@ class FeedPreferences(private val context: Context) {
         private val FEEDS_JSON = stringPreferencesKey("feeds_json")
     }
 
-    val feeds: Flow<List<FeedConfig>> = context.dataStore.data.map { prefs ->
-        parseFeedsJson(prefs[FEEDS_JSON] ?: "[]")
-    }
+    val feeds: Flow<List<FeedConfig>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> parseFeedsJson(prefs[FEEDS_JSON] ?: "[]") }
 
     suspend fun addFeed(url: String, headers: Map<String, String>, name: String, serverSlug: String? = null): FeedConfig {
         val feed = FeedConfig(id = UUID.randomUUID().toString(), url = url, headers = headers, name = name, serverSlug = serverSlug)
@@ -40,6 +42,15 @@ class FeedPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             val current = parseFeedsJson(prefs[FEEDS_JSON] ?: "[]").map {
                 if (it.id == id) it.copy(headers = headers) else it
+            }
+            prefs[FEEDS_JSON] = serializeFeedsJson(current)
+        }
+    }
+
+    suspend fun updateFeedUrl(id: String, url: String) {
+        context.dataStore.edit { prefs ->
+            val current = parseFeedsJson(prefs[FEEDS_JSON] ?: "[]").map {
+                if (it.id == id) it.copy(url = url) else it
             }
             prefs[FEEDS_JSON] = serializeFeedsJson(current)
         }

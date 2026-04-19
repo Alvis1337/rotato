@@ -218,11 +218,15 @@ private fun FeedCard(
                 IconButton(onClick = onBrowse) {
                     Icon(Icons.Default.GridView, contentDescription = "Browse", tint = MaterialTheme.colorScheme.primary)
                 }
-                IconButton(onClick = onSync, enabled = syncStatus?.syncing != true) {
-                    if (syncStatus?.syncing == true) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Sync, contentDescription = "Sync", tint = MaterialTheme.colorScheme.primary)
+                // Live Search feeds (base URL, no /api/feed/ path) don't support sync
+                val canSync = feed.url.contains("/api/feed/", ignoreCase = true)
+                if (canSync) {
+                    IconButton(onClick = onSync, enabled = syncStatus?.syncing != true) {
+                        if (syncStatus?.syncing == true) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = "Sync", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
                 IconButton(onClick = onDelete) {

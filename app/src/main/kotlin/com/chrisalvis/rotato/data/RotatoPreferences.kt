@@ -5,11 +5,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "rotato_prefs")
@@ -27,7 +29,9 @@ class RotatoPreferences(private val context: Context) {
         val SETUP_DONE = booleanPreferencesKey("setup_done")
     }
 
-    val settings: Flow<RotatoSettings> = context.dataStore.data.map { prefs ->
+    val settings: Flow<RotatoSettings> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
         RotatoSettings(
             isEnabled = prefs[IS_ENABLED] ?: false,
             intervalMinutes = prefs[INTERVAL_MINUTES] ?: 60,
@@ -39,9 +43,13 @@ class RotatoPreferences(private val context: Context) {
         )
     }
 
-    val lastRotationMs: Flow<Long> = context.dataStore.data.map { it[LAST_ROTATION_MS] ?: 0L }
+    val lastRotationMs: Flow<Long> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[LAST_ROTATION_MS] ?: 0L }
 
-    val historyJson: Flow<String> = context.dataStore.data.map { it[HISTORY_JSON] ?: "[]" }
+    val historyJson: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[HISTORY_JSON] ?: "[]" }
 
     suspend fun setEnabled(enabled: Boolean) {
         context.dataStore.edit { it[IS_ENABLED] = enabled }
@@ -75,9 +83,9 @@ class RotatoPreferences(private val context: Context) {
     // After first emission this is always true/false, never null:
     //   - true  if SETUP_DONE=true, OR if other prefs exist (dirty install over old version)
     //   - false if fresh install with empty DataStore
-    val setupDone: Flow<Boolean?> = context.dataStore.data.map { prefs ->
-        prefs[SETUP_DONE] ?: prefs.asMap().isNotEmpty()
-    }
+    val setupDone: Flow<Boolean?> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> prefs[SETUP_DONE] ?: prefs.asMap().isNotEmpty() }
 
     suspend fun setSetupDone(done: Boolean = true) {
         context.dataStore.edit { it[SETUP_DONE] = done }

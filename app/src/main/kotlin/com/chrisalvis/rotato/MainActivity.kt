@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -145,6 +147,16 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("home") {
+                            val homeBackStackEntry = it
+                            DisposableEffect(homeBackStackEntry) {
+                                val observer = LifecycleEventObserver { _, event ->
+                                    if (event == Lifecycle.Event.ON_RESUME) {
+                                        homeViewModel.refreshFromFeeds()
+                                    }
+                                }
+                                homeBackStackEntry.lifecycle.addObserver(observer)
+                                onDispose { homeBackStackEntry.lifecycle.removeObserver(observer) }
+                            }
                             HomeScreen(
                                 viewModel = homeViewModel,
                                 feedViewModel = feedViewModel,

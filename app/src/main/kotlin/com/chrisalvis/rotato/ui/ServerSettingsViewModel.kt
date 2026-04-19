@@ -62,12 +62,15 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = ServerSettingsState.NoFeed
                 return@launch
             }
-            val baseUrl = feeds.first().url
+            val firstFeed = feeds.firstOrNull { it.headers.isNotEmpty() } ?: feeds.first()
+            val baseUrl = firstFeed.url
                 .substringBefore("?")
                 .trimEnd('/')
                 .let { if (it.endsWith("/api/brainrot", ignoreCase = true)) it.substringBeforeLast("/api/brainrot") else it }
                 .let { if (it.contains("/api/")) it.substringBefore("/api/") else it }
-            repo = ServerSettingsRepository(baseUrl)
+            val preSeededKey = firstFeed.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
+            val extraHeaders = firstFeed.headers.filter { it.key != "Authorization" }
+            repo = ServerSettingsRepository(baseUrl, preSeededKey, extraHeaders)
             val r = repo!!
             try {
                 val config = r.fetchSettings()
