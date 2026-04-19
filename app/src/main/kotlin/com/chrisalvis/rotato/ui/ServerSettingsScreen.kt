@@ -140,6 +140,7 @@ fun ServerSettingsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ServerSettingsContent(
     loaded: ServerSettingsState.Loaded,
