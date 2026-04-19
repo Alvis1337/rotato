@@ -14,10 +14,13 @@ import org.json.JSONObject
 
 private const val TAG = "ServerSettingsRepo"
 
-class ServerSettingsRepository(private val baseUrl: String) {
+class ServerSettingsRepository(
+    private val baseUrl: String,
+    preSeededApiKey: String? = null
+) {
 
     private val http = OkHttpClient()
-    @Volatile private var apiKey: String? = null
+    @Volatile private var apiKey: String? = preSeededApiKey
 
     private suspend fun resolveApiKey(): String? {
         apiKey?.let { return it }
@@ -198,13 +201,11 @@ class ServerSettingsRepository(private val baseUrl: String) {
 
             var added = 0
 
-            // Add a "Live Search" entry for /api/brainrot if not already present
             if (!hasLiveSearch) {
                 feedPrefs.addFeed(url = baseUrl, headers = hdrs, name = "Live Search", serverSlug = null)
                 added++
             }
 
-            // Add one entry per server feed
             serverFeeds.forEach { sf ->
                 if (sf.slug !in existingSlugs) {
                     feedPrefs.addFeed(url = baseUrl, headers = hdrs, name = sf.name, serverSlug = sf.slug)
@@ -216,7 +217,7 @@ class ServerSettingsRepository(private val baseUrl: String) {
         }.getOrElse { Log.e(TAG, "syncFeeds failed", it); 0 }
     }
 
-
+    suspend fun testSource(name: String, apiKey: String, apiUser: String): Pair<Boolean, String?> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val body = JSONObject().apply {
