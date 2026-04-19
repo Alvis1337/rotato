@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -8,11 +9,16 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,7 +59,7 @@ fun SetupScreen(
                 SetupStep.WELCOME -> WelcomePage(onGetStarted = { vm.advanceToConnect() })
                 SetupStep.CONNECT -> ConnectPage(
                     connectState = connectState,
-                    onConnect = { url, key -> vm.connect(url, key) },
+                    onConnect = { url, key, hdrs -> vm.connect(url, key, hdrs) },
                     onSkip = {
                         vm.skip()
                         onSetupComplete()
@@ -118,16 +124,20 @@ private fun WelcomePage(onGetStarted: () -> Unit) {
 @Composable
 private fun ConnectPage(
     connectState: ConnectState,
-    onConnect: (String, String) -> Unit,
+    onConnect: (String, String, Map<String, String>) -> Unit,
     onSkip: () -> Unit
 ) {
     var url by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
+    var showAdvanced by remember { mutableStateOf(false) }
+    // List of (key, value) pairs for custom headers
+    var customHeaders by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     val isConnecting = connectState is ConnectState.Connecting
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -172,6 +182,62 @@ private fun ConnectPage(
             ),
             modifier = Modifier.fillMaxWidth()
         )
+        Spacer(Modifier.height(8.dp))
+        // Advanced: custom headers
+        TextButton(
+            onClick = { showAdvanced = !showAdvanced },
+            enabled = !isConnecting,
+            modifier = Modifier.align(Alignment.Start)
+        ) {
+            Icon(
+                imageVector = if (showAdvanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text("Custom headers", style = MaterialTheme.typography.labelMedium)
+        }
+        AnimatedVisibility(visible = showAdvanced) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                customHeaders.forEachIndexed { idx, (k, v) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = k,
+                            onValueChange = { nk -> customHeaders = customHeaders.toMutableList().also { it[idx] = nk to v } },
+                            label = { Text("Name") },
+                            singleLine = true,
+                            enabled = !isConnecting,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = v,
+                            onValueChange = { nv -> customHeaders = customHeaders.toMutableList().also { it[idx] = k to nv } },
+                            label = { Text("Value") },
+                            singleLine = true,
+                            enabled = !isConnecting,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = { customHeaders = customHeaders.toMutableList().also { it.removeAt(idx) } },
+                            enabled = !isConnecting
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Remove header", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+                TextButton(
+                    onClick = { customHeaders = customHeaders + ("" to "") },
+                    enabled = !isConnecting
+                ) {
+                    Text("+ Add header")
+                }
+            }
+        }
         if (connectState is ConnectState.Error) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -182,7 +248,12 @@ private fun ConnectPage(
         }
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { onConnect(url, apiKey) },
+            onClick = {
+                val hdrs = customHeaders
+                    .filter { (k, _) -> k.isNotBlank() }
+                    .associate { (k, v) -> k.trim() to v.trim() }
+                onConnect(url, apiKey, hdrs)
+            },
             enabled = url.isNotBlank() && !isConnecting,
             modifier = Modifier
                 .fillMaxWidth()

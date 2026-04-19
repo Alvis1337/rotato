@@ -16,11 +16,13 @@ private const val TAG = "ServerSettingsRepo"
 
 class ServerSettingsRepository(
     private val baseUrl: String,
-    preSeededApiKey: String? = null
+    preSeededApiKey: String? = null,
+    private val extraHeaders: Map<String, String> = emptyMap()
 ) {
 
     private val http = OkHttpClient()
-    @Volatile private var apiKey: String? = preSeededApiKey
+    @Volatile
+    private var apiKey: String? = preSeededApiKey
 
     private suspend fun resolveApiKey(): String? {
         apiKey?.let { return it }
@@ -52,7 +54,8 @@ class ServerSettingsRepository(
                 apiKey = j.optString("feedApiKey", "").ifBlank { null }
                 ServerConfig(
                     sorting = j.optString("sorting", "relevance").ifBlank { "relevance" },
-                    minResolution = j.optString("minResolution", "1920x1080").ifBlank { "1920x1080" },
+                    minResolution = j.optString("minResolution", "1920x1080")
+                        .ifBlank { "1920x1080" },
                     aspectRatio = j.optString("aspectRatio", ""),
                     nsfwMode = j.optBoolean("nsfwMode", false),
                     searchSuffix = j.optString("searchSuffix", ""),
@@ -178,7 +181,11 @@ class ServerSettingsRepository(
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
                 val o = JSONObject(resp.body!!.string())
-                ServerFeed(id = o.optInt("id"), slug = o.optString("slug"), name = o.optString("name"))
+                ServerFeed(
+                    id = o.optInt("id"),
+                    slug = o.optString("slug"),
+                    name = o.optString("name")
+                )
             }
         }.getOrElse { Log.e(TAG, "createFeed failed", it); null }
     }
@@ -193,11 +200,14 @@ class ServerSettingsRepository(
         }.getOrElse { Log.e(TAG, "deleteFeed failed", it); false }
     }
 
-    suspend fun syncFeeds(feedPrefs: FeedPreferences): Int = withContext(Dispatchers.IO) {
+    suspend fun syncFeeds(feedPrefs: FeedPreferences, extraHeaders: Map<String, String> = emptyMap()): Int = withContext(Dispatchers.IO) {
         runCatching {
             val serverFeeds = fetchFeeds()
             val key = resolveApiKey()
-            val hdrs = if (!key.isNullOrBlank()) mapOf("Authorization" to "Bearer $key") else emptyMap()
+            val hdrs = buildMap {
+                if (!key.isNullOrBlank()) put("Authorization", "Bearer $key")
+                putAll(extraHeaders)
+            }
 
             val existingFeeds = feedPrefs.feeds.first()
             val existingSlugs = existingFeeds.mapNotNull { it.serverSlug }.toSet()
@@ -205,14 +215,25 @@ class ServerSettingsRepository(
 
             var added = 0
 
+            val serverHost = runCatching { java.net.URL(baseUrl).host }.getOrDefault(baseUrl)
             if (!hasLiveSearch) {
-                feedPrefs.addFeed(url = baseUrl, headers = hdrs, name = "Live Search", serverSlug = null)
+                feedPrefs.addFeed(
+                    url = baseUrl,
+                    headers = hdrs,
+                    name = "$serverHost — Live",
+                    serverSlug = null
+                )
                 added++
             }
 
             serverFeeds.forEach { sf ->
                 if (sf.slug !in existingSlugs) {
-                    feedPrefs.addFeed(url = baseUrl, headers = hdrs, name = sf.name, serverSlug = sf.slug)
+                    feedPrefs.addFeed(
+                        url = baseUrl,
+                        headers = hdrs,
+                        name = sf.name,
+                        serverSlug = sf.slug
+                    )
                     added++
                 }
             }
@@ -239,4 +260,5 @@ class ServerSettingsRepository(
                 }
             }.getOrElse { Pair(false, it.message) }
         }
+}
 

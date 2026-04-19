@@ -37,12 +37,12 @@ class SetupViewModel(app: Application) : AndroidViewModel(app) {
         _step.value = SetupStep.CONNECT
     }
 
-    fun connect(rawUrl: String, apiKey: String) {
+    fun connect(rawUrl: String, apiKey: String, extraHeaders: Map<String, String> = emptyMap()) {
         viewModelScope.launch {
             _connectState.value = ConnectState.Connecting
             val url = normalizeUrl(rawUrl)
             val key = apiKey.trim().ifBlank { null }
-            val repo = ServerSettingsRepository(url, key)
+            val repo = ServerSettingsRepository(url, key, extraHeaders)
             val result = runCatching { repo.fetchSettings() }
             if (result.isFailure) {
                 _connectState.value = ConnectState.Error(
@@ -50,7 +50,7 @@ class SetupViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 return@launch
             }
-            val added = repo.syncFeeds(feedPrefs)
+            val added = repo.syncFeeds(feedPrefs, extraHeaders)
             _feedCount.value = added
             rotatoPrefs.setSetupDone(true)
             _connectState.value = ConnectState.Idle

@@ -49,20 +49,30 @@ class BrowseRepository(
             .build()
         httpClient.newCall(req).execute().use { resp ->
             Log.d(TAG, "fetchLists: ${resp.code}")
-            if (!resp.isSuccessful) {
-                Log.e(TAG, "fetchLists failed: ${resp.code} ${resp.message}")
-                return@withContext emptyList()
-            }
-            val body = resp.body!!.string()
+            val body = resp.body?.string() ?: ""
             Log.d(TAG, "fetchLists body: ${body.take(200)}")
-            val arr = JSONArray(body)
-            (0 until arr.length()).map { i ->
-                val obj = arr.getJSONObject(i)
-                RemoteList(
-                    id = obj.getInt("id"),
-                    name = obj.getString("name"),
-                    count = obj.optJSONObject("_count")?.optInt("wallpapers") ?: 0
-                )
+            if (!resp.isSuccessful) {
+                val msg = runCatching { JSONObject(body).optString("error", body.take(80)) }.getOrDefault(body.take(80))
+                throw Exception("Server returned ${resp.code}: $msg")
+            }
+            val arr = runCatching { JSONArray(body) }.getOrElse {
+                // Body might be a JSON object with an error field, or HTML
+                val errMsg = runCatching { JSONObject(body).optString("error", body.take(80)) }.getOrDefault(body.take(80))
+                Log.e(TAG, "fetchLists: response is not a JSON array — $errMsg")
+                throw Exception(errMsg.ifBlank { "Unexpected response from server" })
+            }
+            (0 until arr.length()).mapNotNull { i ->
+                runCatching {
+                    val obj = arr.getJSONObject(i)
+                    RemoteList(
+                        id = obj.getInt("id"),
+                        name = obj.getString("name"),
+                        count = obj.optJSONObject("_count")?.optInt("wallpapers") ?: 0
+                    )
+                }.getOrElse {
+                    Log.w(TAG, "fetchLists: skipping element $i — ${it.message}")
+                    null
+                }
             }
         }
     }
