@@ -19,8 +19,8 @@ class FeedPreferences(private val context: Context) {
         parseFeedsJson(prefs[FEEDS_JSON] ?: "[]")
     }
 
-    suspend fun addFeed(url: String, headers: Map<String, String>, name: String): FeedConfig {
-        val feed = FeedConfig(id = UUID.randomUUID().toString(), url = url, headers = headers, name = name)
+    suspend fun addFeed(url: String, headers: Map<String, String>, name: String, serverSlug: String? = null): FeedConfig {
+        val feed = FeedConfig(id = UUID.randomUUID().toString(), url = url, headers = headers, name = name, serverSlug = serverSlug)
         context.dataStore.edit { prefs ->
             val current = parseFeedsJson(prefs[FEEDS_JSON] ?: "[]").toMutableList()
             current.add(feed)
@@ -71,7 +71,8 @@ class FeedPreferences(private val context: Context) {
                 url = o.getString("url"),
                 headers = headers,
                 name = o.optString("name", "Feed"),
-                lastSyncMs = o.optLong("lastSyncMs", 0L)
+                lastSyncMs = o.optLong("lastSyncMs", 0L),
+                serverSlug = o.optString("serverSlug", "").ifBlank { null }
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -85,6 +86,7 @@ class FeedPreferences(private val context: Context) {
                     put("headers", JSONObject(f.headers))
                     put("name", f.name)
                     put("lastSyncMs", f.lastSyncMs)
+                    if (f.serverSlug != null) put("serverSlug", f.serverSlug)
                 })
             }
         }.toString()

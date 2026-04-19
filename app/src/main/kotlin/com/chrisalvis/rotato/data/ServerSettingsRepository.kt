@@ -1,7 +1,9 @@
 package com.chrisalvis.rotato.data
 
 import android.util.Log
+import com.chrisalvis.rotato.data.FeedPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -184,7 +186,37 @@ class ServerSettingsRepository(private val baseUrl: String) {
         }.getOrElse { Log.e(TAG, "deleteFeed failed", it); false }
     }
 
-    suspend fun testSource(name: String, apiKey: String, apiUser: String): Pair<Boolean, String?> =
+    suspend fun syncFeeds(feedPrefs: FeedPreferences): Int = withContext(Dispatchers.IO) {
+        runCatching {
+            val serverFeeds = fetchFeeds()
+            val key = resolveApiKey()
+            val hdrs = if (!key.isNullOrBlank()) mapOf("Authorization" to "Bearer $key") else emptyMap()
+
+            val existingFeeds = feedPrefs.feeds.first()
+            val existingSlugs = existingFeeds.mapNotNull { it.serverSlug }.toSet()
+            val hasLiveSearch = existingFeeds.any { it.serverSlug == null && it.url == baseUrl }
+
+            var added = 0
+
+            // Add a "Live Search" entry for /api/brainrot if not already present
+            if (!hasLiveSearch) {
+                feedPrefs.addFeed(url = baseUrl, headers = hdrs, name = "Live Search", serverSlug = null)
+                added++
+            }
+
+            // Add one entry per server feed
+            serverFeeds.forEach { sf ->
+                if (sf.slug !in existingSlugs) {
+                    feedPrefs.addFeed(url = baseUrl, headers = hdrs, name = sf.name, serverSlug = sf.slug)
+                    added++
+                }
+            }
+
+            added
+        }.getOrElse { Log.e(TAG, "syncFeeds failed", it); 0 }
+    }
+
+
         withContext(Dispatchers.IO) {
             runCatching {
                 val body = JSONObject().apply {

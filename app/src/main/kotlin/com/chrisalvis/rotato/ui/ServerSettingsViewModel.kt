@@ -91,14 +91,30 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
             _saving.value = true
             val settingsOk = r.saveSettings(config)
             val sourcesOk = r.saveSources(sources)
-            _saving.value = false
             if (settingsOk && sourcesOk) {
-                _snackMessage.value = "Settings saved"
-                val current = _state.value as? ServerSettingsState.Loaded ?: return@launch
+                val current = _state.value as? ServerSettingsState.Loaded ?: run {
+                    _saving.value = false
+                    _snackMessage.value = "Failed to save settings"
+                    return@launch
+                }
                 _state.value = current.copy(config = config, sources = sources)
+                val added = r.syncFeeds(feedPrefs)
+                _saving.value = false
+                _snackMessage.value = if (added > 0) "Saved — synced $added feed(s)" else "Settings saved"
             } else {
+                _saving.value = false
                 _snackMessage.value = "Failed to save settings"
             }
+        }
+    }
+
+    fun syncFeeds() {
+        val r = repo ?: return
+        viewModelScope.launch {
+            _saving.value = true
+            val added = r.syncFeeds(feedPrefs)
+            _saving.value = false
+            _snackMessage.value = if (added > 0) "Synced $added feed(s) from server" else "Feeds already up to date"
         }
     }
 

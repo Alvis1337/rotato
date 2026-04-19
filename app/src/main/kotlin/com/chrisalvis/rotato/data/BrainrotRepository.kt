@@ -21,7 +21,8 @@ data class DiscoverSettings(
 
 class BrainrotRepository(
     private val baseUrl: String,
-    private val headers: Map<String, String>
+    private val headers: Map<String, String>,
+    private val serverSlug: String? = null
 ) {
     private val httpClient = OkHttpClient()
     @Volatile private var cachedHeaders: Map<String, String>? = null
@@ -80,16 +81,18 @@ class BrainrotRepository(
         sources: List<String> = emptyList()
     ): BrainrotWallpaper? = withContext(Dispatchers.IO) {
         try {
-            val sb = StringBuilder("$baseUrl/api/brainrot?q=anime")
-            if (exclude.isNotEmpty()) {
-                sb.append("&exclude=${exclude.takeLast(60).joinToString(",")}")
-            }
-            if (sources.isNotEmpty()) {
-                sb.append("&sources=${sources.joinToString(",")}")
-            }
             val hdrs = effectiveHeaders()
+            val urlStr = if (serverSlug != null) {
+                "$baseUrl/api/feed/$serverSlug?random=true"
+            } else {
+                buildString {
+                    append("$baseUrl/api/brainrot?q=anime")
+                    if (exclude.isNotEmpty()) append("&exclude=${exclude.takeLast(60).joinToString(",")}")
+                    if (sources.isNotEmpty()) append("&sources=${sources.joinToString(",")}")
+                }
+            }
             val req = Request.Builder()
-                .url(sb.toString())
+                .url(urlStr)
                 .apply { hdrs.forEach { (k, v) -> addHeader(k, v) } }
                 .build()
             httpClient.newCall(req).execute().use { resp ->
@@ -99,9 +102,11 @@ class BrainrotRepository(
                 }
                 val json = JSONObject(resp.body!!.string())
                 val wp = json.optJSONObject("wallpaper") ?: return@withContext null
+                // /api/brainrot puts source at top level; /api/feed/[slug] puts it inside wallpaper
+                val source = wp.optString("source").ifBlank { json.optString("source") }
                 BrainrotWallpaper(
                     id = wp.optString("id"),
-                    source = json.optString("source"),
+                    source = source,
                     thumbUrl = wp.optString("thumbUrl"),
                     fullUrl = wp.optString("fullUrl"),
                     resolution = wp.optString("resolution"),

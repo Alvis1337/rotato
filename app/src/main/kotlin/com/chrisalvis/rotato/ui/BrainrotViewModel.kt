@@ -108,7 +108,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val baseUrl = try {
             URL(feed.url).let { "${it.protocol}://${it.authority}" }
         } catch (_: Exception) { feed.url }
-        brainrotRepo = BrainrotRepository(baseUrl, feed.headers)
+        brainrotRepo = BrainrotRepository(baseUrl, feed.headers, feed.serverSlug)
         clearQueue()
         _noFeed.update { false }
         loadLists()

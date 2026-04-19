@@ -76,6 +76,11 @@ fun ServerSettingsScreen(
                     IconButton(onClick = { exportLauncher.launch("rotato-backup.json") }) {
                         Icon(Icons.Default.Download, contentDescription = "Export backup")
                     }
+                    if (state is ServerSettingsState.Loaded) {
+                        IconButton(onClick = { vm.syncFeeds() }) {
+                            Icon(Icons.Default.Sync, contentDescription = "Sync feeds from server")
+                        }
+                    }
                     if (state is ServerSettingsState.Loaded || state is ServerSettingsState.Error) {
                         IconButton(onClick = { vm.load() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Reload")

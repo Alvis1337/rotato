@@ -24,6 +24,7 @@ class RotatoPreferences(private val context: Context) {
         val LAST_ROTATION_MS = longPreferencesKey("last_rotation_ms")
         val WALLPAPER_TARGET = stringPreferencesKey("wallpaper_target")
         val HISTORY_JSON = stringPreferencesKey("wallpaper_history_json")
+        val SETUP_DONE = booleanPreferencesKey("setup_done")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data.map { prefs ->
