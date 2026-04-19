@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
                 val showBottomBar = currentRoute !in setOf("browse")
 
                 Scaffold(
+                    contentWindowInsets = WindowInsets(0),
                     bottomBar = {
                         if (showBottomBar) {
                             NavigationBar {
@@ -102,7 +104,7 @@ class MainActivity : ComponentActivity() {
                         startDestination = "discover",
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = paddingValues.calculateBottomPadding())
+                            .padding(paddingValues)
                     ) {
                         composable("discover") {
                             BrainrotScreen(
