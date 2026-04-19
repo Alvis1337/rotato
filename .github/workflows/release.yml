@@ -51,7 +51,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64 -Dorg.gradle.java.installations.auto-download=false
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Locate APK
         id: apk

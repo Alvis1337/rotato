@@ -56,6 +56,12 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+}
+
+// Override the Kotlin plugin's default JetBrains toolchain request so that
+// any JDK 21 (e.g. Temurin in CI) satisfies the requirement.
+kotlin {
+    jvmToolchain(21)
     buildFeatures {
         compose = true
     }
