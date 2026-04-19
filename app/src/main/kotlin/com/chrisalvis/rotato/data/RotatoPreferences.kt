@@ -71,8 +71,12 @@ class RotatoPreferences(private val context: Context) {
         context.dataStore.edit { it[HISTORY_JSON] = json }
     }
 
+    // null = DataStore hasn't emitted yet (initialValue in collectAsStateWithLifecycle)
+    // After first emission this is always true/false, never null:
+    //   - true  if SETUP_DONE=true, OR if other prefs exist (dirty install over old version)
+    //   - false if fresh install with empty DataStore
     val setupDone: Flow<Boolean?> = context.dataStore.data.map { prefs ->
-        prefs[SETUP_DONE]
+        prefs[SETUP_DONE] ?: prefs.asMap().isNotEmpty()
     }
 
     suspend fun setSetupDone(done: Boolean = true) {
