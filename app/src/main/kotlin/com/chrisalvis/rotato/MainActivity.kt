@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                         startDestination = "discover",
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(paddingValues)
+                            .padding(bottom = paddingValues.calculateBottomPadding())
                     ) {
                         composable("discover") {
                             BrainrotScreen(
