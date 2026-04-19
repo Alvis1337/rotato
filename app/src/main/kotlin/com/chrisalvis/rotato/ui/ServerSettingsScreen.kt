@@ -37,6 +37,10 @@ fun ServerSettingsScreen(
     val testResults by vm.testResults.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(Unit) {
+        vm.load()
+    }
+
     LaunchedEffect(snackMessage) {
         snackMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -152,8 +156,17 @@ private fun ServerSettingsContent(
     onCreateFeed: (String, String) -> Unit,
     onDeleteFeed: (Int) -> Unit
 ) {
-    var config by remember(loaded.config) { mutableStateOf(loaded.config) }
-    var sources by remember(loaded.sources) { mutableStateOf(loaded.sources) }
+    // Initialize once per screen visit; don't re-key on every field change.
+    // The feedApiKey is synced separately so generating a new key doesn't wipe unsaved edits.
+    var config by remember { mutableStateOf(loaded.config) }
+    var sources by remember { mutableStateOf(loaded.sources) }
+
+    // Only sync feedApiKey when it's externally updated (e.g. after generateApiKey())
+    LaunchedEffect(loaded.config.feedApiKey) {
+        if (config.feedApiKey != loaded.config.feedApiKey) {
+            config = config.copy(feedApiKey = loaded.config.feedApiKey)
+        }
+    }
 
     val clipboardManager = LocalClipboardManager.current
     var apiKeyVisible by remember { mutableStateOf(false) }

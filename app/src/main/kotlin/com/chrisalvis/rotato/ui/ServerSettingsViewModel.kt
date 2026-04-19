@@ -49,6 +49,7 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun load() {
+        if (_state.value is ServerSettingsState.Loading) return
         viewModelScope.launch {
             _state.value = ServerSettingsState.Loading
             val feeds = feedPrefs.feeds.first()
@@ -56,7 +57,9 @@ class ServerSettingsViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = ServerSettingsState.NoFeed
                 return@launch
             }
-            val baseUrl = feeds.first().url.trimEnd('/')
+            val baseUrl = feeds.first().url
+                .substringBefore("?")
+                .trimEnd('/')
                 .let { if (it.endsWith("/api/brainrot", ignoreCase = true)) it.substringBeforeLast("/api/brainrot") else it }
                 .let { if (it.contains("/api/")) it.substringBefore("/api/") else it }
             repo = ServerSettingsRepository(baseUrl)

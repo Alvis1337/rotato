@@ -499,7 +499,13 @@ private fun DiscoverSettingsDialog(
     var aspectRatio by remember(settings) { mutableStateOf(settings.aspectRatio) }
     var nsfwMode by remember(settings) { mutableStateOf(settings.nsfwMode) }
 
-    val sortOptions = listOf("relevance", "date_added", "views", "favorites", "random")
+    val sortOptions = listOf(
+        "relevance" to "Relevance",
+        "date_added" to "Date Added",
+        "views" to "Most Viewed",
+        "favorites" to "Most Favorited",
+        "random" to "Random"
+    )
     val resolutionOptions = listOf("1920x1080", "2560x1440", "3840x2160", "1280x720")
     val aspectOptions = listOf("" to "Any", "16x9" to "16:9", "9x16" to "9:16 (Mobile)", "4x3" to "4:3", "1x1" to "1:1")
 
@@ -593,7 +599,7 @@ private fun DiscoverSettingsDialog(
                     Text("Sort by", style = MaterialTheme.typography.labelMedium)
                     ExposedDropdownMenuBox(expanded = sortExpanded, onExpandedChange = { sortExpanded = it }) {
                         OutlinedTextField(
-                            value = sorting,
+                            value = sortOptions.firstOrNull { it.first == sorting }?.second ?: sorting,
                             onValueChange = {},
                             readOnly = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sortExpanded) },
@@ -601,8 +607,8 @@ private fun DiscoverSettingsDialog(
                             singleLine = true
                         )
                         ExposedDropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
-                            sortOptions.forEach { opt ->
-                                DropdownMenuItem(text = { Text(opt) }, onClick = { sorting = opt; sortExpanded = false })
+                            sortOptions.forEach { (value, label) ->
+                                DropdownMenuItem(text = { Text(label) }, onClick = { sorting = value; sortExpanded = false })
                             }
                         }
                     }
