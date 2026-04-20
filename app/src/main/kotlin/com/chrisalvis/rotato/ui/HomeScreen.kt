@@ -48,6 +48,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -96,6 +97,10 @@ fun HomeScreen(
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) viewModel.addImages(uris)
     }
+
+    // Refresh image pool every time this screen enters composition so wallpapers
+    // downloaded from Collections show up immediately without restarting the app.
+    LaunchedEffect(Unit) { viewModel.refreshFromFeeds() }
 
     Scaffold(
         topBar = {

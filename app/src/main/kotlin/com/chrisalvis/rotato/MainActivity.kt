@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
                                 NavigationBarItem(
                                     selected = selectedTab == 1,
                                     onClick = {
+                                        homeViewModel.refreshFromFeeds()
                                         navController.navigate("home") {
                                             popUpTo("discover") { saveState = true }
                                             launchSingleTop = true

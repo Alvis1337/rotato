@@ -185,6 +185,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
                     )
                 }
+                // Preload thumb into memory cache so the placeholder renders instantly
+                val thumbUrl = wp.thumbUrl.ifBlank { "" }
+                if (thumbUrl.isNotBlank() && thumbUrl != url) {
+                    ctx.imageLoader.enqueue(
+                        ImageRequest.Builder(ctx).data(thumbUrl).memoryCacheKey(thumbUrl).diskCacheKey(thumbUrl).build()
+                    )
+                }
                 cardQueue.addLast(wp)
                 if (cardQueue.size == 1) _nextWallpaper.update { wp }
             }
