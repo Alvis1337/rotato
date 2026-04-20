@@ -38,11 +38,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.BrainrotWallpaper
-import com.chrisalvis.rotato.data.DiscoverSettings
-import com.chrisalvis.rotato.data.FeedConfig
-import com.chrisalvis.rotato.data.FeedPreferences
 import com.chrisalvis.rotato.data.LocalList
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,17 +53,13 @@ fun BrainrotScreen(
     val current by vm.current.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
-    val noFeed by vm.noFeed.collectAsStateWithLifecycle()
+    val noSources by vm.noSources.collectAsStateWithLifecycle()
     val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
     val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    val discoverSettings by vm.discoverSettings.collectAsStateWithLifecycle()
-    val settingsSaving by vm.settingsSaving.collectAsStateWithLifecycle()
-    val activeFeed by vm.activeFeed.collectAsStateWithLifecycle()
-    val availableSources by vm.availableSources.collectAsStateWithLifecycle()
-    val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
+    val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
     val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
@@ -109,29 +101,19 @@ fun BrainrotScreen(
 
     if (showSettings) {
         DiscoverSettingsDialog(
-            settings = discoverSettings,
-            saving = settingsSaving,
-            activeFeed = activeFeed,
+            nsfwMode = nsfwMode,
             lists = lists,
             selectedListId = selectedListId,
             onSelectList = { vm.setSelectedList(it) },
-            availableSources = availableSources,
-            selectedSources = selectedSources,
-            onSwitchFeed = { vm.switchFeed(it) },
-            onToggleSource = { vm.toggleSource(it) },
-            onSave = { updated -> vm.saveSettings(updated); showSettings = false },
+            onSetNsfwMode = { vm.setNsfwMode(it) },
             onDismiss = { showSettings = false }
         )
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         when {
-            noFeed -> NoFeedState(onNavigateToSettings = onNavigateToSettings)
-            noResults -> NoResultsState(
-                onRetry = { vm.retry() },
-                selectedSources = selectedSources,
-                onClearFilter = { vm.clearSourceFilter() }
-            )
+            noSources -> NoSourcesState(onNavigateToSettings = onNavigateToSettings)
+            noResults -> NoResultsState(onRetry = { vm.retry() })
             loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
@@ -582,76 +564,20 @@ private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss:
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DiscoverSettingsDialog(
-    settings: DiscoverSettings,
-    saving: Boolean,
-    activeFeed: FeedConfig?,
+    nsfwMode: Boolean,
     lists: List<LocalList>,
     selectedListId: String?,
     onSelectList: (String) -> Unit,
-    availableSources: List<String>,
-    selectedSources: Set<String>,
-    onSwitchFeed: (FeedConfig) -> Unit,
-    onToggleSource: (String) -> Unit,
-    onSave: (DiscoverSettings) -> Unit,
+    onSetNsfwMode: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    var sorting by remember(settings) { mutableStateOf(settings.sorting) }
-    var minResolution by remember(settings) { mutableStateOf(settings.minResolution) }
-    var aspectRatio by remember(settings) { mutableStateOf(settings.aspectRatio) }
-    var nsfwMode by remember(settings) { mutableStateOf(settings.nsfwMode) }
-
-    val sortOptions = listOf(
-        "relevance" to "Relevance",
-        "date_added" to "Date Added",
-        "views" to "Most Viewed",
-        "favorites" to "Most Favorited",
-        "random" to "Random"
-    )
-    val resolutionOptions = listOf("1920x1080", "2560x1440", "3840x2160", "1280x720")
-    val aspectOptions = listOf("" to "Any", "16x9" to "16:9", "9x16" to "9:16 (Mobile)", "4x3" to "4:3", "1x1" to "1:1")
-
-    var sortExpanded by remember { mutableStateOf(false) }
-    var resExpanded by remember { mutableStateOf(false) }
-    var arExpanded by remember { mutableStateOf(false) }
-    var feedExpanded by remember { mutableStateOf(false) }
     var listExpanded by remember { mutableStateOf(false) }
-
-    val feeds = remember { mutableStateOf<List<FeedConfig>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        val prefs = FeedPreferences(context.applicationContext)
-        feeds.value = prefs.feeds.first()
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Discover Settings") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (feeds.value.size > 1) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Feed", style = MaterialTheme.typography.labelMedium)
-                        ExposedDropdownMenuBox(expanded = feedExpanded, onExpandedChange = { feedExpanded = it }) {
-                            OutlinedTextField(
-                                value = activeFeed?.name ?: "None",
-                                onValueChange = {},
-                                readOnly = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(feedExpanded) },
-                                modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                                singleLine = true
-                            )
-                            ExposedDropdownMenu(expanded = feedExpanded, onDismissRequest = { feedExpanded = false }) {
-                                feeds.value.forEach { f ->
-                                    DropdownMenuItem(
-                                        text = { Text(f.name) },
-                                        onClick = { onSwitchFeed(f); feedExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
                 if (lists.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Save to list", style = MaterialTheme.typography.labelMedium)
@@ -676,83 +602,6 @@ private fun DiscoverSettingsDialog(
                     }
                 }
 
-                if (availableSources.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Sources (session)", style = MaterialTheme.typography.labelMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            availableSources.forEach { src ->
-                                FilterChip(
-                                    selected = selectedSources.contains(src),
-                                    onClick = { onToggleSource(src) },
-                                    label = { Text(src.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
-                                )
-                            }
-                        }
-                        Text(
-                            if (selectedSources.isEmpty()) "All sources active"
-                            else "Only: ${selectedSources.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } }}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (selectedSources.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Sort by", style = MaterialTheme.typography.labelMedium)
-                    ExposedDropdownMenuBox(expanded = sortExpanded, onExpandedChange = { sortExpanded = it }) {
-                        OutlinedTextField(
-                            value = sortOptions.firstOrNull { it.first == sorting }?.second ?: sorting,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sortExpanded) },
-                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                            singleLine = true
-                        )
-                        ExposedDropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
-                            sortOptions.forEach { (value, label) ->
-                                DropdownMenuItem(text = { Text(label) }, onClick = { sorting = value; sortExpanded = false })
-                            }
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Min resolution", style = MaterialTheme.typography.labelMedium)
-                    ExposedDropdownMenuBox(expanded = resExpanded, onExpandedChange = { resExpanded = it }) {
-                        OutlinedTextField(
-                            value = minResolution,
-                            onValueChange = { minResolution = it },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(resExpanded) },
-                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryEditable).fillMaxWidth(),
-                            singleLine = true
-                        )
-                        ExposedDropdownMenu(expanded = resExpanded, onDismissRequest = { resExpanded = false }) {
-                            resolutionOptions.forEach { opt ->
-                                DropdownMenuItem(text = { Text(opt) }, onClick = { minResolution = opt; resExpanded = false })
-                            }
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
-                    ExposedDropdownMenuBox(expanded = arExpanded, onExpandedChange = { arExpanded = it }) {
-                        OutlinedTextField(
-                            value = aspectOptions.find { it.first == aspectRatio }?.second ?: aspectRatio.ifBlank { "Any" },
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(arExpanded) },
-                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                            singleLine = true
-                        )
-                        ExposedDropdownMenu(expanded = arExpanded, onDismissRequest = { arExpanded = false }) {
-                            aspectOptions.forEach { (value, label) ->
-                                DropdownMenuItem(text = { Text(label) }, onClick = { aspectRatio = value; arExpanded = false })
-                            }
-                        }
-                    }
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -762,25 +611,16 @@ private fun DiscoverSettingsDialog(
                         Text("NSFW", style = MaterialTheme.typography.bodyMedium)
                         Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
-                    Switch(checked = nsfwMode, onCheckedChange = { nsfwMode = it })
+                    Switch(checked = nsfwMode, onCheckedChange = onSetNsfwMode)
                 }
             }
         },
-        confirmButton = {
-            Button(
-                onClick = { onSave(DiscoverSettings(sorting = sorting, minResolution = minResolution, aspectRatio = aspectRatio, nsfwMode = nsfwMode)) },
-                enabled = !saving
-            ) {
-                if (saving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                else Text("Save")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
 }
 
 @Composable
-private fun NoFeedState(onNavigateToSettings: () -> Unit) {
+private fun NoSourcesState(onNavigateToSettings: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -788,9 +628,9 @@ private fun NoFeedState(onNavigateToSettings: () -> Unit) {
             modifier = Modifier.padding(32.dp)
         ) {
             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
-            Text("No feed configured", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text("No sources enabled", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                "Enable image sources in Settings → Manage Sources, or add a server feed in Library → Feeds",
+                "Enable image sources in Settings → Manage Sources to start discovering wallpapers",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center
@@ -801,11 +641,7 @@ private fun NoFeedState(onNavigateToSettings: () -> Unit) {
 }
 
 @Composable
-private fun NoResultsState(
-    onRetry: () -> Unit,
-    selectedSources: Set<String> = emptySet(),
-    onClearFilter: () -> Unit = {}
-) {
+private fun NoResultsState(onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -814,23 +650,13 @@ private fun NoResultsState(
         ) {
             Icon(Icons.Default.ImageNotSupported, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
             Text("No wallpapers found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (selectedSources.isNotEmpty()) {
-                Text(
-                    "No results from ${selectedSources.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    textAlign = TextAlign.Center
-                )
-                Button(onClick = onClearFilter) { Text("Clear source filter") }
-            } else {
-                Text(
-                    "Try enabling more sources in Settings → Manage Sources, or adjust your search query",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    textAlign = TextAlign.Center
-                )
-                Button(onClick = onRetry) { Text("Retry") }
-            }
+            Text(
+                "Try enabling more sources in Settings → Manage Sources, or adjust your search query",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center
+            )
+            Button(onClick = onRetry) { Text("Retry") }
         }
     }
 }

@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
@@ -49,7 +48,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,7 +76,6 @@ import java.io.File
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    feedViewModel: FeedViewModel,
     onBrowseFeed: () -> Unit = {}
 ) {
     val images by viewModel.images.collectAsStateWithLifecycle()
@@ -86,9 +83,6 @@ fun HomeScreen(
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val setNowState by viewModel.setNowState.collectAsStateWithLifecycle()
     val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
-
-    val imagesRefreshTick by feedViewModel.imagesRefreshTick.collectAsStateWithLifecycle()
-    LaunchedEffect(imagesRefreshTick) { if (imagesRefreshTick > 0) viewModel.refreshFromFeeds() }
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
@@ -142,12 +136,6 @@ fun HomeScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.RssFeed, contentDescription = null) },
-                    text = { Text("Feeds") }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Default.History, contentDescription = null) },
                     text = { Text("History") }
                 )
@@ -169,11 +157,7 @@ fun HomeScreen(
                         )
                     }
                 )
-                1 -> FeedBody(
-                    viewModel = feedViewModel,
-                    onBrowseFeed = onBrowseFeed
-                )
-                2 -> HistoryScreen(modifier = Modifier.fillMaxSize())
+                1 -> HistoryScreen(modifier = Modifier.fillMaxSize())
             }
         }
     }

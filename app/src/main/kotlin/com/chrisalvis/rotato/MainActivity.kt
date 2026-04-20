@@ -16,8 +16,6 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -28,13 +26,10 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.BrowseScreen
-import com.chrisalvis.rotato.ui.FeedViewModel
 import com.chrisalvis.rotato.ui.LocalSourcesScreen
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
-import com.chrisalvis.rotato.ui.ServerSettingsScreen
-import com.chrisalvis.rotato.ui.ServerSettingsViewModel
 import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 
@@ -57,9 +52,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val homeViewModel: HomeViewModel = viewModel()
-                val feedViewModel: FeedViewModel = viewModel()
                 val brainrotViewModel: BrainrotViewModel = viewModel()
-                val serverSettingsViewModel: ServerSettingsViewModel = viewModel()
                 val navController = rememberNavController()
 
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -73,7 +66,7 @@ class MainActivity : ComponentActivity() {
                     else -> 0
                 }
 
-                val showBottomBar = currentRoute !in setOf("browse", "server-settings", "sources", "setup")
+                val showBottomBar = currentRoute !in setOf("browse", "sources", "setup")
 
                 Scaffold(
                     contentWindowInsets = WindowInsets(0),
@@ -136,16 +129,6 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("discover") {
-                            val discoverBackStackEntry = it
-                            DisposableEffect(discoverBackStackEntry) {
-                                val observer = LifecycleEventObserver { _, event ->
-                                    if (event == Lifecycle.Event.ON_RESUME) {
-                                        brainrotViewModel.reloadSettings()
-                                    }
-                                }
-                                discoverBackStackEntry.lifecycle.addObserver(observer)
-                                onDispose { discoverBackStackEntry.lifecycle.removeObserver(observer) }
-                            }
                             BrainrotScreen(
                                 externalViewModel = brainrotViewModel,
                                 onNavigateToSettings = {
@@ -158,19 +141,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("home") {
-                            val homeBackStackEntry = it
-                            DisposableEffect(homeBackStackEntry) {
-                                val observer = LifecycleEventObserver { _, event ->
-                                    if (event == Lifecycle.Event.ON_RESUME) {
-                                        homeViewModel.refreshFromFeeds()
-                                    }
-                                }
-                                homeBackStackEntry.lifecycle.addObserver(observer)
-                                onDispose { homeBackStackEntry.lifecycle.removeObserver(observer) }
-                            }
                             HomeScreen(
                                 viewModel = homeViewModel,
-                                feedViewModel = feedViewModel,
                                 onBrowseFeed = { navController.navigate("browse") }
                             )
                         }
@@ -178,18 +150,11 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 viewModel = homeViewModel,
                                 onNavigateBack = { navController.popBackStack() },
-                                onNavigateToServerSettings = { navController.navigate("server-settings") },
                                 onNavigateToSources = { navController.navigate("sources") }
                             )
                         }
                         composable("sources") {
                             LocalSourcesScreen(onNavigateBack = { navController.popBackStack() })
-                        }
-                        composable("server-settings") {
-                            ServerSettingsScreen(
-                                onNavigateBack = { navController.popBackStack() },
-                                vm = serverSettingsViewModel
-                            )
                         }
                         composable("browse") {
                             BrowseScreen(onNavigateBack = { navController.popBackStack() })

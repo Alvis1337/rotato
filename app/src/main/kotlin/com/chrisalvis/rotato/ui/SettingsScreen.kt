@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
@@ -51,7 +50,6 @@ import com.chrisalvis.rotato.data.WallpaperTarget
 fun SettingsScreen(
     viewModel: HomeViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToServerSettings: () -> Unit = {},
     onNavigateToSources: () -> Unit = {}
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -167,19 +165,6 @@ fun SettingsScreen(
                     Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Manage Sources")
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Server") {
-                FilledTonalButton(
-                    onClick = onNavigateToServerSettings,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Manage Server Settings")
                 }
             }
 
