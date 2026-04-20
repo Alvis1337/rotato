@@ -12,6 +12,11 @@ val keystoreProps = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) load(f.inputStream())
+}
+
 android {
     namespace = "com.chrisalvis.rotato"
     compileSdk = 36
@@ -24,6 +29,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "MAL_CLIENT_ID", "\"${localProps["mal.clientId"] ?: ""}\"")
+        buildConfigField("String", "MAL_CLIENT_SECRET", "\"${localProps["mal.clientSecret"] ?: ""}\"")
     }
 
     val hasKeystore = keystoreProps.isNotEmpty() && keystoreProps["storeFile"] != null
@@ -58,6 +66,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

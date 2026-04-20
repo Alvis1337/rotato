@@ -12,6 +12,7 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
+import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.fetchFromSource
 import kotlinx.coroutines.Job
@@ -31,6 +32,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = RotatoPreferences(app)
     private val localLists = LocalListsPreferences(app)
     private val localSources = LocalSourcesPreferences(app)
+    private val malPrefs = MalPreferences(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
 
     private val _current = MutableStateFlow<BrainrotWallpaper?>(null)
@@ -123,9 +125,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val localEnabled = enabledSources()
         if (localEnabled.isEmpty()) return null
         val nsfw = prefs.nsfwMode.first()
-        val globalQuery = _searchQuery.value
+        val explicitQuery = _searchQuery.value
+        // If user typed a search, use it. Otherwise rotate through MAL anime titles (if logged in).
+        val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
         for (source in localEnabled.shuffled()) {
-            val query = source.tags.ifBlank { globalQuery }
+            val query = when {
+                source.tags.isNotBlank() -> source.tags
+                explicitQuery.isNotBlank() -> explicitQuery
+                malTitles.isNotEmpty() -> malTitles.random()
+                else -> ""
+            }
             val wp = fetchFromSource(source, query, seenIds, nsfw)
             if (wp != null) return wp
         }

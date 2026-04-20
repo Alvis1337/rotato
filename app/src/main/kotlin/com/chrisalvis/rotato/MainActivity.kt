@@ -1,5 +1,6 @@
 package com.chrisalvis.rotato
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -29,11 +30,15 @@ import com.chrisalvis.rotato.ui.BrowseScreen
 import com.chrisalvis.rotato.ui.LocalSourcesScreen
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
+import com.chrisalvis.rotato.ui.MalViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
 import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var malViewModelRef: MalViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -53,6 +58,8 @@ class MainActivity : ComponentActivity() {
 
                 val homeViewModel: HomeViewModel = viewModel()
                 val brainrotViewModel: BrainrotViewModel = viewModel()
+                val malViewModel: MalViewModel = viewModel()
+                malViewModelRef = malViewModel
                 val navController = rememberNavController()
 
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -150,6 +157,7 @@ class MainActivity : ComponentActivity() {
                         composable("settings") {
                             SettingsScreen(
                                 viewModel = homeViewModel,
+                                malViewModel = malViewModel,
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToSources = { navController.navigate("sources") }
                             )
@@ -162,6 +170,17 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val uri = intent.data ?: return
+        if (uri.scheme == "rotato" && uri.host == "callback") {
+            val code = uri.getQueryParameter("code") ?: return
+            if (::malViewModelRef.isInitialized) {
+                malViewModelRef.handleCallback(code)
             }
         }
     }

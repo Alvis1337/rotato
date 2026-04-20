@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,10 +50,16 @@ import com.chrisalvis.rotato.data.WallpaperTarget
 @Composable
 fun SettingsScreen(
     viewModel: HomeViewModel,
+    malViewModel: MalViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToSources: () -> Unit = {}
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val malLoggedIn by malViewModel.isLoggedIn.collectAsStateWithLifecycle()
+    val malUsername by malViewModel.username.collectAsStateWithLifecycle()
+    val malAnimeCount by malViewModel.animeCount.collectAsStateWithLifecycle()
+    val malLoading by malViewModel.loading.collectAsStateWithLifecycle()
+    val malError by malViewModel.error.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -165,6 +172,67 @@ fun SettingsScreen(
                     Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Manage Sources")
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "MyAnimeList") {
+                if (malLoading) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else if (malLoggedIn) {
+                    Text(
+                        "Connected as $malUsername",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (malAnimeCount > 0) {
+                        Text(
+                            "$malAnimeCount anime in list",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (malError != null) {
+                        Text(
+                            malError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = { malViewModel.refresh() },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Refresh List") }
+                        OutlinedButton(
+                            onClick = { malViewModel.logout() },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) { Text("Disconnect") }
+                    }
+                } else {
+                    if (malError != null) {
+                        Text(
+                            malError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Text(
+                        "Connect your MAL account to use your anime watch list as discover queries.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FilledTonalButton(
+                        onClick = { malViewModel.login(context) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Connect MyAnimeList") }
                 }
             }
 
