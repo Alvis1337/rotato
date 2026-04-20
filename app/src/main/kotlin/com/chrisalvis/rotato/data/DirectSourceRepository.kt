@@ -125,7 +125,7 @@ private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<Stri
 
 // --- Safebooru ---
 private fun fetchSafebooru(query: String, exclude: List<String>): BrainrotWallpaper? {
-    val tagQuery = query.trim().replace(' ', '_').ifBlank { "anime" }
+    val tagQuery = query.trim().replace(' ', '_')
     val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.encode()}"
     val arr = getJsonArray(url) ?: return null
     val post = pickRandom(arr) ?: return null
@@ -161,8 +161,8 @@ private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<Str
     val fullUrl = post.optString("path").ifBlank { return null }
     val thumbs = post.optJSONObject("thumbs")
     val thumbUrl = thumbs?.optString("small") ?: thumbs?.optString("original") ?: fullUrl
-    val res = post.optJSONObject("resolution")
-    val resolution = if (res != null) "${res.optInt("width")}x${res.optInt("height")}" else ""
+    val res = post.optString("resolution") // API returns "WIDTHxHEIGHT" string
+    val resolution = res.ifBlank { "" }
     val tags = post.optJSONArray("tags")?.let { arr ->
         (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
     } ?: emptyList()
@@ -180,10 +180,12 @@ private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<Str
 // --- Konachan / Yande.re (same Moebooru API) ---
 private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, host: String): BrainrotWallpaper? {
     val tagQuery = buildString {
-        append(query.trim().replace(' ', '_').ifBlank { "anime" })
-        if (!nsfw) append(" rating:safe")
+        val q = query.trim().replace(' ', '_')
+        if (q.isNotBlank()) append("$q ")
+        if (!nsfw) append("rating:safe ")
+        append("order:random") // Moebooru: randomisation is a tag, not a query param
     }.trim()
-    val url = "https://$host/post.json?tags=${tagQuery.encode()}&limit=20&order=random"
+    val url = "https://$host/post.json?tags=${tagQuery.encode()}&limit=20"
     val arr = getJsonArray(url) ?: return null
     val post = pickRandom(arr) ?: return null
     val id = post.optInt("id", 0).toString()
