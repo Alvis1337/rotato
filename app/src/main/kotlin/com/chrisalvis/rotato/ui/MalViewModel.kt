@@ -50,8 +50,8 @@ class MalViewModel(app: Application) : AndroidViewModel(app) {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                 )
-            }.onFailure {
-                _error.update { it.message }
+            }.onFailure { err ->
+                _error.update { err.message }
             }
             _loading.update { false }
         }
@@ -63,7 +63,7 @@ class MalViewModel(app: Application) : AndroidViewModel(app) {
             _error.update { null }
             repo.exchangeCode(code)
                 .onSuccess { fetchAnimeList() }
-                .onFailure { _error.update { "Login failed: ${it.message}" } }
+                .onFailure { err -> _error.update { "Login failed: ${err.message}" } }
             _loading.update { false }
         }
     }
@@ -86,7 +86,7 @@ class MalViewModel(app: Application) : AndroidViewModel(app) {
                     val ctx = getApplication<Application>().applicationContext
                     Toast.makeText(ctx, "MAL list updated: ${titles.size} anime", Toast.LENGTH_SHORT).show()
                 }
-                .onFailure { _error.update { "Failed to fetch anime list: ${it.message}" } }
+                .onFailure { err -> _error.update { "Failed to fetch anime list: ${err.message}" } }
             _loading.update { false }
         }
     }
