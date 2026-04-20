@@ -27,6 +27,7 @@ class RotatoPreferences(private val context: Context) {
         val WALLPAPER_TARGET = stringPreferencesKey("wallpaper_target")
         val HISTORY_JSON = stringPreferencesKey("wallpaper_history_json")
         val SETUP_DONE = booleanPreferencesKey("setup_done")
+        val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -77,6 +78,14 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setHistoryJson(json: String) {
         context.dataStore.edit { it[HISTORY_JSON] = json }
+    }
+
+    val nsfwMode: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[NSFW_MODE] ?: false }
+
+    suspend fun setNsfwMode(enabled: Boolean) {
+        context.dataStore.edit { it[NSFW_MODE] = enabled }
     }
 
     // null = DataStore hasn't emitted yet (initialValue in collectAsStateWithLifecycle)
