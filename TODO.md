@@ -2,6 +2,18 @@
 
 ## 🔴 Critical / UX-Breaking
 
+### Collections wallpapers not showing up in Library
+- Tapping "Add all to rotation" in a Collection downloads files to `rotato_images/` but
+  `HomeViewModel._images` is populated once at startup and doesn't observe the filesystem.
+- `LaunchedEffect(Unit) { viewModel.refreshFromFeeds() }` was added to `HomeScreen` and
+  `homeViewModel.refreshFromFeeds()` is called on Library nav-tab click — but if Compose
+  reuses the composable instance (back-stack restore), `LaunchedEffect(Unit)` may not
+  re-fire.
+- **Proper fix**: make `ImageRepository.getImages()` return a `Flow<List<File>>` backed by
+  a `FileObserver` (API 29+) or a polling coroutine so `HomeViewModel._images` updates
+  reactively whenever any file is added/removed from `rotato_images/`.
+
+
 ### Source failure handling on swipe screen
 When a source is down (network error, rate limit, 0 results, API auth failure), the app
 falls through to "no wallpapers found" even if other enabled sources still work.
