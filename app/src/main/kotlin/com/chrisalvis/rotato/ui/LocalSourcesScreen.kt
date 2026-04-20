@@ -104,6 +104,8 @@ private fun SourceCard(
                     Text(source.type.displayName, fontWeight = FontWeight.Medium)
                     if (!source.type.safeContent) {
                         Text("May include adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    } else if (!source.type.needsApiKey && !source.type.needsApiUser) {
+                        Text("Works without credentials", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
