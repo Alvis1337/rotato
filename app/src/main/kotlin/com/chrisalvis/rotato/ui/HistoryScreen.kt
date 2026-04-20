@@ -12,7 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,10 +30,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -53,6 +56,15 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _downloading = mutableStateOf<Set<String>>(emptySet())
     val downloading: State<Set<String>> = _downloading
+
+    fun removeItem(item: WallpaperHistoryItem) {
+        viewModelScope.launch {
+            val updated = history.value.filter {
+                it.timestamp != item.timestamp || it.fullUrl != item.fullUrl
+            }
+            prefs.setHistoryJson(updated.reversed().toJson())
+        }
+    }
 
     fun downloadToRotation(item: WallpaperHistoryItem) {
         if (item.fullUrl.startsWith("/")) return  // local file — already in rotation pool
@@ -142,6 +154,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 item = item,
                 isDownloading = downloading.contains(item.fullUrl),
                 onDownload = { vm.saveToGallery(item) },
+                onRemove = { vm.removeItem(item) },
                 onOpenPage = if (!isLocal) ({
                     context.startActivity(Intent(Intent.ACTION_VIEW, item.fullUrl.toUri()))
                 }) else null
@@ -155,39 +168,65 @@ private fun HistoryCard(
     item: WallpaperHistoryItem,
     isDownloading: Boolean,
     onDownload: () -> Unit,
+    onRemove: () -> Unit,
     onOpenPage: (() -> Unit)?
 ) {
     val dateStr = remember(item.timestamp) {
         SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(item.timestamp))
     }
+    var imageError by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = item.thumbUrl.ifBlank { item.fullUrl },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(width = 100.dp, height = 72.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .then(if (onOpenPage != null) Modifier.clickable(onClick = onOpenPage) else Modifier)
-            )
+            if (imageError) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 100.dp, height = 72.dp)
+                        .clip(MaterialTheme.shapes.medium),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.BrokenImage,
+                        contentDescription = "Image unavailable",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            } else {
+                AsyncImage(
+                    model = item.thumbUrl.ifBlank { item.fullUrl },
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    onState = { if (it is AsyncImagePainter.State.Error) imageError = true },
+                    modifier = Modifier
+                        .size(width = 100.dp, height = 72.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .then(if (onOpenPage != null) Modifier.clickable(onClick = onOpenPage) else Modifier)
+                )
+            }
             Column(
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(item.source.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
                 Text(dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (imageError) {
+                    Text("Image unavailable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
             }
             Row {
-                if (isDownloading) {
+                if (imageError) {
+                    IconButton(onClick = onRemove) {
+                        Icon(Icons.Default.Delete, contentDescription = "Remove", modifier = Modifier.size(20.dp))
+                    }
+                } else if (isDownloading) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp).padding(4.dp), strokeWidth = 2.dp)
                 } else {
                     IconButton(onClick = onDownload) {
                         Icon(Icons.Default.Download, contentDescription = "Save to gallery", modifier = Modifier.size(20.dp))
                     }
                 }
-                if (onOpenPage != null) {
+                if (onOpenPage != null && !imageError) {
                     IconButton(onClick = onOpenPage) {
                         Icon(Icons.Default.OpenInBrowser, contentDescription = "Open", modifier = Modifier.size(20.dp))
                     }

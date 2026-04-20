@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
-import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -277,8 +277,9 @@ fun SettingsScreen(
             SettingsSection(title = "About") {
                 OutlinedButton(
                     onClick = {
-                        OssLicensesMenuActivity.setActivityTitle("Open Source Licenses")
-                        context.startActivity(Intent(context, OssLicensesMenuActivity::class.java))
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/"))
+                        )
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {

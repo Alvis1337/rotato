@@ -81,8 +81,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val seenIds = mutableListOf<String>()
 
     private val cardQueue = ArrayDeque<BrainrotWallpaper>()
-    private val queueTargetSize = 8
-    private val queueRefillThreshold = 3
+    private val queueTargetSize = 10
+    private val queueRefillThreshold = 9 // refill after every swipe (rolling window)
     private var fillJob: Job? = null
 
     private val _nextWallpaper = MutableStateFlow<BrainrotWallpaper?>(null)
@@ -202,9 +202,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _noResults.update { false }
             _loading.update { false }
         } else {
+            // Queue was empty — fetch inline but keep current card visible to avoid flicker
             viewModelScope.launch {
                 _loading.update { true }
-                _current.update { null }
                 val wp = fetchNext()
                 if (wp != null) seenIds.add(wp.id)
                 _current.update { wp }
