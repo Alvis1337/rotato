@@ -122,12 +122,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun fetchNext(): BrainrotWallpaper? {
         val localEnabled = enabledSources()
         if (localEnabled.isEmpty()) return null
+        val nsfw = prefs.nsfwMode.first()
         for (source in localEnabled.shuffled()) {
             val wp = fetchFromSource(
                 source,
                 _searchQuery.value.ifBlank { "anime" },
                 seenIds,
-                nsfwMode.value
+                nsfw
             )
             if (wp != null) return wp
         }
