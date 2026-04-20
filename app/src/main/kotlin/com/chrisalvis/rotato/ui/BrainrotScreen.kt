@@ -45,7 +45,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun BrainrotScreen(
     externalViewModel: BrainrotViewModel? = null,
-    onNavigateToSettings: () -> Unit = {}
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToSources: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val vm: BrainrotViewModel = externalViewModel ?: viewModel()
@@ -112,7 +113,7 @@ fun BrainrotScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         when {
-            noSources -> NoSourcesState(onNavigateToSettings = onNavigateToSettings)
+            noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
             noResults -> NoResultsState(onRetry = { vm.retry() })
             loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
@@ -620,7 +621,7 @@ private fun DiscoverSettingsDialog(
 }
 
 @Composable
-private fun NoSourcesState(onNavigateToSettings: () -> Unit) {
+private fun NoSourcesState(onNavigateToSources: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -635,7 +636,7 @@ private fun NoSourcesState(onNavigateToSettings: () -> Unit) {
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center
             )
-            Button(onClick = onNavigateToSettings) { Text("Go to Settings") }
+            Button(onClick = onNavigateToSources) { Text("Manage Sources") }
         }
     }
 }

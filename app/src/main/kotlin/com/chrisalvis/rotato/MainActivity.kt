@@ -137,7 +137,8 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                         restoreState = true
                                     }
-                                }
+                                },
+                                onNavigateToSources = { navController.navigate("sources") }
                             )
                         }
                         composable("home") {

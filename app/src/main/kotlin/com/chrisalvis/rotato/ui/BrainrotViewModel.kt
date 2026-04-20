@@ -116,8 +116,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _nextWallpaper.update { null }
     }
 
+    private suspend fun enabledSources() =
+        localSources.sources.first().filter { it.enabled }
+
     private suspend fun fetchNext(): BrainrotWallpaper? {
-        val localEnabled = enabledLocalSources.value
+        val localEnabled = enabledSources()
         if (localEnabled.isEmpty()) return null
         for (source in localEnabled.shuffled()) {
             val wp = fetchFromSource(
@@ -133,7 +136,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun loadFirst() {
         viewModelScope.launch {
-            if (enabledLocalSources.value.isEmpty()) {
+            if (enabledSources().isEmpty()) {
                 _noSources.update { true }
                 _loading.update { false }
                 return@launch
