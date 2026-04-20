@@ -135,6 +135,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val explicitQuery = _searchQuery.value
         // If user typed a search, use it. Otherwise rotate through MAL anime titles (if logged in).
         val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
+        val excludeSnapshot = seenIds.toList() // snapshot so IO thread reads don't race with addSeen()
         for (source in localEnabled.shuffled()) {
             val query = when {
                 source.tags.isNotBlank() -> source.tags
@@ -142,7 +143,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 malTitles.isNotEmpty() -> malTitles.random()
                 else -> ""
             }
-            val wp = fetchFromSource(source, query, seenIds, nsfw, filters)
+            val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
             if (wp != null) return wp
         }
         return null
@@ -180,8 +181,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 addSeen(wp.id)
                 val url = wp.fullUrl.ifBlank { wp.thumbUrl }
                 if (url.isNotBlank()) {
-                    // Suspend until image is in memory cache so the card renders instantly
-                    ctx.imageLoader.execute(
+                    ctx.imageLoader.enqueue(
                         ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
                     )
                 }

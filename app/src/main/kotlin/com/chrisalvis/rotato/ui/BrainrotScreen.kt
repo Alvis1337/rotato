@@ -247,11 +247,13 @@ private fun FullScreenSwipeCard(
                                     xOffset.value > threshold -> {
                                         isAnimating = true
                                         xOffset.animateTo(screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
+                                        isAnimating = false
                                         onAddToList()
                                     }
                                     xOffset.value < -threshold -> {
                                         isAnimating = true
                                         xOffset.animateTo(-screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
+                                        isAnimating = false
                                         onSkip()
                                     }
                                     else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))

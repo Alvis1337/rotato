@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -96,6 +97,11 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
                             Icon(Icons.Default.Download, contentDescription = "Download selected")
                         }
                     }
+                    if (!selectionMode && selectedList != null && wallpapers.isNotEmpty()) {
+                        IconButton(onClick = { vm.addAllToRotation() }) {
+                            Icon(Icons.Default.Wallpaper, contentDescription = "Add all to Library rotation")
+                        }
+                    }
                     if (!selectionMode && selectedList == null) {
                         IconButton(onClick = { vm.showCreateDialog() }) {
                             Icon(Icons.Default.Add, contentDescription = "New collection")
@@ -123,7 +129,7 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
                 selected = selected,
                 onTap = { wp ->
                     if (selectionMode) vm.toggleSelection(wp)
-                    else if (!vm.isInRotation(wp) && !downloading.contains(wp.sourceId))
+                    else if (!downloading.contains(wp.sourceId))
                         vm.toggleRotation(wp)
                 },
                 onLongPress = { wp -> vm.enterSelectionMode(wp) },
@@ -244,6 +250,14 @@ private fun WallpaperGridContent(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item(span = { GridItemSpan(2) }) {
+            Text(
+                "Tap a wallpaper to add/remove it from the Library rotation. Use ⊞ to add all.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        }
         items(wallpapers, key = { it.entryId.ifBlank { it.sourceId } }) { wp ->
             WallpaperThumbnail(
                 wallpaper = wp,

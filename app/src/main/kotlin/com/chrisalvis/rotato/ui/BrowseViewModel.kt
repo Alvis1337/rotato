@@ -144,12 +144,35 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleRotation(wallpaper: BrowseWallpaper) {
         val key = sanitize(wallpaper.sourceId)
-        if (_inRotation.value.contains(key) || _downloading.value.contains(wallpaper.sourceId)) return
+        if (_downloading.value.contains(wallpaper.sourceId)) return
+        if (_inRotation.value.contains(key)) {
+            // Remove from rotation pool
+            imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
+            _inRotation.update { it - key }
+            return
+        }
         viewModelScope.launch {
             _downloading.update { it + wallpaper.sourceId }
             val ok = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
             if (ok) _inRotation.update { it + key }
             _downloading.update { it - wallpaper.sourceId }
+        }
+    }
+
+    fun addAllToRotation() {
+        val toAdd = wallpapers.value.filter { !isInRotation(it) }
+        val ctx = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            var added = 0
+            toAdd.forEach { wp ->
+                if (_downloading.value.contains(wp.sourceId)) return@forEach
+                val key = sanitize(wp.sourceId)
+                _downloading.update { it + wp.sourceId }
+                val ok = feedRepo.downloadWallpaper(wp.sourceId, wp.fullUrl)
+                if (ok) { _inRotation.update { it + key }; added++ }
+                _downloading.update { it - wp.sourceId }
+            }
+            Toast.makeText(ctx, "Added $added wallpaper${if (added != 1) "s" else ""} to Library", Toast.LENGTH_SHORT).show()
         }
     }
 
