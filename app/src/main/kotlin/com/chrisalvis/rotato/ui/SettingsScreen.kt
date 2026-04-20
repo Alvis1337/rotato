@@ -4,6 +4,8 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +20,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -60,6 +65,8 @@ fun SettingsScreen(
     val malAnimeCount by malViewModel.animeCount.collectAsStateWithLifecycle()
     val malLoading by malViewModel.loading.collectAsStateWithLifecycle()
     val malError by malViewModel.error.collectAsStateWithLifecycle()
+    val malFilterStatuses by malViewModel.filterStatuses.collectAsStateWithLifecycle()
+    val malFilterMinScore by malViewModel.filterMinScore.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -191,7 +198,7 @@ fun SettingsScreen(
                     )
                     if (malAnimeCount > 0) {
                         Text(
-                            "$malAnimeCount anime in list",
+                            "$malAnimeCount anime in filtered list",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -203,6 +210,21 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+
+                    MalStatusFilter(
+                        selected = malFilterStatuses,
+                        onToggle = { status ->
+                            val updated = if (status in malFilterStatuses)
+                                malFilterStatuses - status else malFilterStatuses + status
+                            if (updated.isNotEmpty()) malViewModel.setFilterStatuses(updated)
+                        }
+                    )
+
+                    MalMinScoreFilter(
+                        minScore = malFilterMinScore,
+                        onSelect = { malViewModel.setFilterMinScore(it) }
+                    )
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(
                             onClick = { malViewModel.refresh() },
@@ -279,5 +301,66 @@ private fun SettingsSection(
             color = MaterialTheme.colorScheme.primary
         )
         content()
+    }
+}
+
+private val MAL_STATUS_OPTIONS = listOf(
+    "watching"      to "Watching",
+    "completed"     to "Completed",
+    "on_hold"       to "On Hold",
+    "dropped"       to "Dropped",
+    "plan_to_watch" to "Plan to Watch"
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MalStatusFilter(
+    selected: Set<String>,
+    onToggle: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Watch statuses",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MAL_STATUS_OPTIONS.forEach { (key, label) ->
+                FilterChip(
+                    selected = key in selected,
+                    onClick = { onToggle(key) },
+                    label = { Text(label) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MalMinScoreFilter(
+    minScore: Int,
+    onSelect: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = if (minScore == 0) "Any rating" else "Rated $minScore+"
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Minimum score",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(onClick = { expanded = true }) {
+            Text(label)
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(text = { Text("Any rating") }, onClick = { onSelect(0); expanded = false })
+                (1..10).forEach { score ->
+                    DropdownMenuItem(
+                        text = { Text("Rated $score+") },
+                        onClick = { onSelect(score); expanded = false }
+                    )
+                }
+            }
+        }
     }
 }

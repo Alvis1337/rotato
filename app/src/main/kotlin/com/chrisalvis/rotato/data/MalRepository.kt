@@ -119,24 +119,26 @@ class MalRepository(private val context: Context) {
         }
     }
 
-    suspend fun fetchAnimeList(): Result<List<String>> = withContext(Dispatchers.IO) {
+    suspend fun fetchAnimeList(): Result<List<MalAnimeEntry>> = withContext(Dispatchers.IO) {
         runCatching {
             var token = prefs.accessToken.first()
             check(token.isNotBlank()) { "Not authenticated" }
+            val statuses = prefs.filterStatuses.first()
+            check(statuses.isNotEmpty()) { "No statuses selected" }
 
-            val result = fetchAnimeListWithToken(token)
+            val result = fetchAnimeListWithToken(token, statuses)
             if (result.isFailure && result.exceptionOrNull()?.message == "TOKEN_EXPIRED") {
                 token = refreshAccessToken().getOrThrow()
-                fetchAnimeListWithToken(token).getOrThrow()
+                fetchAnimeListWithToken(token, statuses).getOrThrow()
             } else {
                 result.getOrThrow()
             }
         }
     }
 
-    private fun fetchAnimeListWithToken(token: String): Result<List<String>> = runCatching {
-        val titles = mutableListOf<String>()
-        for (status in listOf("completed", "watching")) {
+    private fun fetchAnimeListWithToken(token: String, statuses: Set<String>): Result<List<MalAnimeEntry>> = runCatching {
+        val entries = mutableListOf<MalAnimeEntry>()
+        for (status in statuses) {
             var url: String? = "https://api.myanimelist.net/v2/users/@me/animelist" +
                 "?status=$status&fields=list_status&limit=1000"
             while (url != null) {
@@ -150,13 +152,15 @@ class MalRepository(private val context: Context) {
                     val json = JSONObject(resp.body!!.string())
                     val data = json.getJSONArray("data")
                     for (i in 0 until data.length()) {
-                        val node = data.getJSONObject(i).getJSONObject("node")
-                        titles.add(node.getString("title"))
+                        val item = data.getJSONObject(i)
+                        val title = item.getJSONObject("node").getString("title")
+                        val score = item.optJSONObject("list_status")?.optInt("score", 0) ?: 0
+                        entries.add(MalAnimeEntry(title, score))
                     }
                     url = json.optJSONObject("paging")?.optString("next")?.takeIf { it.isNotBlank() }
                 }
             }
         }
-        titles.distinct()
+        entries.distinctBy { it.title }
     }
 }

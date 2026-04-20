@@ -33,6 +33,12 @@ class MalViewModel(app: Application) : AndroidViewModel(app) {
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val filterStatuses: StateFlow<Set<String>> = prefs.filterStatuses
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MalPreferences.DEFAULT_STATUSES)
+
+    val filterMinScore: StateFlow<Int> = prefs.filterMinScore
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -76,15 +82,28 @@ class MalViewModel(app: Application) : AndroidViewModel(app) {
         fetchAnimeList()
     }
 
+    /** Save selected statuses and re-fetch the list from MAL (statuses affect the API call). */
+    fun setFilterStatuses(statuses: Set<String>) {
+        viewModelScope.launch {
+            prefs.setFilterStatuses(statuses)
+            if (isLoggedIn.value) fetchAnimeList()
+        }
+    }
+
+    /** Save min score — no re-fetch needed, filtering is applied client-side to stored entries. */
+    fun setFilterMinScore(score: Int) {
+        viewModelScope.launch { prefs.setFilterMinScore(score) }
+    }
+
     private fun fetchAnimeList() {
         viewModelScope.launch {
             _loading.update { true }
             _error.update { null }
             repo.fetchAnimeList()
-                .onSuccess { titles ->
-                    prefs.setAnimeList(titles)
+                .onSuccess { entries ->
+                    prefs.setAnimeEntries(entries)
                     val ctx = getApplication<Application>().applicationContext
-                    Toast.makeText(ctx, "MAL list updated: ${titles.size} anime", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "MAL list updated: ${entries.size} anime", Toast.LENGTH_SHORT).show()
                 }
                 .onFailure { err -> _error.update { "Failed to fetch anime list: ${err.message}" } }
             _loading.update { false }
