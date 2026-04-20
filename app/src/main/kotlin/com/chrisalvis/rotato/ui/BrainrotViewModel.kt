@@ -11,11 +11,13 @@ import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.DiscoverSettings
 import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.FeedPreferences
+import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.fetchFromSource
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +35,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val feedPrefs = FeedPreferences(app)
     private val localLists = LocalListsPreferences(app)
     private val localSources = LocalSourcesPreferences(app)
+    private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
 
     private val _activeFeed = MutableStateFlow<FeedConfig?>(null)
     val activeFeed: StateFlow<FeedConfig?> = _activeFeed.asStateFlow()
@@ -307,6 +310,23 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 Toast.makeText(ctx, "Failed to save settings", Toast.LENGTH_SHORT).show()
             }
             _settingsSaving.update { false }
+        }
+    }
+
+    private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
+
+    fun downloadToRotation(wp: BrainrotWallpaper) {
+        val key = wp.id
+        if (_downloadingIds.value.contains(key)) return
+        viewModelScope.launch {
+            _downloadingIds.update { it + key }
+            val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+            val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl)
+            val ctx = getApplication<Application>().applicationContext
+            if (ok) Toast.makeText(ctx, "Added to rotation", Toast.LENGTH_SHORT).show()
+            else Toast.makeText(ctx, "Download failed", Toast.LENGTH_SHORT).show()
+            _downloadingIds.update { it - key }
         }
     }
 

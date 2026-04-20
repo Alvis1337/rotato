@@ -70,6 +70,7 @@ fun BrainrotScreen(
     val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
     val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
 
     var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -160,9 +161,11 @@ fun BrainrotScreen(
                         sessionSkipped = sessionSkipped,
                         selectedListName = lists.find { it.id == selectedListId }?.name,
                         searchQuery = searchQuery,
+                        isDownloading = downloadingIds.contains(current!!.id),
                         onToggleInfo = { showInfo = !showInfo },
                         onSkip = { vm.skip() },
                         onAddToList = onAddToList,
+                        onDownloadToRotation = { vm.downloadToRotation(current!!) },
                         onImageTap = { showZoom = true },
                         onShare = {
                             val url = current!!.pageUrl.ifBlank { current!!.fullUrl }
@@ -205,9 +208,11 @@ private fun FullScreenSwipeCard(
     sessionSkipped: Int,
     selectedListName: String?,
     searchQuery: String,
+    isDownloading: Boolean,
     onToggleInfo: () -> Unit,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
+    onDownloadToRotation: () -> Unit,
     onImageTap: () -> Unit,
     onShare: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -459,6 +464,20 @@ private fun FullScreenSwipeCard(
                         tint = if (showInfo) MaterialTheme.colorScheme.primary else Color.White,
                         modifier = Modifier.size(18.dp)
                     )
+                }
+
+                // Download to rotation pool
+                OutlinedIconButton(
+                    onClick = onDownloadToRotation,
+                    enabled = !isDownloading,
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    if (isDownloading) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                    } else {
+                        Icon(Icons.Default.Download, contentDescription = "Add to rotation", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
                 }
 
                 // Save (primary action)
