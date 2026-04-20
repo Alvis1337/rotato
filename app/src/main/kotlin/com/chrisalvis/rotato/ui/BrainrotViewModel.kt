@@ -11,12 +11,15 @@ import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.DiscoverSettings
 import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.FeedPreferences
-import com.chrisalvis.rotato.data.RemoteList
+import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.LocalListsPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.URL
@@ -24,6 +27,7 @@ import java.net.URL
 class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val feedPrefs = FeedPreferences(app)
+    private val localLists = LocalListsPreferences(app)
 
     private val _activeFeed = MutableStateFlow<FeedConfig?>(null)
     val activeFeed: StateFlow<FeedConfig?> = _activeFeed.asStateFlow()
@@ -48,11 +52,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _sessionSkipped = MutableStateFlow(0)
     val sessionSkipped: StateFlow<Int> = _sessionSkipped.asStateFlow()
 
-    private val _lists = MutableStateFlow<List<RemoteList>>(emptyList())
-    val lists: StateFlow<List<RemoteList>> = _lists.asStateFlow()
+    val lists: StateFlow<List<LocalList>> = localLists.lists
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _selectedListId = MutableStateFlow<Int?>(null)
-    val selectedListId: StateFlow<Int?> = _selectedListId.asStateFlow()
+    private val _selectedListId = MutableStateFlow<String?>(null)
+    val selectedListId: StateFlow<String?> = _selectedListId.asStateFlow()
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
@@ -164,11 +168,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun loadLists() {
         viewModelScope.launch {
-            val repo = brainrotRepo ?: return@launch
-            val result = repo.fetchLists()
-            _lists.update { result }
-            if (_selectedListId.value == null && result.isNotEmpty()) {
-                _selectedListId.update { result.first().id }
+            val current = localLists.lists.first()
+            if (_selectedListId.value == null && current.isNotEmpty()) {
+                _selectedListId.update { current.first().id }
             }
         }
     }
@@ -263,29 +265,34 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         advanceCard()
     }
 
-    fun addToList(listId: Int) {
+    fun addToList(listId: String) {
         if (_busy.value) return
         val wp = _current.value ?: return
-        val repo = brainrotRepo ?: return
         _selectedListId.update { listId }
         _sessionSaved.update { it + 1 }
-        // Advance the card immediately so the user isn't locked out while the network call runs
         advanceCard()
         viewModelScope.launch {
-            val ok = repo.addToList(listId, wp)
+            val ok = localLists.addWallpaper(listId, wp)
             val ctx = getApplication<Application>().applicationContext
-            val listName = _lists.value.find { it.id == listId }?.name ?: "list"
+            val listName = lists.value.find { it.id == listId }?.name ?: "list"
             if (ok) {
                 Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
             } else {
                 _sessionSaved.update { it - 1 }
-                Toast.makeText(ctx, "Failed to save to list", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "Already in \"$listName\"", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    fun setSelectedList(listId: Int) {
+    fun setSelectedList(listId: String) {
         _selectedListId.update { listId }
+    }
+
+    fun createList(name: String) {
+        viewModelScope.launch {
+            val list = localLists.createList(name)
+            _selectedListId.update { list.id }
+        }
     }
 
     fun retry() {

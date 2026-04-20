@@ -32,7 +32,7 @@ import java.util.Locale
 fun FeedScreen(
     viewModel: FeedViewModel,
     onNavigateBack: () -> Unit,
-    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {}
+    onBrowseFeed: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -57,7 +57,7 @@ fun FeedScreen(
 @Composable
 internal fun FeedBody(
     viewModel: FeedViewModel,
-    onBrowseFeed: (com.chrisalvis.rotato.data.FeedConfig) -> Unit = {},
+    onBrowseFeed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val feeds by viewModel.feeds.collectAsStateWithLifecycle()
@@ -125,7 +125,7 @@ internal fun FeedBody(
                         syncStatus = syncStatus[feed.id],
                         onSync = { viewModel.syncFeed(feed) },
                         onDelete = { confirmDeleteId = feed.id },
-                        onBrowse = { onBrowseFeed(feed) }
+                        onBrowse = { onBrowseFeed() }
                     )
                 }
             }

@@ -170,10 +170,7 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 viewModel = homeViewModel,
                                 feedViewModel = feedViewModel,
-                                onBrowseFeed = { feed ->
-                                    feedViewModel.setBrowseFeed(feed)
-                                    navController.navigate("browse")
-                                }
+                                onBrowseFeed = { navController.navigate("browse") }
                             )
                         }
                         composable("settings") {
@@ -192,13 +189,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("browse") {
-                            val feed = feedViewModel.browseFeed.collectAsStateWithLifecycle().value
-                            feed?.let {
-                                BrowseScreen(
-                                    feed = it,
-                                    onNavigateBack = { navController.popBackStack() }
-                                )
-                            }
+                            BrowseScreen(onNavigateBack = { navController.popBackStack() })
                         }
                     }
                 }

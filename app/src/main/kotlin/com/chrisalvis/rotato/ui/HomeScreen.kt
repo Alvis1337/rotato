@@ -67,7 +67,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import coil.compose.AsyncImage
-import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.RotatoSettings
 import com.dragselectcompose.core.DragSelectState
 import com.dragselectcompose.core.gridDragSelect
@@ -79,7 +78,7 @@ import java.io.File
 fun HomeScreen(
     viewModel: HomeViewModel,
     feedViewModel: FeedViewModel,
-    onBrowseFeed: (FeedConfig) -> Unit = {}
+    onBrowseFeed: () -> Unit = {}
 ) {
     val images by viewModel.images.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()

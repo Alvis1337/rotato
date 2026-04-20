@@ -41,7 +41,7 @@ import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.DiscoverSettings
 import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.FeedPreferences
-import com.chrisalvis.rotato.data.RemoteList
+import com.chrisalvis.rotato.data.LocalList
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -74,11 +74,32 @@ fun BrainrotScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showZoom by remember { mutableStateOf(false) }
 
+    var showCreateListDialog by remember { mutableStateOf(false) }
+    if (showCreateListDialog) {
+        var newListName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateListDialog = false },
+            title = { Text("New Collection") },
+            text = {
+                OutlinedTextField(
+                    value = newListName,
+                    onValueChange = { newListName = it },
+                    label = { Text("Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { if (newListName.isNotBlank()) { vm.createList(newListName); showCreateListDialog = false } }, enabled = newListName.isNotBlank()) {
+                    Text("Create")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showCreateListDialog = false }) { Text("Cancel") } }
+        )
+    }
+
     val onAddToList: () -> Unit = {
         when {
-            lists.isEmpty() -> android.widget.Toast.makeText(
-                context, "No lists found — create one on the website first", android.widget.Toast.LENGTH_LONG
-            ).show()
+            lists.isEmpty() -> showCreateListDialog = true
             else -> vm.addToList(selectedListId ?: lists.first().id)
         }
     }
@@ -492,9 +513,9 @@ private fun DiscoverSettingsDialog(
     settings: DiscoverSettings,
     saving: Boolean,
     activeFeed: FeedConfig?,
-    lists: List<RemoteList>,
-    selectedListId: Int?,
-    onSelectList: (Int) -> Unit,
+    lists: List<LocalList>,
+    selectedListId: String?,
+    onSelectList: (String) -> Unit,
     availableSources: List<String>,
     selectedSources: Set<String>,
     onSwitchFeed: (FeedConfig) -> Unit,
@@ -574,7 +595,7 @@ private fun DiscoverSettingsDialog(
                             ExposedDropdownMenu(expanded = listExpanded, onDismissRequest = { listExpanded = false }) {
                                 lists.forEach { list ->
                                     DropdownMenuItem(
-                                        text = { Text("${list.name}  (${list.count})") },
+                                        text = { Text(list.name) },
                                         onClick = { onSelectList(list.id); listExpanded = false }
                                     )
                                 }

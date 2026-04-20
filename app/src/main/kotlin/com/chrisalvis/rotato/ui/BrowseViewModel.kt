@@ -3,136 +3,99 @@ package com.chrisalvis.rotato.ui
 import android.app.Application
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.chrisalvis.rotato.data.BrowsePage
-import com.chrisalvis.rotato.data.BrowseRepository
 import com.chrisalvis.rotato.data.BrowseWallpaper
-import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.FeedRepository
-import com.chrisalvis.rotato.data.RemoteList
+import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
-import java.net.URL
 
-class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewModel(application) {
+class BrowseViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val localLists = LocalListsPreferences(application)
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
-    private val baseUrl = runCatching { URL(feed.url).let { "${it.protocol}://${it.authority}" } }
-        .getOrDefault(feed.url)
-    private val browseRepo = BrowseRepository(baseUrl, feed.headers)
     private val feedRepo = FeedRepository(imageDir)
 
-    private val _lists = MutableStateFlow<List<RemoteList>>(emptyList())
-    val lists: StateFlow<List<RemoteList>> = _lists.asStateFlow()
+    val lists: StateFlow<List<LocalList>> = localLists.lists
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _listsLoading = MutableStateFlow(false)
-    val listsLoading: StateFlow<Boolean> = _listsLoading.asStateFlow()
+    private val _selectedList = MutableStateFlow<LocalList?>(null)
+    val selectedList: StateFlow<LocalList?> = _selectedList.asStateFlow()
 
-    private val _listsError = MutableStateFlow<String?>(null)
-    val listsError: StateFlow<String?> = _listsError.asStateFlow()
+    val wallpapers: StateFlow<List<BrowseWallpaper>> =
+        combine(localLists.allWallpapers, _selectedList) { all, selected ->
+            val listId = selected?.id ?: return@combine emptyList()
+            all.filter { it.listId == listId }.map { it.toBrowseWallpaper() }.reversed()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _selectedList = MutableStateFlow<RemoteList?>(null)
-    val selectedList: StateFlow<RemoteList?> = _selectedList.asStateFlow()
-
-    private val _wallpapers = MutableStateFlow<List<BrowseWallpaper>>(emptyList())
-    val wallpapers: StateFlow<List<BrowseWallpaper>> = _wallpapers.asStateFlow()
-
-    private val _wallpapersLoading = MutableStateFlow(false)
-    val wallpapersLoading: StateFlow<Boolean> = _wallpapersLoading.asStateFlow()
-
-    private val _hasMore = MutableStateFlow(false)
-    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
-
-    // sourceIds of wallpapers currently in the local rotation pool
     private val _inRotation = MutableStateFlow<Set<String>>(emptySet())
     val inRotation: StateFlow<Set<String>> = _inRotation.asStateFlow()
 
-    // sourceIds currently being downloaded
     private val _downloading = MutableStateFlow<Set<String>>(emptySet())
     val downloading: StateFlow<Set<String>> = _downloading.asStateFlow()
 
-    private var currentPage = 0
-    private var currentPages = 1
-    private var loadingMore = false
-    private var pageFailed = false
-
-    init {
-        // Seed inRotation from existing files on disk
-        _inRotation.update {
-            imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
-        }
-        loadLists()
-    }
-
-    fun loadLists() {
-        viewModelScope.launch {
-            _listsLoading.update { true }
-            _listsError.update { null }
-            try {
-                _lists.update { browseRepo.fetchLists() }
-            } catch (e: Exception) {
-                _listsError.update { "Could not load lists: ${e.message}" }
-                android.util.Log.e("BrowseViewModel", "loadLists error", e)
-            } finally {
-                _listsLoading.update { false }
-            }
-        }
-    }
-
-    fun selectList(list: RemoteList) {
-        _selectedList.update { list }
-        _wallpapers.update { emptyList() }
-        currentPage = 0
-        currentPages = 1
-        loadingMore = false
-        pageFailed = false
-        loadNextPage(list.id)
-    }
-
-    fun clearSelection() {
-        _selectedList.update { null }
-        _wallpapers.update { emptyList() }
-        currentPage = 0
-        exitSelectionMode()
-    }
-
-    fun loadMoreIfNeeded() {
-        val listId = _selectedList.value?.id ?: return
-        if (loadingMore || pageFailed || currentPage >= currentPages) return
-        loadNextPage(listId)
-    }
-
-    private fun loadNextPage(listId: Int) {
-        loadingMore = true
-        viewModelScope.launch {
-            _wallpapersLoading.update { true }
-            try {
-                val result: BrowsePage = browseRepo.fetchWallpapers(listId, currentPage + 1)
-                _wallpapers.update { it + result.wallpapers }
-                currentPage = result.page
-                currentPages = result.pages
-                _hasMore.update { result.page < result.pages }
-            } catch (e: Exception) {
-                android.util.Log.e("BrowseViewModel", "loadNextPage error", e)
-                pageFailed = true
-            } finally {
-                _wallpapersLoading.update { false }
-                loadingMore = false
-            }
-        }
-    }
-
-    // --- Selection mode ---
     private val _selectionMode = MutableStateFlow(false)
     val selectionMode: StateFlow<Boolean> = _selectionMode.asStateFlow()
 
     private val _selected = MutableStateFlow<Set<String>>(emptySet())
     val selected: StateFlow<Set<String>> = _selected.asStateFlow()
+
+    private val _showCreateDialog = MutableStateFlow(false)
+    val showCreateDialog: StateFlow<Boolean> = _showCreateDialog.asStateFlow()
+
+    init {
+        _inRotation.update {
+            imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
+        }
+    }
+
+    fun selectList(list: LocalList) {
+        _selectedList.update { list }
+        exitSelectionMode()
+    }
+
+    fun clearSelection() {
+        _selectedList.update { null }
+        exitSelectionMode()
+    }
+
+    fun showCreateDialog() { _showCreateDialog.update { true } }
+    fun dismissCreateDialog() { _showCreateDialog.update { false } }
+
+    fun createList(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val list = localLists.createList(name)
+            _showCreateDialog.update { false }
+            _selectedList.update { list }
+        }
+    }
+
+    fun deleteList(list: LocalList) {
+        viewModelScope.launch {
+            if (_selectedList.value?.id == list.id) clearSelection()
+            localLists.deleteList(list.id)
+        }
+    }
+
+    fun renameList(id: String, name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch { localLists.renameList(id, name) }
+    }
+
+    fun removeWallpaper(entryId: String) {
+        viewModelScope.launch { localLists.removeWallpaper(entryId) }
+    }
 
     fun enterSelectionMode(wallpaper: BrowseWallpaper) {
         _selectionMode.update { true }
@@ -142,8 +105,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
     fun toggleSelection(wallpaper: BrowseWallpaper) {
         if (!_selectionMode.value) return
         _selected.update {
-            if (it.contains(wallpaper.sourceId)) it - wallpaper.sourceId
-            else it + wallpaper.sourceId
+            if (it.contains(wallpaper.sourceId)) it - wallpaper.sourceId else it + wallpaper.sourceId
         }
     }
 
@@ -157,18 +119,17 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
         exitSelectionMode()
         val ctx = getApplication<Application>().applicationContext
         viewModelScope.launch {
-            var saved = 0
-            var failed = 0
-            toDownload.forEach { wallpaper ->
-                if (_downloading.value.contains(wallpaper.sourceId)) return@forEach
-                _downloading.update { it + wallpaper.sourceId }
-                val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl)
+            var saved = 0; var failed = 0
+            toDownload.forEach { wp ->
+                if (_downloading.value.contains(wp.sourceId)) return@forEach
+                _downloading.update { it + wp.sourceId }
+                val ok = feedRepo.saveToGallery(ctx, wp.sourceId, wp.fullUrl)
                 if (ok) saved++ else failed++
-                _downloading.update { it - wallpaper.sourceId }
+                _downloading.update { it - wp.sourceId }
             }
             val msg = when {
                 failed == 0 -> "Saved $saved photo${if (saved != 1) "s" else ""} to Pictures/Rotato"
-                saved == 0  -> "Failed to save ${failed} photo${if (failed != 1) "s" else ""}"
+                saved == 0  -> "Failed to save $failed photo${if (failed != 1) "s" else ""}"
                 else        -> "Saved $saved, failed $failed"
             }
             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
@@ -177,8 +138,7 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
 
     fun toggleRotation(wallpaper: BrowseWallpaper) {
         val key = sanitize(wallpaper.sourceId)
-        if (_inRotation.value.contains(key)) return  // already in — no remove for now
-        if (_downloading.value.contains(wallpaper.sourceId)) return
+        if (_inRotation.value.contains(key) || _downloading.value.contains(wallpaper.sourceId)) return
         viewModelScope.launch {
             _downloading.update { it + wallpaper.sourceId }
             val ok = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
@@ -190,12 +150,10 @@ class BrowseViewModel(application: Application, feed: FeedConfig) : AndroidViewM
     private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 }
 
-class BrowseViewModelFactory(
-    private val app: Application,
-    private val feed: FeedConfig
-) : ViewModelProvider.Factory {
-    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-        @Suppress("UNCHECKED_CAST")
-        return BrowseViewModel(app, feed) as T
-    }
-}
+private fun LocalWallpaperEntry.toBrowseWallpaper() = BrowseWallpaper(
+    sourceId = sourceId,
+    entryId = id,
+    fullUrl = fullUrl,
+    thumbUrl = thumbUrl,
+    animeTitle = tags.take(3).joinToString(", ")
+)
