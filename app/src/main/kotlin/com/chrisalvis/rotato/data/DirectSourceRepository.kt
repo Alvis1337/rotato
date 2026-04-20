@@ -62,8 +62,9 @@ suspend fun fetchFromSource(
 // --- Danbooru ---
 private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = buildString {
-        append(query.trim().replace(' ', '_'))
-        if (!nsfw) append(" rating:general")
+        val normalized = normalizeBooruQuery(query)
+        if (normalized.isNotBlank()) append(normalized)
+        if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
         // Do NOT append -id:X exclusion tags — free Danbooru accounts have a 2-tag limit.
         // Client-side filtering via pickFiltered handles deduplication instead.
     }.trim()
@@ -100,8 +101,9 @@ private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<Stri
 // --- Gelbooru ---
 private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = buildString {
-        append(query.trim().replace(' ', '_'))
-        if (!nsfw) append(" rating:general")
+        val normalized = normalizeBooruQuery(query)
+        if (normalized.isNotBlank()) append(normalized)
+        if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
     }.trim()
     val urlBase = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.encode()}"
     val url = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
@@ -126,7 +128,7 @@ private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<Stri
 
 // --- Safebooru ---
 private fun fetchSafebooru(query: String, exclude: List<String>, filters: BrainrotFilters): BrainrotWallpaper? {
-    val tagQuery = query.trim().replace(' ', '_')
+    val tagQuery = normalizeBooruQuery(query)
     val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.encode()}"
     val arr = getJsonArray(url) ?: return null
     val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return null
@@ -184,8 +186,8 @@ private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<Str
 // --- Konachan / Yande.re (same Moebooru API) ---
 private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, host: String, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = buildString {
-        val q = query.trim().replace(' ', '_')
-        if (q.isNotBlank()) append("$q ")
+        val normalized = normalizeBooruQuery(query)
+        if (normalized.isNotBlank()) append("$normalized ")
         if (!nsfw) append("rating:safe ")
         append("order:random") // Moebooru: randomisation is a tag, not a query param
     }.trim()
@@ -208,7 +210,23 @@ private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, h
     )
 }
 
-private fun pickRandom(arr: JSONArray, exclude: List<String> = emptyList()): JSONObject? {
+/**
+ * Normalises a free-text anime title (or arbitrary query) into a booru-compatible tag string:
+ * lowercase, replace spaces with underscores, strip characters that aren't alphanumeric,
+ * underscores, or hyphens.  Examples:
+ *   "Re:ZERO - Starting Life in Another World" → "re_zero_-_starting_life_in_another_world"
+ *   "Steins;Gate"  → "steinsgate"
+ *   "No Game No Life" → "no_game_no_life"
+ */
+private fun normalizeBooruQuery(q: String): String =
+    q.trim()
+        .lowercase()
+        .replace(Regex("[^a-z0-9 _-]"), "")
+        .trim()
+        .replace(Regex("\\s+"), "_")
+        .replace(Regex("-+"), "-")
+        .replace(Regex("_+"), "_")
+        .trim('_', '-')
     if (arr.length() == 0) return null
     val indices = (0 until arr.length()).shuffled()
     for (i in indices) {

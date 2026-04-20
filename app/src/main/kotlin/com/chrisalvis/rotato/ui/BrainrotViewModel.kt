@@ -137,14 +137,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
         val excludeSnapshot = seenIds.toList() // snapshot so IO thread reads don't race with addSeen()
         for (source in localEnabled.shuffled()) {
-            val query = when {
-                source.tags.isNotBlank() -> source.tags
-                explicitQuery.isNotBlank() -> explicitQuery
-                malTitles.isNotEmpty() -> malTitles.random()
-                else -> ""
+            val queriesToTry: List<String> = when {
+                source.tags.isNotBlank() -> listOf(source.tags)
+                explicitQuery.isNotBlank() -> listOf(explicitQuery)
+                malTitles.isNotEmpty() -> {
+                    // Try 3 different anime titles; last entry is empty so the source falls back
+                    // to returning any image if all specific title queries miss.
+                    malTitles.shuffled().take(3) + listOf("")
+                }
+                else -> listOf("")
             }
-            val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
-            if (wp != null) return wp
+            for (query in queriesToTry) {
+                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+                if (wp != null) return wp
+            }
         }
         return null
     }
