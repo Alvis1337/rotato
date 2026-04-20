@@ -43,6 +43,7 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
     val vm: BrowseViewModel = viewModel()
 
     val lists by vm.lists.collectAsStateWithLifecycle()
+    val listCounts by vm.listCounts.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
     val inRotation by vm.inRotation.collectAsStateWithLifecycle()
@@ -106,6 +107,7 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
         if (selectedList == null) {
             ListPickerContent(
                 lists = lists,
+                listCounts = listCounts,
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
                 onCreateList = { vm.showCreateDialog() },
@@ -157,6 +159,7 @@ private fun CreateListDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit)
 @Composable
 private fun ListPickerContent(
     lists: List<LocalList>,
+    listCounts: Map<String, Int>,
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
     onCreateList: () -> Unit,
@@ -189,8 +192,16 @@ private fun ListPickerContent(
                         dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
                     )
                 }
+                val count = listCounts[list.id] ?: 0
                 ListItem(
                     headlineContent = { Text(list.name, fontWeight = FontWeight.Medium) },
+                    supportingContent = {
+                        Text(
+                            "$count wallpaper${if (count != 1) "s" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
                     trailingContent = {
                         IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline)

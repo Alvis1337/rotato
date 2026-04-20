@@ -29,6 +29,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     val lists: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val listCounts: StateFlow<Map<String, Int>> = localLists.allWallpapers
+        .map { all -> all.groupBy { it.listId }.mapValues { (_, v) -> v.size } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     private val _selectedList = MutableStateFlow<LocalList?>(null)
     val selectedList: StateFlow<LocalList?> = _selectedList.asStateFlow()
 
