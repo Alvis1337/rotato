@@ -80,7 +80,7 @@ private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<Stri
         }
     }.getOrNull() ?: return null
 
-    val post = pickFiltered(arr, filters) { it.optInt("image_width") to it.optInt("image_height") } ?: return null
+    val post = pickFiltered(arr, filters) { it.optInt("id", 0).toString() to (it.optInt("image_width") to it.optInt("image_height")) } ?: return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
     val id = post.optInt("id", 0).toString()
     val tags = (post.optString("tag_string_general") + " " + post.optString("tag_string_character"))
@@ -108,9 +108,8 @@ private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<Stri
     else urlBase
     val json = getJson(url) ?: return null
     val arr = json.optJSONArray("post") ?: return null
-    val post = pickFiltered(arr, filters) { it.optInt("width") to it.optInt("height") } ?: return null
+    val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return null
     val id = post.optInt("id", 0).toString()
-    if (exclude.contains(id)) return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
     val tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
     return BrainrotWallpaper(
@@ -129,9 +128,8 @@ private fun fetchSafebooru(query: String, exclude: List<String>, filters: Brainr
     val tagQuery = query.trim().replace(' ', '_')
     val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.encode()}"
     val arr = getJsonArray(url) ?: return null
-    val post = pickFiltered(arr, filters) { it.optInt("width") to it.optInt("height") } ?: return null
+    val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return null
     val id = post.optInt("id", 0).toString()
-    if (exclude.contains(id)) return null
     val directory = post.optString("directory")
     val image = post.optString("image")
     val fullUrl = "https://safebooru.org/images/$directory/$image"
@@ -162,9 +160,8 @@ private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<Str
     val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.encode()}" else urlBase
     val json = getJson(url) ?: return null
     val data = json.optJSONArray("data") ?: return null
-    val post = pickRandom(data) ?: return null
+    val post = pickRandom(data, exclude) ?: return null
     val id = post.optString("id")
-    if (exclude.contains(id)) return null
     val fullUrl = post.optString("path").ifBlank { return null }
     val thumbs = post.optJSONObject("thumbs")
     val thumbUrl = thumbs?.optString("small") ?: thumbs?.optString("original") ?: fullUrl
@@ -193,9 +190,8 @@ private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, h
     }.trim()
     val url = "https://$host/post.json?tags=${tagQuery.encode()}&limit=20"
     val arr = getJsonArray(url) ?: return null
-    val post = pickFiltered(arr, filters) { it.optInt("width") to it.optInt("height") } ?: return null
+    val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return null
     val id = post.optInt("id", 0).toString()
-    if (exclude.contains(id)) return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
     val thumbUrl = post.optString("preview_url").ifBlank { fullUrl }
     val tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
@@ -211,26 +207,34 @@ private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, h
     )
 }
 
-private fun pickRandom(arr: JSONArray): JSONObject? {
+private fun pickRandom(arr: JSONArray, exclude: List<String> = emptyList()): JSONObject? {
     if (arr.length() == 0) return null
-    return arr.optJSONObject((0 until arr.length()).random())
+    val indices = (0 until arr.length()).shuffled()
+    for (i in indices) {
+        val obj = arr.optJSONObject(i) ?: continue
+        if (exclude.isEmpty() || !exclude.contains(obj.optString("id"))) return obj
+    }
+    return null
 }
 
 /**
- * Picks a random item from [arr] that satisfies [filters].
- * Falls back to a fully-random pick if nothing passes (avoids stalling on strict filters).
+ * Picks a random item from [arr] that satisfies [filters] and is not in [exclude].
+ * [entry] extracts a (id, dimensions) pair from each item.
  */
 private fun pickFiltered(
     arr: JSONArray,
     filters: BrainrotFilters,
-    dimensions: (JSONObject) -> Pair<Int, Int>,
+    exclude: List<String> = emptyList(),
+    entry: (JSONObject) -> Pair<String, Pair<Int, Int>>,
 ): JSONObject? {
     if (arr.length() == 0) return null
     val indices = (0 until arr.length()).shuffled()
     for (i in indices) {
         val obj = arr.optJSONObject(i) ?: continue
-        val (w, h) = dimensions(obj)
+        val (id, dims) = entry(obj)
+        if (exclude.contains(id)) continue
+        val (w, h) = dims
         if (filters.matches(w, h)) return obj
     }
-    return null // all items in this batch failed the filter
+    return null
 }
