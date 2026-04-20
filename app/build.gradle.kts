@@ -81,12 +81,7 @@ android {
     }
 }
 
-// Use any available JDK 21 — don't pin to JetBrains so Temurin in CI works fine.
-kotlin {
-    jvmToolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-}
+
 
 dependencies {
     implementation(libs.androidx.core.ktx)
