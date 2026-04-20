@@ -69,10 +69,12 @@ fun BrainrotScreen(
     val availableSources by vm.availableSources.collectAsStateWithLifecycle()
     val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
     val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
+    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
 
     var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showZoom by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
 
     var showCreateListDialog by remember { mutableStateOf(false) }
     if (showCreateListDialog) {
@@ -157,6 +159,7 @@ fun BrainrotScreen(
                         sessionSaved = sessionSaved,
                         sessionSkipped = sessionSkipped,
                         selectedListName = lists.find { it.id == selectedListId }?.name,
+                        searchQuery = searchQuery,
                         onToggleInfo = { showInfo = !showInfo },
                         onSkip = { vm.skip() },
                         onAddToList = onAddToList,
@@ -170,7 +173,15 @@ fun BrainrotScreen(
                             context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
                         },
                         onOpenSettings = { showSettings = true },
+                        onOpenSearch = { showSearch = true },
                         modifier = Modifier.fillMaxSize()
+                    )
+                }
+                if (showSearch) {
+                    SearchDialog(
+                        current = searchQuery,
+                        onSearch = { vm.setSearchQuery(it); showSearch = false },
+                        onDismiss = { showSearch = false }
                     )
                 }
                 if (showZoom) {
@@ -193,12 +204,14 @@ private fun FullScreenSwipeCard(
     sessionSaved: Int,
     sessionSkipped: Int,
     selectedListName: String?,
+    searchQuery: String,
     onToggleInfo: () -> Unit,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
     onImageTap: () -> Unit,
     onShare: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -475,6 +488,18 @@ private fun FullScreenSwipeCard(
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
                 }
 
+                // Search
+                OutlinedIconButton(
+                    onClick = onOpenSearch,
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(
+                        1.5.dp,
+                        if (searchQuery.isNotBlank() && searchQuery != "anime") MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "Search", tint = if (searchQuery.isNotBlank() && searchQuery != "anime") MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(18.dp))
+                }
+
                 // Settings
                 OutlinedIconButton(
                     onClick = onOpenSettings,
@@ -505,6 +530,34 @@ private fun sourceColor(source: String): Color = when (source.lowercase()) {
     "konachan"  -> Color(0xFF6A1B9A)
     "danbooru"  -> Color(0xFF2E7D32)
     else        -> Color(0xFF37474F)
+}
+
+@Composable
+private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(current.ifBlank { "" }) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Search Discover") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Tags / keywords") },
+                placeholder = { Text("e.g. anime, landscape, 4k") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSearch(text.trim()) }) { Text("Search") }
+        },
+        dismissButton = {
+            if (current.isNotBlank() && current != "anime") {
+                TextButton(onClick = { onSearch("") }) { Text("Clear") }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

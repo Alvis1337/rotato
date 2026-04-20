@@ -73,6 +73,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedSources = MutableStateFlow<Set<String>>(emptySet())
     val selectedSources: StateFlow<Set<String>> = _selectedSources.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     private val seenIds = mutableListOf<String>()
 
     /** Cards buffered and ready to display, pre-fetched from the server. */
@@ -134,7 +137,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val repo = brainrotRepo ?: return@launch
             _loading.update { true }
             _noResults.update { false }
-            val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList())
+            val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
             if (wp != null) seenIds.add(wp.id)
             _current.update { wp }
             _noResults.update { wp == null }
@@ -150,7 +153,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val repo = brainrotRepo ?: return@launch
             val ctx = getApplication<Application>().applicationContext
             while (cardQueue.size < queueTargetSize) {
-                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList())
+                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
                     ?: break // no more results
                 seenIds.add(wp.id)
                 val url = wp.fullUrl.ifBlank { wp.thumbUrl }
@@ -188,7 +191,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val repo = brainrotRepo ?: return@launch
                 _loading.update { true }
                 _current.update { null }
-                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList())
+                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
                 if (wp != null) seenIds.add(wp.id)
                 _current.update { wp }
                 _noResults.update { wp == null }
@@ -237,6 +240,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSourceFilter() {
         _selectedSources.update { emptySet() }
+        clearQueue()
+        loadFirst()
+    }
+
+    fun setSearchQuery(query: String) {
+        if (query == _searchQuery.value) return
+        _searchQuery.update { query }
         clearQueue()
         loadFirst()
     }

@@ -78,15 +78,17 @@ class BrainrotRepository(
 
     suspend fun fetchWallpaper(
         exclude: List<String> = emptyList(),
-        sources: List<String> = emptyList()
+        sources: List<String> = emptyList(),
+        query: String = ""
     ): BrainrotWallpaper? = withContext(Dispatchers.IO) {
         try {
             val hdrs = effectiveHeaders()
             val urlStr = if (serverSlug != null) {
                 "$baseUrl/api/feed/$serverSlug?random=true"
             } else {
+                val q = query.trim().ifBlank { "anime" }
                 buildString {
-                    append("$baseUrl/api/brainrot?q=anime")
+                    append("$baseUrl/api/brainrot?q=${java.net.URLEncoder.encode(q, "UTF-8")}")
                     if (exclude.isNotEmpty()) append("&exclude=${exclude.takeLast(60).joinToString(",")}")
                     if (sources.isNotEmpty()) append("&sources=${sources.joinToString(",")}")
                 }
