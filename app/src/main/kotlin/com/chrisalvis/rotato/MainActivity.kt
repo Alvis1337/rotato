@@ -29,6 +29,7 @@ import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.BrowseScreen
 import com.chrisalvis.rotato.ui.FeedViewModel
+import com.chrisalvis.rotato.ui.LocalSourcesScreen
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
                     else -> 0
                 }
 
-                val showBottomBar = currentRoute !in setOf("browse", "server-settings", "setup")
+                val showBottomBar = currentRoute !in setOf("browse", "server-settings", "sources", "setup")
 
                 Scaffold(
                     contentWindowInsets = WindowInsets(0),
@@ -177,10 +178,12 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 viewModel = homeViewModel,
                                 onNavigateBack = { navController.popBackStack() },
-                                onNavigateToServerSettings = {
-                                    navController.navigate("server-settings")
-                                }
+                                onNavigateToServerSettings = { navController.navigate("server-settings") },
+                                onNavigateToSources = { navController.navigate("sources") }
                             )
+                        }
+                        composable("sources") {
+                            LocalSourcesScreen(onNavigateBack = { navController.popBackStack() })
                         }
                         composable("server-settings") {
                             ServerSettingsScreen(

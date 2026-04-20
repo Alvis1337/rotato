@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -50,7 +51,8 @@ import com.chrisalvis.rotato.data.WallpaperTarget
 fun SettingsScreen(
     viewModel: HomeViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToServerSettings: () -> Unit = {}
+    onNavigateToServerSettings: () -> Unit = {},
+    onNavigateToSources: () -> Unit = {}
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
@@ -152,6 +154,19 @@ fun SettingsScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(target.label)
                     }
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Sources") {
+                FilledTonalButton(
+                    onClick = onNavigateToSources,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Manage Sources")
                 }
             }
 
