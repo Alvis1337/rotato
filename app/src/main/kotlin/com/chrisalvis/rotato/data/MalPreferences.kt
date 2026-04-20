@@ -22,6 +22,8 @@ class MalPreferences(private val context: Context) {
         val MAL_USERNAME = stringPreferencesKey("mal_username")
         /** JSON array of {title, score} objects */
         val MAL_ANIME_ENTRIES_JSON = stringPreferencesKey("mal_anime_entries_json")
+        /** Legacy key — plain title array written by earlier builds; read-only for migration. */
+        private val MAL_ANIME_LIST_JSON_LEGACY = stringPreferencesKey("mal_anime_list_json")
         val MAL_CODE_VERIFIER = stringPreferencesKey("mal_code_verifier")
         /** JSON array of status strings, e.g. ["completed","watching"] */
         val MAL_FILTER_STATUSES = stringPreferencesKey("mal_filter_statuses")
@@ -56,19 +58,32 @@ class MalPreferences(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { it[MAL_FILTER_MIN_SCORE] ?: 0 }
 
-    private val animeEntriesJson: Flow<String> = context.dataStore.data
+    val animeEntries: Flow<List<MalAnimeEntry>> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
-        .map { it[MAL_ANIME_ENTRIES_JSON] ?: "[]" }
-
-    val animeEntries: Flow<List<MalAnimeEntry>> = animeEntriesJson.map { json ->
-        runCatching {
-            val arr = JSONArray(json)
-            List(arr.length()) {
-                val obj = arr.getJSONObject(it)
-                MalAnimeEntry(obj.getString("title"), obj.getInt("score"))
+        .map { prefs ->
+            // Prefer new format; fall back to legacy plain-title list (score=0) for migration.
+            val newJson = prefs[MAL_ANIME_ENTRIES_JSON]
+            val rawJson = if (!newJson.isNullOrBlank() && newJson != "[]") {
+                newJson
+            } else {
+                val legacy = prefs[MAL_ANIME_LIST_JSON_LEGACY]
+                if (!legacy.isNullOrBlank() && legacy != "[]") {
+                    val arr = JSONArray(legacy)
+                    val out = JSONArray()
+                    for (i in 0 until arr.length()) {
+                        out.put(JSONObject().put("title", arr.getString(i)).put("score", 0))
+                    }
+                    out.toString()
+                } else "[]"
             }
-        }.getOrDefault(emptyList())
-    }
+            runCatching {
+                val arr = JSONArray(rawJson)
+                List(arr.length()) {
+                    val obj = arr.getJSONObject(it)
+                    MalAnimeEntry(obj.getString("title"), obj.getInt("score"))
+                }
+            }.getOrDefault(emptyList())
+        }
 
     /** Titles pre-filtered by the current min-score preference — used by BrainrotViewModel. */
     val animeList: Flow<List<String>> = combine(animeEntries, filterMinScore) { entries, minScore ->
