@@ -55,6 +55,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
     val downloading: State<Set<String>> = _downloading
 
     fun downloadToRotation(item: WallpaperHistoryItem) {
+        if (item.fullUrl.startsWith("/")) return  // local file — already in rotation pool
         val key = item.fullUrl
         if (_downloading.value.contains(key)) return
         viewModelScope.launch {

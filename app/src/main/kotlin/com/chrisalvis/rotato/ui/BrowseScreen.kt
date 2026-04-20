@@ -46,7 +46,6 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
-    val inRotation by vm.inRotation.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
@@ -116,13 +115,13 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
         } else {
             WallpaperGridContent(
                 wallpapers = wallpapers,
-                inRotation = inRotation,
+                isInRotation = { vm.isInRotation(it) },
                 downloading = downloading,
                 selectionMode = selectionMode,
                 selected = selected,
                 onTap = { wp ->
                     if (selectionMode) vm.toggleSelection(wp)
-                    else if (!inRotation.contains(wp.sourceId.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)) && !downloading.contains(wp.sourceId))
+                    else if (!vm.isInRotation(wp) && !downloading.contains(wp.sourceId))
                         vm.toggleRotation(wp)
                 },
                 onLongPress = { wp -> vm.enterSelectionMode(wp) },
@@ -220,7 +219,7 @@ private fun ListPickerContent(
 @Composable
 private fun WallpaperGridContent(
     wallpapers: List<BrowseWallpaper>,
-    inRotation: Set<String>,
+    isInRotation: (BrowseWallpaper) -> Boolean,
     downloading: Set<String>,
     selectionMode: Boolean,
     selected: Set<String>,
@@ -244,10 +243,9 @@ private fun WallpaperGridContent(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(wallpapers, key = { it.entryId.ifBlank { it.sourceId } }) { wp ->
-            val sanitizedKey = wp.sourceId.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
             WallpaperThumbnail(
                 wallpaper = wp,
-                isInRotation = inRotation.contains(sanitizedKey),
+                isInRotation = isInRotation(wp),
                 isDownloading = downloading.contains(wp.sourceId),
                 isSelected = selected.contains(wp.sourceId),
                 selectionMode = selectionMode,

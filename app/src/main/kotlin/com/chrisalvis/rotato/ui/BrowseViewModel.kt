@@ -140,6 +140,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun isInRotation(wallpaper: BrowseWallpaper) = _inRotation.value.contains(sanitize(wallpaper.sourceId))
+
     fun toggleRotation(wallpaper: BrowseWallpaper) {
         val key = sanitize(wallpaper.sourceId)
         if (_inRotation.value.contains(key) || _downloading.value.contains(wallpaper.sourceId)) return

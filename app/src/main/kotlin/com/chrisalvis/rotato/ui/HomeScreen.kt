@@ -173,7 +173,7 @@ fun HomeScreen(
                     viewModel = feedViewModel,
                     onBrowseFeed = onBrowseFeed
                 )
-                2 -> HistoryScreen()
+                2 -> HistoryScreen(modifier = Modifier.fillMaxSize())
             }
         }
     }

@@ -33,8 +33,8 @@ class LocalSourcesPreferences(private val context: Context) {
             val existing = current[idx]
             current[idx] = existing.copy(
                 enabled = enabled ?: existing.enabled,
-                apiKey = apiKey ?: existing.apiKey,
-                apiUser = apiUser ?: existing.apiUser
+                apiKey = if (apiKey != null) apiKey else existing.apiKey,
+                apiUser = if (apiUser != null) apiUser else existing.apiUser
             )
             prefs[SOURCES_KEY] = serialize(current)
         }
