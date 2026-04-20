@@ -2,6 +2,8 @@ name: Release APK
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -20,12 +22,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so git rev-list --count HEAD is accurate
 
-      - name: Set up JDK 21 (JetBrains Runtime)
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
-          distribution: 'jetbrains'
+          distribution: 'temurin'
           cache: gradle
 
       - name: Determine version tag
@@ -33,8 +37,12 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            # Push to main — auto-tag as v1.0.<commit-count>
+            COUNT=$(git rev-list --count HEAD)
+            echo "name=v1.0.${COUNT}" >> $GITHUB_OUTPUT
           fi
 
       - name: Grant execute permission for gradlew
@@ -51,17 +59,19 @@ jobs:
           EOF
 
       - name: Build release APK
+        env:
+          MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+          MAL_CLIENT_SECRET: ${{ secrets.MAL_CLIENT_SECRET }}
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Locate APK
+      - name: Locate & rename APK
         id: apk
         run: |
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          echo "path=$APK" >> $GITHUB_OUTPUT
+          DEST="${{ github.workspace }}/rotato-${{ steps.tag.outputs.name }}.apk"
+          mv "$APK" "$DEST"
+          echo "path=$DEST" >> $GITHUB_OUTPUT
           echo "name=rotato-${{ steps.tag.outputs.name }}.apk" >> $GITHUB_OUTPUT
-
-      - name: Rename APK
-        run: mv "${{ steps.apk.outputs.path }}" "${{ github.workspace }}/${{ steps.apk.outputs.name }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -69,4 +79,4 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           name: rotato ${{ steps.tag.outputs.name }}
           generate_release_notes: true
-          files: ${{ github.workspace }}/${{ steps.apk.outputs.name }}
+          files: ${{ steps.apk.outputs.path }}

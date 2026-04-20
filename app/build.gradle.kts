@@ -17,6 +17,14 @@ val localProps = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 
+// Auto-increment versionCode from git commit count so every CI build is unique.
+val gitCommitCount = try {
+    val proc = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .directory(rootProject.projectDir)
+        .start()
+    proc.inputStream.bufferedReader().readLine().trim().toInt()
+} catch (e: Exception) { 1 }
+
 android {
     namespace = "com.chrisalvis.rotato"
     compileSdk = 36
@@ -25,13 +33,16 @@ android {
         applicationId = "com.chrisalvis.rotato"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        versionCode = gitCommitCount
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "MAL_CLIENT_ID", "\"${localProps["mal.clientId"] ?: ""}\"")
-        buildConfigField("String", "MAL_CLIENT_SECRET", "\"${localProps["mal.clientSecret"] ?: ""}\"")
+        // MAL credentials: env vars take priority (CI), fall back to local.properties (dev).
+        val malClientId     = System.getenv("MAL_CLIENT_ID")     ?: localProps["mal.clientId"]     ?: ""
+        val malClientSecret = System.getenv("MAL_CLIENT_SECRET") ?: localProps["mal.clientSecret"] ?: ""
+        buildConfigField("String", "MAL_CLIENT_ID",     "\"$malClientId\"")
+        buildConfigField("String", "MAL_CLIENT_SECRET", "\"$malClientSecret\"")
     }
 
     val hasKeystore = keystoreProps.isNotEmpty() && keystoreProps["storeFile"] != null
