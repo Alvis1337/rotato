@@ -82,7 +82,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cardQueue = ArrayDeque<BrainrotWallpaper>()
     private val queueTargetSize = 10
-    private val queueRefillThreshold = 9 // refill after every swipe (rolling window)
+    private val queueRefillThreshold = queueTargetSize // refill after every swipe
     private var fillJob: Job? = null
 
     private val _nextWallpaper = MutableStateFlow<BrainrotWallpaper?>(null)
@@ -176,8 +176,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (fillJob?.isActive == true) return
         fillJob = viewModelScope.launch {
             val ctx = getApplication<Application>().applicationContext
+            var nullStreak = 0
             while (cardQueue.size < queueTargetSize) {
-                val wp = fetchNext() ?: break
+                val wp = fetchNext()
+                if (wp == null) {
+                    nullStreak++
+                    if (nullStreak >= 3) break // give up after 3 consecutive misses
+                    kotlinx.coroutines.delay(500)
+                    continue
+                }
+                nullStreak = 0
                 addSeen(wp.id)
                 val url = wp.fullUrl.ifBlank { wp.thumbUrl }
                 if (url.isNotBlank()) {
@@ -215,11 +223,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _noResults.update { false }
             _loading.update { false }
         } else {
-            // Queue was empty — fetch inline but keep current card visible to avoid flicker
+            // Queue was empty — fetch inline; retry a few times before declaring no results
             viewModelScope.launch {
                 _loading.update { true }
-                val wp = fetchNext()
-                if (wp != null) addSeen(wp.id)
+                var wp: BrainrotWallpaper? = null
+                repeat(3) { attempt ->
+                    if (wp != null) return@repeat
+                    if (attempt > 0) kotlinx.coroutines.delay(800L * attempt)
+                    wp = fetchNext()
+                }
+                if (wp != null) addSeen(wp!!.id)
                 _current.update { wp }
                 _noResults.update { wp == null }
                 _loading.update { false }

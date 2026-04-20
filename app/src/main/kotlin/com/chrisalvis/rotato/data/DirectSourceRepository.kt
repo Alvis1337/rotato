@@ -64,7 +64,8 @@ private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<Stri
     val tagQuery = buildString {
         append(query.trim().replace(' ', '_'))
         if (!nsfw) append(" rating:general")
-        if (exclude.isNotEmpty()) append(" ${exclude.takeLast(30).joinToString(" ") { "-id:$it" }}")
+        // Do NOT append -id:X exclusion tags — free Danbooru accounts have a 2-tag limit.
+        // Client-side filtering via pickFiltered handles deduplication instead.
     }.trim()
     val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.encode()}&limit=20&random=true"
     val auth = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
@@ -80,7 +81,7 @@ private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<Stri
         }
     }.getOrNull() ?: return null
 
-    val post = pickFiltered(arr, filters) { it.optInt("id", 0).toString() to (it.optInt("image_width") to it.optInt("image_height")) } ?: return null
+    val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("image_width") to it.optInt("image_height")) } ?: return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
     val id = post.optInt("id", 0).toString()
     val tags = (post.optString("tag_string_general") + " " + post.optString("tag_string_character"))
