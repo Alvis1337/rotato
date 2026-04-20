@@ -37,8 +37,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import com.chrisalvis.rotato.data.AspectRatio
+import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,6 +64,7 @@ fun BrainrotScreen(
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
+    val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
     val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
@@ -103,10 +107,13 @@ fun BrainrotScreen(
     if (showSettings) {
         DiscoverSettingsDialog(
             nsfwMode = nsfwMode,
+            filters = brainrotFilters,
             lists = lists,
             selectedListId = selectedListId,
             onSelectList = { vm.setSelectedList(it) },
             onSetNsfwMode = { vm.setNsfwMode(it) },
+            onSetMinResolution = { vm.setMinResolution(it) },
+            onSetAspectRatio = { vm.setAspectRatio(it) },
             onDismiss = { showSettings = false }
         )
     }
@@ -566,13 +573,17 @@ private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss:
 @Composable
 private fun DiscoverSettingsDialog(
     nsfwMode: Boolean,
+    filters: BrainrotFilters,
     lists: List<LocalList>,
     selectedListId: String?,
     onSelectList: (String) -> Unit,
     onSetNsfwMode: (Boolean) -> Unit,
+    onSetMinResolution: (MinResolution) -> Unit,
+    onSetAspectRatio: (AspectRatio) -> Unit,
     onDismiss: () -> Unit
 ) {
     var listExpanded by remember { mutableStateOf(false) }
+    var resExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -613,6 +624,43 @@ private fun DiscoverSettingsDialog(
                         Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
                     Switch(checked = nsfwMode, onCheckedChange = onSetNsfwMode)
+                }
+
+                // Min resolution
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Min resolution", style = MaterialTheme.typography.labelMedium)
+                    ExposedDropdownMenuBox(expanded = resExpanded, onExpandedChange = { resExpanded = it }) {
+                        OutlinedTextField(
+                            value = filters.minResolution.label,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(resExpanded) },
+                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            singleLine = true
+                        )
+                        ExposedDropdownMenu(expanded = resExpanded, onDismissRequest = { resExpanded = false }) {
+                            MinResolution.entries.forEach { res ->
+                                DropdownMenuItem(
+                                    text = { Text(res.label) },
+                                    onClick = { onSetMinResolution(res); resExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Aspect ratio chips
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AspectRatio.entries.forEach { ratio ->
+                            FilterChip(
+                                selected = filters.aspectRatio == ratio,
+                                onClick = { onSetAspectRatio(ratio) },
+                                label = { Text(ratio.label) }
+                            )
+                        }
+                    }
                 }
             }
         },

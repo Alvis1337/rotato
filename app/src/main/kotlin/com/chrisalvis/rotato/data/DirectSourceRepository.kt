@@ -46,20 +46,21 @@ suspend fun fetchFromSource(
     source: LocalSource,
     query: String,
     exclude: List<String> = emptyList(),
-    nsfwMode: Boolean = false
+    nsfwMode: Boolean = false,
+    filters: BrainrotFilters = BrainrotFilters(),
 ): BrainrotWallpaper? = withContext(Dispatchers.IO) {
     when (source.type) {
-        SourceType.DANBOORU   -> fetchDanbooru(source, query, exclude, nsfwMode)
-        SourceType.GELBOORU   -> fetchGelbooru(source, query, exclude, nsfwMode)
-        SourceType.SAFEBOORU  -> fetchSafebooru(query, exclude)
-        SourceType.WALLHAVEN  -> fetchWallhaven(source, query, exclude, nsfwMode)
-        SourceType.KONACHAN   -> fetchKonachan(query, exclude, nsfwMode, "konachan.com")
-        SourceType.YANDERE    -> fetchKonachan(query, exclude, nsfwMode, "yande.re")
+        SourceType.DANBOORU   -> fetchDanbooru(source, query, exclude, nsfwMode, filters)
+        SourceType.GELBOORU   -> fetchGelbooru(source, query, exclude, nsfwMode, filters)
+        SourceType.SAFEBOORU  -> fetchSafebooru(query, exclude, filters)
+        SourceType.WALLHAVEN  -> fetchWallhaven(source, query, exclude, nsfwMode, filters)
+        SourceType.KONACHAN   -> fetchKonachan(query, exclude, nsfwMode, "konachan.com", filters)
+        SourceType.YANDERE    -> fetchKonachan(query, exclude, nsfwMode, "yande.re", filters)
     }
 }
 
 // --- Danbooru ---
-private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean): BrainrotWallpaper? {
+private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = buildString {
         append(query.trim().replace(' ', '_'))
         if (!nsfw) append(" rating:general")
@@ -79,7 +80,7 @@ private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<Stri
         }
     }.getOrNull() ?: return null
 
-    val post = pickRandom(arr) ?: return null
+    val post = pickFiltered(arr, filters) { it.optInt("image_width") to it.optInt("image_height") } ?: return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
     val id = post.optInt("id", 0).toString()
     val tags = (post.optString("tag_string_general") + " " + post.optString("tag_string_character"))
@@ -96,7 +97,7 @@ private fun fetchDanbooru(source: LocalSource, query: String, exclude: List<Stri
 }
 
 // --- Gelbooru ---
-private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean): BrainrotWallpaper? {
+private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = buildString {
         append(query.trim().replace(' ', '_'))
         if (!nsfw) append(" rating:general")
@@ -107,7 +108,7 @@ private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<Stri
     else urlBase
     val json = getJson(url) ?: return null
     val arr = json.optJSONArray("post") ?: return null
-    val post = pickRandom(arr) ?: return null
+    val post = pickFiltered(arr, filters) { it.optInt("width") to it.optInt("height") } ?: return null
     val id = post.optInt("id", 0).toString()
     if (exclude.contains(id)) return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
@@ -124,11 +125,11 @@ private fun fetchGelbooru(source: LocalSource, query: String, exclude: List<Stri
 }
 
 // --- Safebooru ---
-private fun fetchSafebooru(query: String, exclude: List<String>): BrainrotWallpaper? {
+private fun fetchSafebooru(query: String, exclude: List<String>, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = query.trim().replace(' ', '_')
     val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.encode()}"
     val arr = getJsonArray(url) ?: return null
-    val post = pickRandom(arr) ?: return null
+    val post = pickFiltered(arr, filters) { it.optInt("width") to it.optInt("height") } ?: return null
     val id = post.optInt("id", 0).toString()
     if (exclude.contains(id)) return null
     val directory = post.optString("directory")
@@ -148,10 +149,16 @@ private fun fetchSafebooru(query: String, exclude: List<String>): BrainrotWallpa
 }
 
 // --- Wallhaven ---
-private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean): BrainrotWallpaper? {
+private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? {
     val purity = if (nsfw) "111" else "110" // sfw=1, sketchy=1, nsfw=1 or sfw+sketchy only
     val categories = "111"
-    val urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().encode()}&categories=$categories&purity=$purity&sorting=random"
+    var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().encode()}&categories=$categories&purity=$purity&sorting=random"
+    if (filters.minResolution != MinResolution.ANY) {
+        urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
+    }
+    if (filters.aspectRatio != AspectRatio.ANY) {
+        urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
+    }
     val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.encode()}" else urlBase
     val json = getJson(url) ?: return null
     val data = json.optJSONArray("data") ?: return null
@@ -161,8 +168,7 @@ private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<Str
     val fullUrl = post.optString("path").ifBlank { return null }
     val thumbs = post.optJSONObject("thumbs")
     val thumbUrl = thumbs?.optString("small") ?: thumbs?.optString("original") ?: fullUrl
-    val res = post.optString("resolution") // API returns "WIDTHxHEIGHT" string
-    val resolution = res.ifBlank { "" }
+    val resolution = post.optString("resolution").ifBlank { "" }
     val tags = post.optJSONArray("tags")?.let { arr ->
         (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
     } ?: emptyList()
@@ -178,7 +184,7 @@ private fun fetchWallhaven(source: LocalSource, query: String, exclude: List<Str
 }
 
 // --- Konachan / Yande.re (same Moebooru API) ---
-private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, host: String): BrainrotWallpaper? {
+private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, host: String, filters: BrainrotFilters): BrainrotWallpaper? {
     val tagQuery = buildString {
         val q = query.trim().replace(' ', '_')
         if (q.isNotBlank()) append("$q ")
@@ -187,7 +193,7 @@ private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, h
     }.trim()
     val url = "https://$host/post.json?tags=${tagQuery.encode()}&limit=20"
     val arr = getJsonArray(url) ?: return null
-    val post = pickRandom(arr) ?: return null
+    val post = pickFiltered(arr, filters) { it.optInt("width") to it.optInt("height") } ?: return null
     val id = post.optInt("id", 0).toString()
     if (exclude.contains(id)) return null
     val fullUrl = post.optString("file_url").ifBlank { return null }
@@ -208,4 +214,23 @@ private fun fetchKonachan(query: String, exclude: List<String>, nsfw: Boolean, h
 private fun pickRandom(arr: JSONArray): JSONObject? {
     if (arr.length() == 0) return null
     return arr.optJSONObject((0 until arr.length()).random())
+}
+
+/**
+ * Picks a random item from [arr] that satisfies [filters].
+ * Falls back to a fully-random pick if nothing passes (avoids stalling on strict filters).
+ */
+private fun pickFiltered(
+    arr: JSONArray,
+    filters: BrainrotFilters,
+    dimensions: (JSONObject) -> Pair<Int, Int>,
+): JSONObject? {
+    if (arr.length() == 0) return null
+    val indices = (0 until arr.length()).shuffled()
+    for (i in indices) {
+        val obj = arr.optJSONObject(i) ?: continue
+        val (w, h) = dimensions(obj)
+        if (filters.matches(w, h)) return obj
+    }
+    return null // all items in this batch failed the filter
 }

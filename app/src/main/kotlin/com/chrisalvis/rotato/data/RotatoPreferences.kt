@@ -28,6 +28,8 @@ class RotatoPreferences(private val context: Context) {
         val HISTORY_JSON = stringPreferencesKey("wallpaper_history_json")
         val SETUP_DONE = booleanPreferencesKey("setup_done")
         val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
+        val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
+        val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -86,6 +88,27 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setNsfwMode(enabled: Boolean) {
         context.dataStore.edit { it[NSFW_MODE] = enabled }
+    }
+
+    val brainrotFilters: Flow<BrainrotFilters> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            BrainrotFilters(
+                minResolution = prefs[MIN_RESOLUTION]?.let {
+                    runCatching { MinResolution.valueOf(it) }.getOrNull()
+                } ?: MinResolution.ANY,
+                aspectRatio = prefs[ASPECT_RATIO]?.let {
+                    runCatching { AspectRatio.valueOf(it) }.getOrNull()
+                } ?: AspectRatio.ANY,
+            )
+        }
+
+    suspend fun setMinResolution(value: MinResolution) {
+        context.dataStore.edit { it[MIN_RESOLUTION] = value.name }
+    }
+
+    suspend fun setAspectRatio(value: AspectRatio) {
+        context.dataStore.edit { it[ASPECT_RATIO] = value.name }
     }
 
     // null = DataStore hasn't emitted yet (initialValue in collectAsStateWithLifecycle)

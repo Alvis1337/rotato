@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import coil.request.ImageRequest
+import com.chrisalvis.rotato.data.AspectRatio
+import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
@@ -13,6 +15,7 @@ import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.MalPreferences
+import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.fetchFromSource
 import kotlinx.coroutines.Job
@@ -64,6 +67,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     val nsfwMode: StateFlow<Boolean> = prefs.nsfwMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val brainrotFilters: StateFlow<BrainrotFilters> = prefs.brainrotFilters
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrainrotFilters())
 
     val enabledLocalSources: StateFlow<List<LocalSource>> = localSources.sources
         .map { it.filter { s -> s.enabled } }
@@ -125,6 +131,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val localEnabled = enabledSources()
         if (localEnabled.isEmpty()) return null
         val nsfw = prefs.nsfwMode.first()
+        val filters = prefs.brainrotFilters.first()
         val explicitQuery = _searchQuery.value
         // If user typed a search, use it. Otherwise rotate through MAL anime titles (if logged in).
         val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
@@ -135,7 +142,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 malTitles.isNotEmpty() -> malTitles.random()
                 else -> ""
             }
-            val wp = fetchFromSource(source, query, seenIds, nsfw)
+            val wp = fetchFromSource(source, query, seenIds, nsfw, filters)
             if (wp != null) return wp
         }
         return null
@@ -211,6 +218,22 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setNsfwMode(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setNsfwMode(enabled)
+            clearQueue()
+            loadFirst()
+        }
+    }
+
+    fun setMinResolution(value: MinResolution) {
+        viewModelScope.launch {
+            prefs.setMinResolution(value)
+            clearQueue()
+            loadFirst()
+        }
+    }
+
+    fun setAspectRatio(value: AspectRatio) {
+        viewModelScope.launch {
+            prefs.setAspectRatio(value)
             clearQueue()
             loadFirst()
         }
