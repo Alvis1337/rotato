@@ -13,12 +13,16 @@ import com.chrisalvis.rotato.data.FeedConfig
 import com.chrisalvis.rotato.data.FeedPreferences
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.LocalSourcesPreferences
+import com.chrisalvis.rotato.data.fetchFromSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +32,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val feedPrefs = FeedPreferences(app)
     private val localLists = LocalListsPreferences(app)
+    private val localSources = LocalSourcesPreferences(app)
 
     private val _activeFeed = MutableStateFlow<FeedConfig?>(null)
     val activeFeed: StateFlow<FeedConfig?> = _activeFeed.asStateFlow()
@@ -76,6 +81,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    val enabledLocalSources: StateFlow<List<LocalSource>> = localSources.sources
+        .map { it.filter { s -> s.enabled } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val seenIds = mutableListOf<String>()
 
     /** Cards buffered and ready to display, pre-fetched from the server. */
@@ -89,11 +98,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { initWithFirstFeed() }
-        // Reactively start when a feed is added while noFeed is true (no restart needed)
+        // Reactively start when a feed or local source is added while noFeed is true
         viewModelScope.launch {
             feedPrefs.feeds.collect { feeds ->
-                if (_noFeed.value && feeds.isNotEmpty()) {
-                    switchFeed(feeds.first())
+                if (_noFeed.value && feeds.isNotEmpty()) switchFeed(feeds.first())
+            }
+        }
+        viewModelScope.launch {
+            localSources.sources.collect { sources ->
+                if (_noFeed.value && sources.any { it.enabled }) {
+                    _noFeed.update { false }
+                    loadLists()
+                    loadSettings()
+                    loadFirst()
                 }
             }
         }
@@ -101,13 +118,21 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun initWithFirstFeed() {
         val feeds = feedPrefs.feeds.first()
-        if (feeds.isEmpty()) {
+        val localEnabled = localSources.sources.first().filter { it.enabled }
+        if (feeds.isEmpty() && localEnabled.isEmpty()) {
             _noFeed.update { true }
             _loading.update { false }
             return
         }
-        val feed = feeds.first()
-        switchFeed(feed)
+        if (feeds.isNotEmpty()) {
+            switchFeed(feeds.first())
+        } else {
+            // No server feed — go straight to local sources
+            _noFeed.update { false }
+            loadLists()
+            loadSettings()
+            loadFirst()
+        }
     }
 
     fun switchFeed(feed: FeedConfig) {
@@ -132,12 +157,33 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _nextWallpaper.update { null }
     }
 
+    private suspend fun fetchNext(): BrainrotWallpaper? {
+        val repo = brainrotRepo
+        val localEnabled = enabledLocalSources.value
+        if (repo != null) {
+            val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
+            if (wp != null) return wp
+        }
+        // No server result — try local sources
+        if (localEnabled.isEmpty()) return null
+        val shuffled = localEnabled.shuffled()
+        for (source in shuffled) {
+            val wp = fetchFromSource(source, _searchQuery.value.ifBlank { "anime" }, seenIds, _discoverSettings.value.nsfwMode)
+            if (wp != null) return wp
+        }
+        return null
+    }
+
     private fun loadFirst() {
         viewModelScope.launch {
-            val repo = brainrotRepo ?: return@launch
+            if (brainrotRepo == null && enabledLocalSources.value.isEmpty()) {
+                _noFeed.update { true }
+                _loading.update { false }
+                return@launch
+            }
             _loading.update { true }
             _noResults.update { false }
-            val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
+            val wp = fetchNext()
             if (wp != null) seenIds.add(wp.id)
             _current.update { wp }
             _noResults.update { wp == null }
@@ -150,11 +196,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private fun fillQueue() {
         if (fillJob?.isActive == true) return
         fillJob = viewModelScope.launch {
-            val repo = brainrotRepo ?: return@launch
             val ctx = getApplication<Application>().applicationContext
             while (cardQueue.size < queueTargetSize) {
-                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
-                    ?: break // no more results
+                val wp = fetchNext() ?: break
                 seenIds.add(wp.id)
                 val url = wp.fullUrl.ifBlank { wp.thumbUrl }
                 if (url.isNotBlank()) {
@@ -163,7 +207,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 cardQueue.addLast(wp)
-                // Expose next card for the background layer as soon as the first queued item arrives
                 if (cardQueue.size == 1) _nextWallpaper.update { wp }
             }
         }
@@ -186,12 +229,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _noResults.update { false }
             _loading.update { false }
         } else {
-            // Queue was empty — fetch directly and show loading
             viewModelScope.launch {
-                val repo = brainrotRepo ?: return@launch
                 _loading.update { true }
                 _current.update { null }
-                val wp = repo.fetchWallpaper(seenIds, _selectedSources.value.toList(), _searchQuery.value)
+                val wp = fetchNext()
                 if (wp != null) seenIds.add(wp.id)
                 _current.update { wp }
                 _noResults.update { wp == null }
