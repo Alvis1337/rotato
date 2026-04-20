@@ -15,7 +15,10 @@ class LocalSourcesPreferences(private val context: Context) {
     companion object {
         private val SOURCES_KEY = stringPreferencesKey("local_sources_json")
 
-        private fun defaultSources() = SourceType.entries.map { LocalSource(type = it) }
+        private fun defaultSources() = SourceType.entries.map {
+            // Enable safe sources that don't require a user account on first install
+            LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser)
+        }
     }
 
     val sources: Flow<List<LocalSource>> = context.dataStore.data
@@ -52,7 +55,9 @@ class LocalSourcesPreferences(private val context: Context) {
         }
         // Always include all source types, inserting defaults for any not yet persisted
         val seen = result.map { it.type }.toSet()
-        result + SourceType.entries.filter { it !in seen }.map { LocalSource(type = it) }
+        result + SourceType.entries.filter { it !in seen }.map {
+            LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser)
+        }
     } catch (_: Exception) { emptyList() }
 
     private fun serialize(sources: List<LocalSource>): String =
