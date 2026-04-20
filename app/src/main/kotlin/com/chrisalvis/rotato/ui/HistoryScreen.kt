@@ -1,7 +1,12 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.content.ContentValues
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -66,10 +71,48 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         if (_downloading.value.contains(key)) return
         viewModelScope.launch {
             _downloading.value = _downloading.value + key
-            val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            feedRepo.saveToGallery(ctx, sourceId, item.fullUrl)
+            val ok = if (item.fullUrl.startsWith("/")) {
+                saveLocalFileToGallery(ctx, java.io.File(item.fullUrl))
+            } else {
+                val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+                feedRepo.saveToGallery(ctx, sourceId, item.fullUrl)
+            }
+            Toast.makeText(ctx, if (ok) "Saved to gallery" else "Save failed", Toast.LENGTH_SHORT).show()
             _downloading.value = _downloading.value - key
         }
+    }
+
+    private fun saveLocalFileToGallery(ctx: android.content.Context, file: java.io.File): Boolean {
+        if (!file.exists()) return false
+        val ext = file.extension.lowercase()
+        val mimeType = when (ext) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> "image/jpeg"
+        }
+        return try {
+            val bytes = file.readBytes()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Rotato")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = ctx.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } else {
+                val dir = java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Rotato")
+                dir.mkdirs()
+                java.io.File(dir, file.name).writeBytes(bytes)
+            }
+            true
+        } catch (_: Exception) { false }
     }
 }
 
@@ -93,14 +136,14 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(history, key = { "${it.timestamp}_${it.fullUrl}" }) { item ->
+            val isLocal = item.fullUrl.startsWith("/")
             HistoryCard(
                 item = item,
                 isDownloading = downloading.contains(item.fullUrl),
                 onDownload = { vm.saveToGallery(item) },
-                onOpenPage = {
-                    val url = item.fullUrl
-                    context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-                }
+                onOpenPage = if (!isLocal) ({
+                    context.startActivity(Intent(Intent.ACTION_VIEW, item.fullUrl.toUri()))
+                }) else null
             )
         }
     }
@@ -111,7 +154,7 @@ private fun HistoryCard(
     item: WallpaperHistoryItem,
     isDownloading: Boolean,
     onDownload: () -> Unit,
-    onOpenPage: () -> Unit
+    onOpenPage: (() -> Unit)?
 ) {
     val dateStr = remember(item.timestamp) {
         SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(item.timestamp))
@@ -126,7 +169,7 @@ private fun HistoryCard(
                 modifier = Modifier
                     .size(width = 100.dp, height = 72.dp)
                     .clip(MaterialTheme.shapes.medium)
-                    .clickable(onClick = onOpenPage)
+                    .then(if (onOpenPage != null) Modifier.clickable(onClick = onOpenPage) else Modifier)
             )
             Column(
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
@@ -143,8 +186,10 @@ private fun HistoryCard(
                         Icon(Icons.Default.Download, contentDescription = "Save to gallery", modifier = Modifier.size(20.dp))
                     }
                 }
-                IconButton(onClick = onOpenPage) {
-                    Icon(Icons.Default.OpenInBrowser, contentDescription = "Open", modifier = Modifier.size(20.dp))
+                if (onOpenPage != null) {
+                    IconButton(onClick = onOpenPage) {
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = "Open", modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
