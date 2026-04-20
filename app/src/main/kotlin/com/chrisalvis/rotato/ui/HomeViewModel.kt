@@ -169,22 +169,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val request = OneTimeWorkRequestBuilder<WallpaperWorker>().build()
             workManager.enqueue(request).await()
             try {
-                // Observe the actual worker until it succeeds or fails — not just enqueue
-                workManager.getWorkInfoByIdFlow(request.id).collect { info ->
-                    when (info?.state) {
-                        WorkInfo.State.SUCCEEDED -> {
-                            _setNowState.update { SetNowState.DONE }
-                            kotlinx.coroutines.delay(2_000)
-                            _setNowState.update { SetNowState.IDLE }
-                            return@collect
-                        }
-                        WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
-                            _setNowState.update { SetNowState.ERROR }
-                            kotlinx.coroutines.delay(2_000)
-                            _setNowState.update { SetNowState.IDLE }
-                            return@collect
-                        }
-                        else -> { /* ENQUEUED or RUNNING — keep waiting */ }
+                val terminalStates = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
+                val info = workManager.getWorkInfoByIdFlow(request.id)
+                    .first { it?.state in terminalStates }
+                when (info?.state) {
+                    WorkInfo.State.SUCCEEDED -> {
+                        _setNowState.update { SetNowState.DONE }
+                        kotlinx.coroutines.delay(2_000)
+                        _setNowState.update { SetNowState.IDLE }
+                    }
+                    else -> {
+                        _setNowState.update { SetNowState.ERROR }
+                        kotlinx.coroutines.delay(2_000)
+                        _setNowState.update { SetNowState.IDLE }
                     }
                 }
             } catch (e: Exception) {
