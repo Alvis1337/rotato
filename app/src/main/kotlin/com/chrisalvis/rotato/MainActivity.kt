@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
@@ -65,15 +66,15 @@ class MainActivity : ComponentActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                val libraryRoutes = setOf("home", "browse")
-                val selectedTab = when {
-                    currentRoute == "discover" -> 0
-                    currentRoute in libraryRoutes -> 1
-                    currentRoute == "settings" -> 2
+                val selectedTab = when (currentRoute) {
+                    "discover" -> 0
+                    "home" -> 1
+                    "browse" -> 2
+                    "settings" -> 3
                     else -> 0
                 }
 
-                val showBottomBar = currentRoute !in setOf("browse", "sources", "setup")
+                val showBottomBar = currentRoute !in setOf("sources", "setup")
 
                 Scaffold(
                     contentWindowInsets = WindowInsets(0),
@@ -105,6 +106,18 @@ class MainActivity : ComponentActivity() {
                                 )
                                 NavigationBarItem(
                                     selected = selectedTab == 2,
+                                    onClick = {
+                                        navController.navigate("browse") {
+                                            popUpTo("discover") { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    icon = { Icon(Icons.Default.BookmarkBorder, contentDescription = "Collections") },
+                                    label = { Text("Collections") }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 3,
                                     onClick = {
                                         navController.navigate("settings") {
                                             popUpTo("discover") { saveState = true }

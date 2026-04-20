@@ -158,12 +158,17 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _loading.update { true }
             _noResults.update { false }
             val wp = fetchNext()
-            if (wp != null) seenIds.add(wp.id)
+            if (wp != null) addSeen(wp.id)
             _current.update { wp }
             _noResults.update { wp == null }
             _loading.update { false }
             if (wp != null) fillQueue()
         }
+    }
+
+    private fun addSeen(id: String) {
+        seenIds.add(id)
+        if (seenIds.size > 30) seenIds.removeAt(0)
     }
 
     private fun fillQueue() {
@@ -172,10 +177,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>().applicationContext
             while (cardQueue.size < queueTargetSize) {
                 val wp = fetchNext() ?: break
-                seenIds.add(wp.id)
+                addSeen(wp.id)
                 val url = wp.fullUrl.ifBlank { wp.thumbUrl }
                 if (url.isNotBlank()) {
-                    ctx.imageLoader.enqueue(
+                    // Suspend until image is in memory cache so the card renders instantly
+                    ctx.imageLoader.execute(
                         ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
                     )
                 }
@@ -206,7 +212,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 _loading.update { true }
                 val wp = fetchNext()
-                if (wp != null) seenIds.add(wp.id)
+                if (wp != null) addSeen(wp.id)
                 _current.update { wp }
                 _noResults.update { wp == null }
                 _loading.update { false }

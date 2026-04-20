@@ -2,7 +2,9 @@ package com.chrisalvis.rotato.ui
 
 import android.content.Intent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -244,12 +246,12 @@ private fun FullScreenSwipeCard(
                                 when {
                                     xOffset.value > threshold -> {
                                         isAnimating = true
-                                        xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
+                                        xOffset.animateTo(screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
                                         onAddToList()
                                     }
                                     xOffset.value < -threshold -> {
                                         isAnimating = true
-                                        xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
+                                        xOffset.animateTo(-screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
                                         onSkip()
                                     }
                                     else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))

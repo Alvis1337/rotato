@@ -65,17 +65,19 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = {
-                        when {
-                            selectionMode -> vm.exitSelectionMode()
-                            selectedList != null -> vm.clearSelection()
-                            else -> onNavigateBack()
+                    if (selectionMode || selectedList != null) {
+                        IconButton(onClick = {
+                            when {
+                                selectionMode -> vm.exitSelectionMode()
+                                selectedList != null -> vm.clearSelection()
+                                else -> onNavigateBack()
+                            }
+                        }) {
+                            Icon(
+                                if (selectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
                         }
-                    }) {
-                        Icon(
-                            if (selectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
                     }
                 },
                 title = {
