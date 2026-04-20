@@ -121,7 +121,7 @@ fun ServerSettingsScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                "Add an animebacks server feed in the Discover tab first.",
+                                "Add a server feed in Library → Feeds to manage server settings.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

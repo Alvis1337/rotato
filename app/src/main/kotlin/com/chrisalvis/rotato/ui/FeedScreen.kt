@@ -89,7 +89,7 @@ internal fun FeedBody(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Add an animebacks feed URL to auto-sync wallpapers",
+                        "Add a server feed URL to pull wallpapers from a remote source",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -256,7 +256,7 @@ private fun AddFeedDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "Paste an animebacks feed URL. The API key is fetched automatically from your server.",
+                    "Paste a feed URL. The API key is fetched automatically from the server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

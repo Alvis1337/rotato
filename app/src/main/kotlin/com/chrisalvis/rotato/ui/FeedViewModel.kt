@@ -80,7 +80,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
             }
             val name = feedRepository.fetchFeedName(trimmedUrl, headers)
             if (name == null) {
-                _addFeedState.update { AddFeedState.Error("Could not reach feed — check URL and API key in animebacks Settings") }
+                _addFeedState.update { AddFeedState.Error("Could not reach feed — check the URL and API key") }
                 return@launch
             }
             feedPreferences.addFeed(trimmedUrl, headers, name)

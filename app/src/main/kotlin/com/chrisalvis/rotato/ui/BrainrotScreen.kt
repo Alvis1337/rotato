@@ -790,7 +790,7 @@ private fun NoFeedState(onNavigateToSettings: () -> Unit) {
             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
             Text("No feed configured", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                "Add an animebacks feed in Settings → Manage Feeds to start discovering wallpapers",
+                "Enable image sources in Settings → Manage Sources, or add a server feed in Library → Feeds",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center
@@ -824,7 +824,7 @@ private fun NoResultsState(
                 Button(onClick = onClearFilter) { Text("Clear source filter") }
             } else {
                 Text(
-                    "Check that sources are enabled in your animebacks settings",
+                    "Try enabling more sources in Settings → Manage Sources, or adjust your search query",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                     textAlign = TextAlign.Center

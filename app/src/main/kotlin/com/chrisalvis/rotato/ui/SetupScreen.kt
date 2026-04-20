@@ -143,13 +143,13 @@ private fun ConnectPage(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Connect to your server",
+            text = "Connect a server (optional)",
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Point rotato at your animebacks instance to sync your feeds automatically.",
+            text = "rotato works fully offline using built-in sources. You can also connect a server to sync custom feeds.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -271,7 +271,7 @@ private fun ConnectPage(
         }
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onSkip, enabled = !isConnecting) {
-            Text("Skip for now")
+            Text("Continue without server")
         }
     }
 }
