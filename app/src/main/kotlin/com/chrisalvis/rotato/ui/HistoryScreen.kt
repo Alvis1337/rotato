@@ -1,0 +1,152 @@
+package com.chrisalvis.rotato.ui
+
+import android.app.Application
+import android.content.Intent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.chrisalvis.rotato.data.FeedRepository
+import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.WallpaperHistoryItem
+import com.chrisalvis.rotato.data.historyFromJson
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class HistoryViewModel(app: Application) : AndroidViewModel(app) {
+    private val prefs = RotatoPreferences(app)
+    private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
+
+    val history: StateFlow<List<WallpaperHistoryItem>> = prefs.historyJson
+        .map { historyFromJson(it).reversed() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _downloading = mutableStateOf<Set<String>>(emptySet())
+    val downloading: State<Set<String>> = _downloading
+
+    fun downloadToRotation(item: WallpaperHistoryItem) {
+        val key = item.fullUrl
+        if (_downloading.value.contains(key)) return
+        viewModelScope.launch {
+            _downloading.value = _downloading.value + key
+            val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+            feedRepo.downloadWallpaper(sourceId, item.fullUrl)
+            _downloading.value = _downloading.value - key
+        }
+    }
+
+    fun saveToGallery(item: WallpaperHistoryItem) {
+        val ctx = getApplication<Application>().applicationContext
+        val key = item.fullUrl
+        if (_downloading.value.contains(key)) return
+        viewModelScope.launch {
+            _downloading.value = _downloading.value + key
+            val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+            feedRepo.saveToGallery(ctx, sourceId, item.fullUrl)
+            _downloading.value = _downloading.value - key
+        }
+    }
+}
+
+@Composable
+fun HistoryScreen(modifier: Modifier = Modifier) {
+    val vm: HistoryViewModel = viewModel()
+    val history by vm.history.collectAsStateWithLifecycle()
+    val downloading by vm.downloading
+    val context = LocalContext.current
+
+    if (history.isEmpty()) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No rotation history yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(history, key = { "${it.timestamp}_${it.fullUrl}" }) { item ->
+            HistoryCard(
+                item = item,
+                isDownloading = downloading.contains(item.fullUrl),
+                onDownload = { vm.saveToGallery(item) },
+                onOpenPage = {
+                    val url = item.fullUrl
+                    context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryCard(
+    item: WallpaperHistoryItem,
+    isDownloading: Boolean,
+    onDownload: () -> Unit,
+    onOpenPage: () -> Unit
+) {
+    val dateStr = remember(item.timestamp) {
+        SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(item.timestamp))
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = item.thumbUrl.ifBlank { item.fullUrl },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(width = 100.dp, height = 72.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .clickable(onClick = onOpenPage)
+            )
+            Column(
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(item.source.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                Text(dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row {
+                if (isDownloading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp).padding(4.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(onClick = onDownload) {
+                        Icon(Icons.Default.Download, contentDescription = "Save to gallery", modifier = Modifier.size(20.dp))
+                    }
+                }
+                IconButton(onClick = onOpenPage) {
+                    Icon(Icons.Default.OpenInBrowser, contentDescription = "Open", modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+    }
+}

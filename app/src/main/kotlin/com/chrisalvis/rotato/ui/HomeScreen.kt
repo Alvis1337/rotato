@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -144,6 +145,12 @@ fun HomeScreen(
                     icon = { Icon(Icons.Default.RssFeed, contentDescription = null) },
                     text = { Text("Feeds") }
                 )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Default.History, contentDescription = null) },
+                    text = { Text("History") }
+                )
             }
 
             when (selectedTab) {
@@ -166,6 +173,7 @@ fun HomeScreen(
                     viewModel = feedViewModel,
                     onBrowseFeed = onBrowseFeed
                 )
+                2 -> HistoryScreen()
             }
         }
     }
