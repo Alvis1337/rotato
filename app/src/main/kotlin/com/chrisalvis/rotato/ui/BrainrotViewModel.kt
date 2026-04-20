@@ -123,13 +123,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val localEnabled = enabledSources()
         if (localEnabled.isEmpty()) return null
         val nsfw = prefs.nsfwMode.first()
+        val globalQuery = _searchQuery.value.ifBlank { "anime" }
         for (source in localEnabled.shuffled()) {
-            val wp = fetchFromSource(
-                source,
-                _searchQuery.value.ifBlank { "anime" },
-                seenIds,
-                nsfw
-            )
+            val query = source.tags.ifBlank { globalQuery }
+            val wp = fetchFromSource(source, query, seenIds, nsfw)
             if (wp != null) return wp
         }
         return null

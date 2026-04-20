@@ -39,6 +39,10 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun setCredentials(type: SourceType, apiKey: String, apiUser: String) {
         viewModelScope.launch { prefs.update(type, apiKey = apiKey, apiUser = apiUser) }
     }
+
+    fun setTags(type: SourceType, tags: String) {
+        viewModelScope.launch { prefs.update(type, tags = tags) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,7 +79,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                 SourceCard(
                     source = source,
                     onToggle = { vm.setEnabled(source.type, it) },
-                    onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) }
+                    onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
+                    onSaveTags = { vm.setTags(source.type, it) }
                 )
             }
         }
@@ -86,11 +91,13 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
 private fun SourceCard(
     source: LocalSource,
     onToggle: (Boolean) -> Unit,
-    onSaveCredentials: (String, String) -> Unit
+    onSaveCredentials: (String, String) -> Unit,
+    onSaveTags: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
     var apiUser by remember(source) { mutableStateOf(source.apiUser) }
+    var tags by remember(source) { mutableStateOf(source.tags) }
     var showKey by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -107,12 +114,13 @@ private fun SourceCard(
                     } else if (!source.type.needsApiKey && !source.type.needsApiUser) {
                         Text("Works without credentials", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
+                    if (source.tags.isNotBlank()) {
+                        Text("Tags: ${source.tags}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (source.type.needsApiKey || source.type.needsApiUser) {
-                        TextButton(onClick = { expanded = !expanded }) {
-                            Text(if (expanded) "Close" else "Credentials")
-                        }
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "Close" else "Configure")
                     }
                     Switch(checked = source.enabled, onCheckedChange = onToggle)
                 }
@@ -120,6 +128,15 @@ private fun SourceCard(
 
             if (expanded) {
                 HorizontalDivider()
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags / Query") },
+                    placeholder = { Text("e.g. scenery landscape (leave blank for global search)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    supportingText = { Text("Space-separated tags used only for this source") }
+                )
                 if (source.type.needsApiUser) {
                     OutlinedTextField(
                         value = apiUser,
@@ -145,7 +162,11 @@ private fun SourceCard(
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    FilledTonalButton(onClick = { onSaveCredentials(apiKey, apiUser); expanded = false }) {
+                    FilledTonalButton(onClick = {
+                        onSaveTags(tags.trim())
+                        onSaveCredentials(apiKey, apiUser)
+                        expanded = false
+                    }) {
                         Text("Save")
                     }
                 }

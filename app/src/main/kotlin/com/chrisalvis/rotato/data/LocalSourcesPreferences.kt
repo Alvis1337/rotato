@@ -25,7 +25,7 @@ class LocalSourcesPreferences(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { prefs -> parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() } }
 
-    suspend fun update(type: SourceType, enabled: Boolean? = null, apiKey: String? = null, apiUser: String? = null) {
+    suspend fun update(type: SourceType, enabled: Boolean? = null, apiKey: String? = null, apiUser: String? = null, tags: String? = null) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
             val idx = current.indexOfFirst { it.type == type }
@@ -34,7 +34,8 @@ class LocalSourcesPreferences(private val context: Context) {
             current[idx] = existing.copy(
                 enabled = enabled ?: existing.enabled,
                 apiKey = if (apiKey != null) apiKey else existing.apiKey,
-                apiUser = if (apiUser != null) apiUser else existing.apiUser
+                apiUser = if (apiUser != null) apiUser else existing.apiUser,
+                tags = if (tags != null) tags else existing.tags
             )
             prefs[SOURCES_KEY] = serialize(current)
         }
@@ -50,7 +51,8 @@ class LocalSourcesPreferences(private val context: Context) {
                 type = type,
                 enabled = o.optBoolean("enabled", false),
                 apiKey = o.optString("apiKey", ""),
-                apiUser = o.optString("apiUser", "")
+                apiUser = o.optString("apiUser", ""),
+                tags = o.optString("tags", "")
             ))
         }
         // Always include all source types, inserting defaults for any not yet persisted
@@ -68,6 +70,7 @@ class LocalSourcesPreferences(private val context: Context) {
                     put("enabled", s.enabled)
                     put("apiKey", s.apiKey)
                     put("apiUser", s.apiUser)
+                    put("tags", s.tags)
                 })
             }
         }.toString()

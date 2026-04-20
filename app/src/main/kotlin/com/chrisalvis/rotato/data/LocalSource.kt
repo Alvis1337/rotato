@@ -55,5 +55,6 @@ data class LocalSource(
     val type: SourceType,
     val enabled: Boolean = false,
     val apiKey: String = "",
-    val apiUser: String = ""
+    val apiUser: String = "",
+    val tags: String = ""
 )
