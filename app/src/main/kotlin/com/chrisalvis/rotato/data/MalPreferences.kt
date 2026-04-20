@@ -48,7 +48,7 @@ class MalPreferences(private val context: Context) {
             val json = prefs[MAL_FILTER_STATUSES] ?: return@map DEFAULT_STATUSES
             runCatching {
                 val arr = JSONArray(json)
-                Set(arr.length()) { arr.getString(it) }
+                List(arr.length()) { arr.getString(it) }.toSet()
             }.getOrDefault(DEFAULT_STATUSES)
         }
 
