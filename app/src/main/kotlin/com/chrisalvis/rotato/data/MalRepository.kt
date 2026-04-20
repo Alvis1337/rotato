@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.data
 
 import android.content.Context
+import android.net.Uri
 import android.util.Base64
 import com.chrisalvis.rotato.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -30,12 +31,17 @@ class MalRepository(private val context: Context) {
     suspend fun buildAuthUrl(): String {
         val verifier = generateCodeVerifier()
         prefs.setCodeVerifier(verifier)
-        return "https://myanimelist.net/v1/oauth2/authorize" +
-            "?response_type=code" +
-            "&client_id=${BuildConfig.MAL_CLIENT_ID}" +
-            "&redirect_uri=${REDIRECT_URI}" +
-            "&code_challenge=$verifier" +
-            "&code_challenge_method=plain"
+        return Uri.Builder()
+            .scheme("https")
+            .authority("myanimelist.net")
+            .path("/v1/oauth2/authorize")
+            .appendQueryParameter("response_type", "code")
+            .appendQueryParameter("client_id", BuildConfig.MAL_CLIENT_ID)
+            .appendQueryParameter("redirect_uri", REDIRECT_URI)
+            .appendQueryParameter("code_challenge", verifier)
+            .appendQueryParameter("code_challenge_method", "plain")
+            .build()
+            .toString()
     }
 
     suspend fun exchangeCode(code: String): Result<Unit> = withContext(Dispatchers.IO) {
