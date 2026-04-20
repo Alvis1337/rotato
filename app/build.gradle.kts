@@ -81,10 +81,11 @@ android {
     }
 }
 
-// Override the Kotlin plugin's default JetBrains toolchain request so that
-// any JDK 21 (e.g. Temurin in CI) satisfies the requirement.
+// Use any available JDK 21 — don't pin to JetBrains so Temurin in CI works fine.
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 dependencies {
