@@ -1,5 +1,54 @@
 # Rotato — Open Issues & Ideas
 
+## 🏗️ Architecture / Monetisation
+
+### Sources as installable plugins with IAP unlock
+Right now sources (Danbooru, Gelbooru, Safebooru, Wallhaven, Konachan, Yandere) are
+hard-coded `SourceType` enum values baked into `DirectSourceRepository`. The goal is to
+make each source a self-contained plugin so they can be individually offered/unlocked.
+
+**Proposed design**
+- `SourcePlugin` interface: `id`, `displayName`, `iconRes`, `description`, `isPremium`,
+  `fun fetch(query, exclude, nsfw, filters): BrainrotWallpaper?`
+- A `SourcePluginRegistry` singleton holds the list of installed plugins. Free build ships
+  with e.g. Safebooru (always free). Premium sources (Wallhaven, Danbooru, etc.) are
+  listed in the registry but gated behind a `PluginEntitlementChecker`.
+- `PluginEntitlementChecker` wraps Google Play Billing `BillingClient` — each premium
+  source maps to a Play product ID (e.g. `source_wallhaven`, `source_danbooru`). A bundle
+  SKU (`source_all`) unlocks everything.
+- `LocalSource` in DataStore gets a `pluginId: String` field instead of `SourceType` so
+  the user's configured sources survive plugin changes.
+- `DirectSourceRepository.fetchFromSource()` delegates to the matching plugin rather than
+  a `when` branch, so new sources can be added without touching core code.
+
+**Implementation phases**
+1. Extract each booru fetcher into its own `SourcePlugin` implementation class.
+2. Build `SourcePluginRegistry` + basic entitlement stub (all unlocked, no billing yet).
+3. Add "Premium" badge + lock icon in the Add Source picker for gated plugins.
+4. Integrate Google Play Billing: purchase flow, receipt verification, entitlement cache.
+5. Add restore-purchases and "already purchased?" flows.
+
+
+
+### End-to-end build and release pipeline
+Set up a full CI/CD pipeline so every merge to `main` produces a signed, distributable
+APK/AAB automatically.
+
+- **Signing**: create a release keystore, store `KEYSTORE_FILE` (base64), `KEY_ALIAS`,
+  `KEY_PASSWORD`, and `STORE_PASSWORD` as GitHub Actions secrets. Configure
+  `build.gradle.kts` `signingConfigs { release { ... } }` to read them from env vars.
+- **GitHub Actions workflow** (`.github/workflows/release.yml`):
+  - Trigger on push to `main` or manual `workflow_dispatch`.
+  - Steps: checkout → set up JDK 17 → cache Gradle → `./gradlew bundleRelease` (AAB for
+    Play Store) + `./gradlew assembleRelease` (APK for sideload) → sign both artifacts →
+    upload to GitHub Release with auto-generated tag (`v{versionName}-{versionCode}`).
+- **Version bump**: automate `versionCode` increment (e.g. `git rev-list --count HEAD`) so
+  every build has a unique code without manual edits.
+- **Play Store delivery** (optional): use `fastlane supply` or the Google Play GitHub
+  Action to push the AAB straight to the internal track after a successful build.
+- **Artifact retention**: attach signed APK + mapping.txt to the GitHub Release for
+  crash symbolication.
+
 ## 🔴 Critical / UX-Breaking
 
 ### Collections wallpapers not showing up in Library
