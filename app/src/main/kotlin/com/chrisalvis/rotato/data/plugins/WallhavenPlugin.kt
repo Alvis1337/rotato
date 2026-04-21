@@ -18,7 +18,16 @@ object WallhavenPlugin : SourcePlugin() {
     override val safeContent = true
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
-        val purity = if (nsfw) "111" else "110"
+        // Wallhaven purity string format: "SFW|Sketchy|NSFW" — e.g. "110" = SFW+Sketchy, "111" = all
+        val requestedPurity = source.wallhavenPurity.padStart(3, '0')
+        val effectivePurity = if (!nsfw) {
+            // Strip NSFW bit (index 2) when nsfwMode is off
+            val bits = requestedPurity.toCharArray()
+            bits[2] = '0'
+            String(bits)
+        } else requestedPurity
+        // Fall back to "100" (SFW only) if all bits are off
+        val purity = if (effectivePurity.all { it == '0' }) "100" else effectivePurity
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
         if (filters.minResolution != MinResolution.ANY)
             urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"

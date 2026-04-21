@@ -211,6 +211,15 @@ private fun HistoryCard(
             ) {
                 Text(item.source.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
                 Text(dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (item.tags.isNotEmpty()) {
+                    Text(
+                        item.tags.take(3).joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
                 if (imageError) {
                     Text("Image unavailable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }

@@ -18,7 +18,10 @@ import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealthTracker
+import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.fetchFromSource
+import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -337,6 +340,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
             val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl)
             val ctx = getApplication<Application>().applicationContext
+            if (ok) {
+                // Record in discover history with source + tags metadata
+                val history = historyFromJson(prefs.historyJson.first()).toMutableList()
+                history.add(0, WallpaperHistoryItem(
+                    thumbUrl = wp.thumbUrl,
+                    fullUrl = wp.fullUrl,
+                    source = wp.source,
+                    timestamp = System.currentTimeMillis(),
+                    tags = wp.tags,
+                    pageUrl = wp.pageUrl
+                ))
+                prefs.setHistoryJson(history.take(50).toJson())
+            }
             Toast.makeText(ctx, if (ok) "Added to rotation" else "Download failed", Toast.LENGTH_SHORT).show()
             _downloadingIds.update { it - key }
         }

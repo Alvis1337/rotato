@@ -17,16 +17,52 @@ object DanbooruPlugin : SourcePlugin() {
     override val apiUserLabel = "Username"
     override val safeContent = false
 
+    /** Cache of account level per username to avoid repeated /profile.json calls. */
+    private val accountLevelCache = mutableMapOf<String, Int>()
+
+    /** Danbooru account level threshold for Gold (can use more tags server-side). */
+    private const val GOLD_LEVEL = 20
+
+    private fun authHeader(source: LocalSource): String? =
+        if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
+            "Basic ${android.util.Base64.encodeToString("${source.apiUser}:${source.apiKey}".toByteArray(), android.util.Base64.NO_WRAP)}"
+        else null
+
+    private suspend fun accountLevel(source: LocalSource, auth: String): Int {
+        val cached = accountLevelCache[source.apiUser]
+        if (cached != null) return cached
+        val level = runCatching {
+            val req = Request.Builder()
+                .url("https://danbooru.donmai.us/profile.json")
+                .header("User-Agent", BROWSER_UA)
+                .addHeader("Authorization", auth)
+                .build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@runCatching 0
+                org.json.JSONObject(resp.body!!.string()).optInt("level", 0)
+            }
+        }.getOrDefault(0)
+        accountLevelCache[source.apiUser] = level
+        return level
+    }
+
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
         val normalized = normalizeBooruQuery(query)
+        val auth = authHeader(source)
+
+        // Determine if user has Gold/Platinum (allows more than 2 search tags)
+        val isPremiumAccount = auth != null && accountLevel(source, auth) >= GOLD_LEVEL
+
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+            // Premium accounts can use server-side ID exclusion for better dedup
+            if (isPremiumAccount && exclude.isNotEmpty()) {
+                exclude.take(3).forEach { id -> append(" -id:$id") }
+            }
         }.trim()
+
         val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.urlEncode()}&limit=20&random=true"
-        val auth = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
-            "Basic ${android.util.Base64.encodeToString("${source.apiUser}:${source.apiKey}".toByteArray(), android.util.Base64.NO_WRAP)}"
-        else null
         val req = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
             .apply { if (auth != null) addHeader("Authorization", auth) }.build()
         val arr = runCatching {

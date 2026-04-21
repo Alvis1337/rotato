@@ -52,6 +52,10 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun setTags(type: SourceType, tags: String) {
         viewModelScope.launch { prefs.update(type, tags = tags) }
     }
+
+    fun setWallhavenPurity(purity: String) {
+        viewModelScope.launch { prefs.update(SourceType.WALLHAVEN, wallhavenPurity = purity) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,7 +133,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         isLocked = !unlocked,
                         onToggle = { if (unlocked) vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
-                        onSaveTags = { vm.setTags(source.type, it) }
+                        onSaveTags = { vm.setTags(source.type, it) },
+                        onSaveWallhavenPurity = if (source.type == SourceType.WALLHAVEN) vm::setWallhavenPurity else null
                     )
                 }
             }
@@ -145,7 +150,8 @@ private fun SourceCard(
     isLocked: Boolean = false,
     onToggle: (Boolean) -> Unit,
     onSaveCredentials: (String, String) -> Unit,
-    onSaveTags: (String) -> Unit
+    onSaveTags: (String) -> Unit,
+    onSaveWallhavenPurity: ((String) -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
@@ -153,6 +159,8 @@ private fun SourceCard(
     var tags by remember(source) { mutableStateOf(source.tags) }
     var showKey by remember { mutableStateOf(false) }
     var showHealthDetail by remember { mutableStateOf(false) }
+    // Wallhaven purity: "SFW|Sketchy|NSFW" bitmask (index 0=SFW, 1=Sketchy, 2=NSFW)
+    var wallhavenPurity by remember(source) { mutableStateOf(source.wallhavenPurity.padStart(3, '0')) }
 
     // Health dot color: grey = untested, green = last fetch ok, red = last fetch errored
     val healthDotColor = when {
@@ -281,10 +289,31 @@ private fun SourceCard(
                         }
                     )
                 }
+                // Wallhaven-specific: purity filter checkboxes
+                if (source.type == SourceType.WALLHAVEN && onSaveWallhavenPurity != null) {
+                    Text("Content filter", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val purityOptions = listOf("SFW" to 0, "Sketchy" to 1, "NSFW" to 2)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        purityOptions.forEach { (label, idx) ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = wallhavenPurity.getOrElse(idx) { '0' } == '1',
+                                    onCheckedChange = { checked ->
+                                        val bits = wallhavenPurity.toCharArray()
+                                        bits[idx] = if (checked) '1' else '0'
+                                        wallhavenPurity = String(bits)
+                                    }
+                                )
+                                Text(label, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     FilledTonalButton(onClick = {
                         onSaveTags(tags.trim())
                         onSaveCredentials(apiKey, apiUser)
+                        onSaveWallhavenPurity?.invoke(wallhavenPurity)
                         expanded = false
                     }) {
                         Text("Save")

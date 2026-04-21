@@ -25,7 +25,7 @@ class LocalSourcesPreferences(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { prefs -> parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() } }
 
-    suspend fun update(type: SourceType, enabled: Boolean? = null, apiKey: String? = null, apiUser: String? = null, tags: String? = null) {
+    suspend fun update(type: SourceType, enabled: Boolean? = null, apiKey: String? = null, apiUser: String? = null, tags: String? = null, wallhavenPurity: String? = null) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
             val idx = current.indexOfFirst { it.type == type }
@@ -35,7 +35,8 @@ class LocalSourcesPreferences(private val context: Context) {
                 enabled = enabled ?: existing.enabled,
                 apiKey = if (apiKey != null) apiKey else existing.apiKey,
                 apiUser = if (apiUser != null) apiUser else existing.apiUser,
-                tags = if (tags != null) tags else existing.tags
+                tags = if (tags != null) tags else existing.tags,
+                wallhavenPurity = if (wallhavenPurity != null) wallhavenPurity else existing.wallhavenPurity
             )
             prefs[SOURCES_KEY] = serialize(current)
         }
@@ -52,7 +53,8 @@ class LocalSourcesPreferences(private val context: Context) {
                 enabled = o.optBoolean("enabled", false),
                 apiKey = o.optString("apiKey", ""),
                 apiUser = o.optString("apiUser", ""),
-                tags = o.optString("tags", "")
+                tags = o.optString("tags", ""),
+                wallhavenPurity = o.optString("wallhavenPurity", "110")
             ))
         }
         // Always include all source types, inserting defaults for any not yet persisted
@@ -71,6 +73,7 @@ class LocalSourcesPreferences(private val context: Context) {
                     put("apiKey", s.apiKey)
                     put("apiUser", s.apiUser)
                     put("tags", s.tags)
+                    put("wallhavenPurity", s.wallhavenPurity)
                 })
             }
         }.toString()
