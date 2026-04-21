@@ -109,13 +109,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             // Local image — copy from list_images/ to rotation pool
                             val src = File(getApplication<android.app.Application>().filesDir, entry.fullUrl)
                             if (src.exists()) {
-                                val ext = src.extension.ifBlank { "jpg" }
-                                src.copyTo(File(imageDir, "$key.$ext"), overwrite = true)
+                                try {
+                                    val ext = src.extension.ifBlank { "jpg" }
+                                    src.copyTo(File(imageDir, "$key.$ext"), overwrite = true)
+                                    changed = true
+                                } catch (e: java.io.IOException) {
+                                    android.util.Log.e("HomeViewModel", "Failed to copy device image to rotation pool: ${entry.fullUrl}", e)
+                                }
                             }
                         } else {
                             feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+                            changed = true
                         }
-                        changed = true
                     }
                 }
                 if (changed) _images.update { repository.getImages() }

@@ -89,6 +89,7 @@ class LocalListsPreferences(private val context: Context) {
         val uuid = relativePath.substringAfterLast("/").substringBeforeLast(".")
         context.dataStore.edit { prefs ->
             val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
+            if (current.any { it.listId == listId && it.sourceId == uuid }) return@edit
             val entry = LocalWallpaperEntry(
                 listId = listId,
                 sourceId = uuid,

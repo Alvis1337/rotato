@@ -65,8 +65,9 @@ class MalRepository(private val context: Context) {
                 .build()
 
             http.newCall(req).execute().use { resp ->
-                check(resp.isSuccessful) { "Token exchange failed: ${resp.code} ${resp.body?.string()}" }
-                val json = JSONObject(resp.body!!.string())
+                val body = resp.body?.string()
+                check(resp.isSuccessful) { "Token exchange failed: ${resp.code} $body" }
+                val json = JSONObject(body!!)
                 prefs.setTokens(
                     json.getString("access_token"),
                     json.getString("refresh_token")
