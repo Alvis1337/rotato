@@ -41,9 +41,9 @@ object WallhavenPlugin : SourcePlugin() {
         val fullUrl = post.optString("path").ifBlank { return@onIO null }
         val thumbs = post.optJSONObject("thumbs")
         val thumbUrl = thumbs?.optString("small") ?: thumbs?.optString("original") ?: fullUrl
-        val sampleUrl = thumbs?.optString("large")?.ifBlank { null }
-            ?: thumbs?.optString("original")?.ifBlank { null }
-            ?: fullUrl
+        // Wallhaven has no intermediate sample size — thumbs are ~300px and look zoomed in
+        // cards. Use fullUrl so the grid gets the correct proportions (same trade-off as booru sources).
+        val sampleUrl = fullUrl
         val tags = post.optJSONArray("tags")?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
         } ?: emptyList()
