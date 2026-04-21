@@ -46,7 +46,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
 
-    private val _images = MutableStateFlow<List<File>>(emptyList())
+    private val _images = MutableStateFlow<List<File>>(repository.getImages())
     val images: StateFlow<List<File>> = _images.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -66,9 +66,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
     init {
-        refreshImages()
+        observeImageDir()
         recoverIfNeeded()
         observeRotationCollections()
+    }
+
+    /** Polls rotato_images/ every 2 s and pushes changes into [_images]. */
+    private fun observeImageDir() {
+        viewModelScope.launch {
+            repository.imagesFlow().collect { files ->
+                _images.update { files }
+            }
+        }
     }
 
     private fun refreshImages() {

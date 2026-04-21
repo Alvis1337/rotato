@@ -56,6 +56,10 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun setWallhavenPurity(purity: String) {
         viewModelScope.launch { prefs.update(SourceType.WALLHAVEN, wallhavenPurity = purity) }
     }
+
+    fun disableAllSources() {
+        viewModelScope.launch { prefs.disableAll() }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +68,23 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val vm: LocalSourcesViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val healthMap by vm.health.collectAsStateWithLifecycle()
+
+    var showDisableAllConfirm by remember { mutableStateOf(false) }
+    if (showDisableAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDisableAllConfirm = false },
+            title = { Text("Disable all sources?") },
+            text = { Text("This will disable every source. You can re-enable them individually at any time.") },
+            confirmButton = {
+                TextButton(onClick = { vm.disableAllSources(); showDisableAllConfirm = false }) {
+                    Text("Disable all")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisableAllConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     // Partition: free first, then premium
     val freeSources = sources.filter { !it.type.isPremium }
@@ -136,6 +157,20 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onSaveTags = { vm.setTags(source.type, it) },
                         onSaveWallhavenPurity = if (source.type == SourceType.WALLHAVEN) vm::setWallhavenPurity else null
                     )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(8.dp))
+                if (sources.any { it.enabled }) {
+                    OutlinedButton(
+                        onClick = { showDisableAllConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Disable all sources")
+                    }
                 }
             }
         }

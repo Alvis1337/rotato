@@ -42,6 +42,13 @@ class LocalSourcesPreferences(private val context: Context) {
         }
     }
 
+    suspend fun disableAll() {
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }
+            prefs[SOURCES_KEY] = serialize(current.map { it.copy(enabled = false) })
+        }
+    }
+
     private fun parse(json: String): List<LocalSource> = try {
         val arr = JSONArray(json)
         val result = mutableListOf<LocalSource>()

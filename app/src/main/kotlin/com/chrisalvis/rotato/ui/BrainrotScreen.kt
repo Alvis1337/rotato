@@ -72,6 +72,31 @@ fun BrainrotScreen(
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
     val lastTriedSources by vm.lastTriedSources.collectAsStateWithLifecycle()
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Undo snackbar after each skip
+    LaunchedEffect(snackbarHostState) {
+        vm.skipEvent.collect {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = "Wallpaper skipped",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) vm.undo()
+        }
+    }
+
+    // Source failure banner (non-blocking)
+    LaunchedEffect(snackbarHostState) {
+        vm.sourceFailureEvent.collect { sourceName ->
+            snackbarHostState.showSnackbar(
+                message = "$sourceName unavailable, trying next source…",
+                duration = SnackbarDuration.Short
+            )
+        }
+    }
+
     var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showZoom by remember { mutableStateOf(false) }
@@ -197,6 +222,14 @@ fun BrainrotScreen(
                 }
             }
         }
+
+        // Snackbar overlay (undo skips + source failure banners)
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp)
+        )
     }
 }
 

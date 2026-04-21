@@ -23,7 +23,9 @@ import com.chrisalvis.rotato.data.fetchFromSource
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -102,6 +104,17 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
 
+    // Undo stack for skipped wallpapers (last 3)
+    private val undoStack = ArrayDeque<BrainrotWallpaper>(3)
+
+    /** Fires once per skip so BrainrotScreen can show an Undo snackbar. */
+    private val _skipEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val skipEvent: SharedFlow<Unit> = _skipEvent
+
+    /** Fires with source display name when a source fails but fetching continues with others. */
+    private val _sourceFailureEvent = MutableSharedFlow<String>(extraBufferCapacity = 3)
+    val sourceFailureEvent: SharedFlow<String> = _sourceFailureEvent
+
     init {
         viewModelScope.launch { init() }
         // React when user enables their first source while on the no-sources screen
@@ -155,12 +168,15 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 malTitles.isNotEmpty() -> malTitles.shuffled().take(3) + listOf("")
                 else -> listOf("")
             }
-            for (query in queriesToTry) {
-                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+            for (query in queriesToTry) {                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
                 if (wp != null) {
                     _lastTriedSources.update { emptyList() }
                     return wp
                 }
+            }
+            // All queries for this source returned null — emit banner only when others remain
+            if (localEnabled.size > 1) {
+                _sourceFailureEvent.tryEmit(source.type.displayName)
             }
         }
         _lastTriedSources.update { triedSources.distinct() }
@@ -292,8 +308,22 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun skip() {
         if (_busy.value) return
+        val current = _current.value ?: return
         _sessionSkipped.update { it + 1 }
+        if (undoStack.size >= 3) undoStack.removeFirst()
+        undoStack.addLast(current)
+        _skipEvent.tryEmit(Unit)
         advanceCard()
+    }
+
+    fun undo() {
+        val wp = undoStack.removeLastOrNull() ?: return
+        _sessionSkipped.update { (it - 1).coerceAtLeast(0) }
+        seenIds.remove(wp.id)
+        // Re-insert as current; push existing current back to front of queue
+        _current.value?.let { existing -> cardQueue.addFirst(existing) }
+        _current.update { wp }
+        _nextWallpaper.update { cardQueue.firstOrNull() }
     }
 
     fun addToList(listId: String) {
