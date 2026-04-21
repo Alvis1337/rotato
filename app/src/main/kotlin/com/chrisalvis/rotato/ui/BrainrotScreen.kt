@@ -259,6 +259,11 @@ fun BrainrotScreen(
                     if (shouldLoadMore && !endReached) vm.loadMore()
                 }
 
+                PullToRefreshBox(
+                    isRefreshing = loading,
+                    onRefresh = { vm.loadMore(reset = true) },
+                    modifier = Modifier.fillMaxSize()
+                ) {
                 LazyVerticalStaggeredGrid(
                     columns = StaggeredGridCells.Fixed(2),
                     state = gridState,
@@ -303,6 +308,7 @@ fun BrainrotScreen(
                         }
                     }
                 }
+                } // end PullToRefreshBox
 
                 // Bottom action bar: search + settings FAB row
                 Row(
