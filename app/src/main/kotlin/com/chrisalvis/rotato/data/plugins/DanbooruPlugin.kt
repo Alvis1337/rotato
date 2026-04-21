@@ -18,7 +18,7 @@ object DanbooruPlugin : SourcePlugin() {
     override val safeContent = false
 
     /** Cache of account level per username to avoid repeated /profile.json calls. */
-    private val accountLevelCache = mutableMapOf<String, Int>()
+    private val accountLevelCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /** Danbooru account level threshold for Gold (can use more tags server-side). */
     private const val GOLD_LEVEL = 20
@@ -39,7 +39,7 @@ object DanbooruPlugin : SourcePlugin() {
                 .build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@runCatching 0
-                org.json.JSONObject(resp.body!!.string()).optInt("level", 0)
+                org.json.JSONObject(resp.body?.string() ?: return@runCatching 0).optInt("level", 0)
             }
         }.getOrDefault(0)
         accountLevelCache[source.apiUser] = level
@@ -68,7 +68,7 @@ object DanbooruPlugin : SourcePlugin() {
         val arr = runCatching {
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@onIO null
-                JSONArray(resp.body!!.string())
+                JSONArray(resp.body?.string() ?: return@onIO null)
             }
         }.getOrNull() ?: return@onIO null
         val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("image_width") to it.optInt("image_height")) } ?: return@onIO null

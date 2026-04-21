@@ -28,7 +28,7 @@ internal fun getJson(url: String, vararg headers: Pair<String, String>): JSONObj
         .build()
     http.newCall(req).execute().use { resp ->
         if (!resp.isSuccessful) { Log.w(PLUGIN_TAG, "HTTP ${resp.code} for $url"); null }
-        else JSONObject(resp.body!!.string())
+        else JSONObject(resp.body?.string() ?: return@use null)
     }
 } catch (e: Exception) { Log.e(PLUGIN_TAG, "getJson failed: $url", e); null }
 
@@ -39,7 +39,7 @@ internal fun getJsonArray(url: String, vararg headers: Pair<String, String>): JS
         .build()
     http.newCall(req).execute().use { resp ->
         if (!resp.isSuccessful) { Log.w(PLUGIN_TAG, "HTTP ${resp.code} for $url"); null }
-        else JSONArray(resp.body!!.string())
+        else JSONArray(resp.body?.string() ?: return@use null)
     }
 } catch (e: Exception) { Log.e(PLUGIN_TAG, "getJsonArray failed: $url", e); null }
 
