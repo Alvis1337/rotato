@@ -390,7 +390,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Add photos with \"Add Photos\", or go to Discover → swipe right on a wallpaper to save it to a Collection, then use the download button in a Collection to add it here.",
+                text = "Add photos with \"Add Photos\", go to Discover and swipe right to save wallpapers, or open Collections → tap the Wallpaper icon on any collection to automatically sync it here.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
