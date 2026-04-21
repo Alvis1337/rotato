@@ -1,0 +1,64 @@
+package com.chrisalvis.rotato.data.plugins
+
+import com.chrisalvis.rotato.data.BrainrotFilters
+import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.LocalSource
+
+object KonachanPlugin : SourcePlugin() {
+    override val id = "KONACHAN"
+    override val displayName = "Konachan"
+    override val description = "High-quality anime wallpapers (Moebooru). No account needed."
+    override val isPremium = true
+    override val needsApiKey = false
+    override val needsApiUser = false
+    override val apiKeyLabel = "API Key"
+    override val apiUserLabel = "API User"
+    override val safeContent = true
+
+    override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? =
+        fetchMoebooru(query, exclude, nsfw, "konachan.com", "konachan", filters)
+}
+
+object YanderePlugin : SourcePlugin() {
+    override val id = "YANDERE"
+    override val displayName = "Yande.re"
+    override val description = "Anime art archive with high resolution scans (Moebooru). No account needed."
+    override val isPremium = true
+    override val needsApiKey = false
+    override val needsApiUser = false
+    override val apiKeyLabel = "API Key"
+    override val apiUserLabel = "API User"
+    override val safeContent = false
+
+    override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? =
+        fetchMoebooru(query, exclude, nsfw, "yande.re", "yandere", filters)
+}
+
+private suspend fun fetchMoebooru(
+    query: String,
+    exclude: List<String>,
+    nsfw: Boolean,
+    host: String,
+    sourceName: String,
+    filters: BrainrotFilters,
+): BrainrotWallpaper? = onIO {
+    val tagQuery = buildString {
+        val normalized = normalizeBooruQuery(query)
+        if (normalized.isNotBlank()) append("$normalized ")
+        if (!nsfw) append("rating:safe ")
+        append("order:random")
+    }.trim()
+    val url = "https://$host/post.json?tags=${tagQuery.urlEncode()}&limit=20"
+    val arr = getJsonArray(url) ?: return@onIO null
+    val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return@onIO null
+    val id = post.optInt("id", 0).toString()
+    val fullUrl = post.optString("file_url").ifBlank { return@onIO null }
+    BrainrotWallpaper(
+        id = id, source = sourceName,
+        thumbUrl = post.optString("preview_url").ifBlank { fullUrl },
+        fullUrl = fullUrl,
+        resolution = "${post.optInt("width")}x${post.optInt("height")}",
+        pageUrl = "https://$host/post/show/$id",
+        tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+    )
+}

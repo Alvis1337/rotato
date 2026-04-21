@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.SourceType
+import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -51,6 +53,10 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val vm: LocalSourcesViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
 
+    // Partition: free first, then premium
+    val freeSources = sources.filter { !it.type.isPremium }
+    val premiumSources = sources.filter { it.type.isPremium }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -75,13 +81,47 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            items(sources, key = { it.type.name }) { source ->
-                SourceCard(
-                    source = source,
-                    onToggle = { vm.setEnabled(source.type, it) },
-                    onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
-                    onSaveTags = { vm.setTags(source.type, it) }
-                )
+
+            if (freeSources.isNotEmpty()) {
+                item {
+                    Text(
+                        "FREE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(freeSources, key = { it.type.name }) { source ->
+                    SourceCard(
+                        source = source,
+                        onToggle = { vm.setEnabled(source.type, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
+                        onSaveTags = { vm.setTags(source.type, it) }
+                    )
+                }
+            }
+
+            if (premiumSources.isNotEmpty()) {
+                item {
+                    Text(
+                        "PREMIUM",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(premiumSources, key = { it.type.name }) { source ->
+                    val plugin = source.type.plugin
+                    val unlocked = plugin == null || PluginEntitlement.isUnlocked(plugin)
+                    SourceCard(
+                        source = source,
+                        isPremium = true,
+                        isLocked = !unlocked,
+                        onToggle = { if (unlocked) vm.setEnabled(source.type, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
+                        onSaveTags = { vm.setTags(source.type, it) }
+                    )
+                }
             }
         }
     }
@@ -90,6 +130,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
 @Composable
 private fun SourceCard(
     source: LocalSource,
+    isPremium: Boolean = false,
+    isLocked: Boolean = false,
     onToggle: (Boolean) -> Unit,
     onSaveCredentials: (String, String) -> Unit,
     onSaveTags: (String) -> Unit
@@ -107,26 +149,64 @@ private fun SourceCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column {
-                    Text(source.type.displayName, fontWeight = FontWeight.Medium)
-                    if (!source.type.safeContent) {
-                        Text("May include adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                    } else if (!source.type.needsApiKey && !source.type.needsApiUser) {
-                        Text("Works without credentials", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(source.type.displayName, fontWeight = FontWeight.Medium)
+                        if (isPremium) {
+                            SuggestionChip(
+                                onClick = {},
+                                label = { Text("Premium", style = MaterialTheme.typography.labelSmall) },
+                                icon = if (isLocked) {
+                                    { Icon(Icons.Default.Lock, contentDescription = "Locked", modifier = Modifier.size(12.dp)) }
+                                } else null,
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    iconContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            )
+                        }
+                    }
+                    // Description from plugin, or fallback to old safeContent hint
+                    val description = source.type.plugin?.description ?: run {
+                        if (!source.type.safeContent) "May include adult content"
+                        else if (!source.type.needsApiKey && !source.type.needsApiUser) "Works without credentials"
+                        else null
+                    }
+                    if (description != null) {
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (!source.type.safeContent) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.outline
+                        )
                     }
                     if (source.tags.isNotBlank()) {
                         Text("Tags: ${source.tags}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { expanded = !expanded }) {
-                        Text(if (expanded) "Close" else "Configure")
+                    if (!isLocked) {
+                        TextButton(onClick = { expanded = !expanded }) {
+                            Text(if (expanded) "Close" else "Configure")
+                        }
+                    } else {
+                        TextButton(onClick = { /* TODO: launch IAP purchase flow */ }) {
+                            Text("Unlock")
+                        }
                     }
-                    Switch(checked = source.enabled, onCheckedChange = onToggle)
+                    Switch(
+                        checked = source.enabled,
+                        onCheckedChange = onToggle,
+                        enabled = !isLocked
+                    )
                 }
             }
 
-            if (expanded) {
+            if (expanded && !isLocked) {
                 HorizontalDivider()
                 OutlinedTextField(
                     value = tags,
@@ -174,3 +254,4 @@ private fun SourceCard(
         }
     }
 }
+

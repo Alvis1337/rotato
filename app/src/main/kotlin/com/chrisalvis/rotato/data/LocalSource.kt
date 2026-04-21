@@ -1,5 +1,7 @@
 package com.chrisalvis.rotato.data
 
+import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
+
 enum class SourceType(
     val displayName: String,
     val needsApiKey: Boolean,
@@ -48,7 +50,13 @@ enum class SourceType(
         needsApiKey = false,
         needsApiUser = false,
         safeContent = false
-    )
+    );
+
+    /** Returns the [SourcePlugin] that handles fetch logic for this source type. */
+    val plugin get() = SourcePluginRegistry.findById(name)
+
+    /** True when the source is gated behind an IAP entitlement. */
+    val isPremium get() = plugin?.isPremium ?: false
 }
 
 data class LocalSource(
@@ -58,3 +66,4 @@ data class LocalSource(
     val apiUser: String = "",
     val tags: String = ""
 )
+

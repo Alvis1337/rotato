@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -148,7 +149,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 else -> listOf("")
             }
             for (query in queriesToTry) {
-                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+                val wp = try {
+                    fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+                } catch (e: Exception) {
+                    android.util.Log.w("BrainrotVM", "fetchFromSource threw for ${source.type}: ${e.message}")
+                    null
+                }
                 if (wp != null) return wp
             }
         }
