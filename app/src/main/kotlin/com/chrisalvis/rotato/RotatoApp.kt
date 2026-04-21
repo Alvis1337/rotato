@@ -3,11 +3,32 @@ package com.chrisalvis.rotato
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
 
-class RotatoApp : Application() {
+class RotatoApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        val client = OkHttpClient.Builder()
+            .addInterceptor(Interceptor { chain ->
+                val req = chain.request()
+                val host = req.url.host
+                // Gelbooru's image CDN requires a Referer header or it redirects to hotlink.php
+                val newReq = if (host.endsWith("gelbooru.com")) {
+                    req.newBuilder().header("Referer", "https://gelbooru.com/").build()
+                } else req
+                chain.proceed(newReq)
+            })
+            .build()
+        return ImageLoader.Builder(this)
+            .okHttpClient(client)
+            .build()
     }
 
     private fun createNotificationChannels() {
