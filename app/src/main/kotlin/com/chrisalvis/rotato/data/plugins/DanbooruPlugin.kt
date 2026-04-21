@@ -28,7 +28,7 @@ object DanbooruPlugin : SourcePlugin() {
             "Basic ${android.util.Base64.encodeToString("${source.apiUser}:${source.apiKey}".toByteArray(), android.util.Base64.NO_WRAP)}"
         else null
 
-    private suspend fun accountLevel(source: LocalSource, auth: String): Int {
+    private fun accountLevel(source: LocalSource, auth: String): Int {
         val cached = accountLevelCache[source.apiUser]
         if (cached != null) return cached
         val level = runCatching {
