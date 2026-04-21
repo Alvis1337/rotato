@@ -22,13 +22,24 @@ object GelbooruPlugin : SourcePlugin() {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
         }.trim()
-        val pid = (0..200).random()
-        val urlBase = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=20&pid=$pid&tags=${tagQuery.urlEncode()}"
-        val url = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
-            "$urlBase&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
-        else urlBase
-        val json = getJson(url) ?: return@onIO null
-        val arr = json.optJSONArray("post") ?: return@onIO null
+        val authSuffix = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
+            "&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
+        else ""
+        val baseUrl = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.urlEncode()}$authSuffix"
+
+        // Fetch page 0 first to discover total count, then pick a random valid page.
+        // Without this, a random pid can exceed the result count and Gelbooru returns "Too deep!".
+        val page0 = getJson("$baseUrl&pid=0") ?: return@onIO null
+        val count = page0.optJSONObject("@attributes")?.optInt("count", 0) ?: 0
+        val maxPid = ((count - 1) / 20).coerceIn(0, 100)
+
+        val arr = if (maxPid > 0) {
+            val randomPid = (1..maxPid).random()
+            getJson("$baseUrl&pid=$randomPid")?.optJSONArray("post")
+        } else {
+            page0.optJSONArray("post")
+        } ?: return@onIO null
+
         val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return@onIO null
         val id = post.optInt("id", 0).toString()
         val fullUrl = post.optString("file_url").ifBlank { return@onIO null }
