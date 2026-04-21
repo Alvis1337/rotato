@@ -103,15 +103,6 @@ fun BrainrotScreen(
         }
     }
 
-    LaunchedEffect(snackbarHostState) {
-        vm.sourceFailureEvent.collect { sourceName ->
-            snackbarHostState.showSnackbar(
-                message = "$sourceName unavailable, trying next source…",
-                duration = SnackbarDuration.Short
-            )
-        }
-    }
-
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showCreateListDialog by remember { mutableStateOf(false) }

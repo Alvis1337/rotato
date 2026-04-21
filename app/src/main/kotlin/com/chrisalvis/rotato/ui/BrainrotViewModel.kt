@@ -113,9 +113,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _skipEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val skipEvent: SharedFlow<Unit> = _skipEvent
 
-    private val _sourceFailureEvent = MutableSharedFlow<String>(extraBufferCapacity = 3)
-    val sourceFailureEvent: SharedFlow<String> = _sourceFailureEvent
-
     private var fetchJob: Job? = null
 
     init {
@@ -241,9 +238,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     _lastTriedSources.update { emptyList() }
                     return wp
                 }
-            }
-            if (localEnabled.size > 1) {
-                _sourceFailureEvent.tryEmit(source.type.displayName)
             }
         }
         _lastTriedSources.update { triedSources.distinct() }
