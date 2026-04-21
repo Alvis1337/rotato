@@ -2,6 +2,8 @@ package com.chrisalvis.rotato.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -73,6 +75,16 @@ fun SettingsScreen(
     val malFilterMinScore by malViewModel.filterMinScore.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
+
+    val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { viewModel.exportSettings(it) } }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { viewModel.importSettings(it) } }
 
     if (showClearDialog) {
         AlertDialog(
@@ -259,6 +271,37 @@ fun SettingsScreen(
                         onClick = { malViewModel.login(context) },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Connect MyAnimeList") }
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Backup & Restore") {
+                Text(
+                    text = "Export or import your sources, API keys, and preferences. MAL auth tokens are not backed up.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = { exportLauncher.launch("rotato-backup-$today.json") },
+                        enabled = backupState == BackupState.IDLE,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (backupState == BackupState.BUSY) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text(if (backupState == BackupState.SUCCESS) "Exported!" else if (backupState == BackupState.ERROR) "Failed" else "Export")
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                        enabled = backupState == BackupState.IDLE,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (backupState == BackupState.SUCCESS) "Imported!" else if (backupState == BackupState.ERROR) "Failed" else "Import")
+                    }
                 }
             }
 

@@ -20,12 +20,19 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalSourcesPreferences
+import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.RotatoSettings
+import com.chrisalvis.rotato.data.SourceType
+import com.chrisalvis.rotato.data.WallpaperTarget
+import com.chrisalvis.rotato.data.AspectRatio
+import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.flow.combine
 import com.chrisalvis.rotato.worker.WallpaperWorker
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.CHAIN_WORK_NAME
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.KEY_INTERVAL_MINUTES
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,10 +42,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 enum class SetNowState { IDLE, SETTING, DONE, ERROR }
+enum class BackupState { IDLE, BUSY, SUCCESS, ERROR }
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -46,6 +56,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = RotatoPreferences(application)
     private val workManager = WorkManager.getInstance(application)
     private val localLists = LocalListsPreferences(application)
+    private val sourcesPrefs = LocalSourcesPreferences(application)
+    private val malPrefs = MalPreferences(application)
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
 
@@ -337,6 +349,126 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun cancelRotation() {
         workManager.cancelUniqueWork(WORK_NAME)
         workManager.cancelUniqueWork(CHAIN_WORK_NAME)
+    }
+
+    // ── Backup / Restore ────────────────────────────────────────────────────────
+
+    private val _backupState = MutableStateFlow(BackupState.IDLE)
+    val backupState: StateFlow<BackupState> = _backupState.asStateFlow()
+
+    fun exportSettings(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _backupState.update { BackupState.BUSY }
+            runCatching {
+                val sources = sourcesPrefs.sources.first()
+                val prefs = preferences.settings.first()
+                val nsfwMode = preferences.nsfwMode.first()
+                val minRes = preferences.brainrotFilters.first().minResolution
+                val aspectRatio = preferences.brainrotFilters.first().aspectRatio
+                val malUsername = malPrefs.username.first()
+                val malStatuses = malPrefs.filterStatuses.first()
+                val malMinScore = malPrefs.filterMinScore.first()
+
+                val sourcesArr = JSONArray().also { arr ->
+                    sources.forEach { s ->
+                        arr.put(JSONObject().apply {
+                            put("type", s.type.name)
+                            put("enabled", s.enabled)
+                            put("apiKey", s.apiKey)
+                            put("apiUser", s.apiUser)
+                            put("tags", s.tags)
+                            put("wallhavenPurity", s.wallhavenPurity)
+                        })
+                    }
+                }
+                val json = JSONObject().apply {
+                    put("version", 1)
+                    put("sources", sourcesArr)
+                    put("preferences", JSONObject().apply {
+                        put("intervalMinutes", prefs.intervalMinutes)
+                        put("shuffleMode", prefs.shuffleMode)
+                        put("wallpaperTarget", prefs.wallpaperTarget.name)
+                        put("nsfwMode", nsfwMode)
+                        put("minResolution", minRes.name)
+                        put("aspectRatio", aspectRatio.name)
+                    })
+                    put("mal", JSONObject().apply {
+                        put("username", malUsername)
+                        put("filterStatuses", JSONArray(malStatuses.toList()))
+                        put("filterMinScore", malMinScore)
+                    })
+                }
+                getApplication<Application>().contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(json.toString(2).toByteArray(Charsets.UTF_8))
+                }
+                _backupState.update { BackupState.SUCCESS }
+            }.onFailure {
+                android.util.Log.e("HomeViewModel", "Export failed", it)
+                _backupState.update { BackupState.ERROR }
+            }
+            kotlinx.coroutines.delay(2_500)
+            _backupState.update { BackupState.IDLE }
+        }
+    }
+
+    fun importSettings(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _backupState.update { BackupState.BUSY }
+            runCatching {
+                val raw = getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    ?: error("Could not read file")
+                val json = JSONObject(raw)
+
+                // Restore sources
+                val sourcesArr = json.optJSONArray("sources")
+                if (sourcesArr != null) {
+                    for (i in 0 until sourcesArr.length()) {
+                        val o = sourcesArr.getJSONObject(i)
+                        val type = runCatching { SourceType.valueOf(o.getString("type")) }.getOrNull() ?: continue
+                        sourcesPrefs.update(
+                            type = type,
+                            enabled = o.optBoolean("enabled", false),
+                            apiKey = o.optString("apiKey", ""),
+                            apiUser = o.optString("apiUser", ""),
+                            tags = o.optString("tags", ""),
+                            wallhavenPurity = o.optString("wallhavenPurity", "110")
+                        )
+                    }
+                }
+
+                // Restore preferences
+                val prefsObj = json.optJSONObject("preferences")
+                if (prefsObj != null) {
+                    preferences.setIntervalMinutes(prefsObj.optInt("intervalMinutes", 60))
+                    preferences.setShuffleMode(prefsObj.optBoolean("shuffleMode", true))
+                    runCatching { WallpaperTarget.valueOf(prefsObj.optString("wallpaperTarget", "BOTH")) }
+                        .getOrNull()?.let { preferences.setWallpaperTarget(it) }
+                    preferences.setNsfwMode(prefsObj.optBoolean("nsfwMode", false))
+                    runCatching { MinResolution.valueOf(prefsObj.optString("minResolution", "ANY")) }
+                        .getOrNull()?.let { preferences.setMinResolution(it) }
+                    runCatching { AspectRatio.valueOf(prefsObj.optString("aspectRatio", "ANY")) }
+                        .getOrNull()?.let { preferences.setAspectRatio(it) }
+                }
+
+                // Restore MAL filter preferences (not auth tokens — those expire)
+                val malObj = json.optJSONObject("mal")
+                if (malObj != null) {
+                    val statusArr = malObj.optJSONArray("filterStatuses")
+                    if (statusArr != null) {
+                        val statuses = (0 until statusArr.length()).map { statusArr.getString(it) }.toSet()
+                        malPrefs.setFilterStatuses(statuses)
+                    }
+                    malPrefs.setFilterMinScore(malObj.optInt("filterMinScore", 0))
+                }
+
+                _backupState.update { BackupState.SUCCESS }
+            }.onFailure {
+                android.util.Log.e("HomeViewModel", "Import failed", it)
+                _backupState.update { BackupState.ERROR }
+            }
+            kotlinx.coroutines.delay(2_500)
+            _backupState.update { BackupState.IDLE }
+        }
     }
 
     companion object {
