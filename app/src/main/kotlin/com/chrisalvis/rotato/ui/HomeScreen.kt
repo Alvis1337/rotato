@@ -5,7 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +48,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -199,6 +205,21 @@ private fun LibraryContent(
         if (images.isEmpty()) {
             EmptyState(modifier = Modifier.weight(1f))
         } else {
+            var selectedFile by remember { mutableStateOf<File?>(null) }
+            selectedFile?.let { file ->
+                ImagePreviewDialog(
+                    file = file,
+                    onDismiss = { selectedFile = null },
+                    onSetWallpaper = {
+                        viewModel.setSpecificWallpaper(file)
+                        selectedFile = null
+                    },
+                    onRemove = {
+                        viewModel.deleteSelected(setOf(file))
+                        selectedFile = null
+                    }
+                )
+            }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 state = dragSelectState.gridState,
@@ -214,7 +235,8 @@ private fun LibraryContent(
                     ImageThumbnail(
                         file = file,
                         isSelected = isSelected,
-                        inSelectionMode = inSelectionMode
+                        inSelectionMode = inSelectionMode,
+                        onClick = { if (!inSelectionMode) selectedFile = file }
                     )
                 }
             }
@@ -329,7 +351,8 @@ private fun RotationStatusCard(
 private fun ImageThumbnail(
     file: File,
     isSelected: Boolean,
-    inSelectionMode: Boolean
+    inSelectionMode: Boolean,
+    onClick: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -339,6 +362,7 @@ private fun ImageThumbnail(
                 if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 else Modifier
             )
+            .then(if (!inSelectionMode) Modifier.clickable(onClick = onClick) else Modifier)
     ) {
         AsyncImage(
             model = file,
@@ -369,6 +393,72 @@ private fun ImageThumbnail(
                         CircleShape
                     )
             )
+        }
+    }
+}
+
+@Composable
+private fun ImagePreviewDialog(
+    file: File,
+    onDismiss: () -> Unit,
+    onSetWallpaper: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            AsyncImage(
+                model = file,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Close button
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = Color.White)
+            }
+
+            // Bottom actions
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)))
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                OutlinedButton(
+                    onClick = onRemove,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Remove")
+                }
+                Button(onClick = onSetWallpaper) {
+                    Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Set as Wallpaper")
+                }
+            }
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.app.WallpaperManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -254,6 +257,38 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setSpecificWallpaper(file: File) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _setNowState.update { SetNowState.SETTING }
+            try {
+                val app = getApplication<Application>()
+                val bitmap = loadScaledBitmapFromFile(app, file.absolutePath)
+                    ?: run {
+                        _setNowState.update { SetNowState.ERROR }
+                        kotlinx.coroutines.delay(2_000)
+                        _setNowState.update { SetNowState.IDLE }
+                        return@launch
+                    }
+                val settingsVal = preferences.settings.first()
+                val wallpaperManager = WallpaperManager.getInstance(app)
+                val flags = when (settingsVal.wallpaperTarget) {
+                    com.chrisalvis.rotato.data.WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
+                    com.chrisalvis.rotato.data.WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
+                    com.chrisalvis.rotato.data.WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                }
+                wallpaperManager.setBitmap(bitmap, null, true, flags)
+                bitmap.recycle()
+                _setNowState.update { SetNowState.DONE }
+                kotlinx.coroutines.delay(2_000)
+                _setNowState.update { SetNowState.IDLE }
+            } catch (e: Exception) {
+                _setNowState.update { SetNowState.ERROR }
+                kotlinx.coroutines.delay(2_000)
+                _setNowState.update { SetNowState.IDLE }
+            }
+        }
+    }
+
     private fun scheduleRotation(intervalMinutes: Long) {
         val constraints = Constraints.Builder()
             .setRequiresBatteryNotLow(true)
@@ -310,3 +345,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 private fun sanitizeFilename(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
+
+private fun loadScaledBitmapFromFile(app: Application, path: String): android.graphics.Bitmap? {
+    val metrics = app.resources.displayMetrics
+    val targetWidth = metrics.widthPixels
+    val targetHeight = metrics.heightPixels
+    val boundsOnly = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, boundsOnly)
+    var sampleSize = 1
+    var w = boundsOnly.outWidth
+    var h = boundsOnly.outHeight
+    while (w / 2 >= targetWidth && h / 2 >= targetHeight) { w /= 2; h /= 2; sampleSize *= 2 }
+    val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    return BitmapFactory.decodeFile(path, opts)
+}

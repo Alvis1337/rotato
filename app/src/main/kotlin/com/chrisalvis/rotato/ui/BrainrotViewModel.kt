@@ -46,11 +46,22 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val malPrefs = MalPreferences(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
 
-    private val _current = MutableStateFlow<BrainrotWallpaper?>(null)
-    val current: StateFlow<BrainrotWallpaper?> = _current.asStateFlow()
+    /** Grid feed — single source of truth for displayed wallpapers */
+    private val _gridItems = MutableStateFlow<List<BrainrotWallpaper>>(emptyList())
+    val gridItems: StateFlow<List<BrainrotWallpaper>> = _gridItems.asStateFlow()
+
+    /** Item currently open in fullscreen detail modal (null = no modal) */
+    private val _selectedItem = MutableStateFlow<BrainrotWallpaper?>(null)
+    val selectedItem: StateFlow<BrainrotWallpaper?> = _selectedItem.asStateFlow()
 
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _loadingMore = MutableStateFlow(false)
+    val loadingMore: StateFlow<Boolean> = _loadingMore.asStateFlow()
+
+    private val _endReached = MutableStateFlow(false)
+    val endReached: StateFlow<Boolean> = _endReached.asStateFlow()
 
     private val _noResults = MutableStateFlow(false)
     val noResults: StateFlow<Boolean> = _noResults.asStateFlow()
@@ -85,46 +96,36 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     val sourceHealth = SourceHealthTracker.health
 
-    // Names of sources tried during the last fetchNext() that returned no result
     private val _lastTriedSources = MutableStateFlow<List<String>>(emptyList())
     val lastTriedSources: StateFlow<List<String>> = _lastTriedSources.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val seenIds = mutableListOf<String>()
-
-    private val cardQueue = ArrayDeque<BrainrotWallpaper>()
-    private val queueTargetSize = 10
-    private val queueRefillThreshold = queueTargetSize // refill after every swipe
-    private var fillJob: Job? = null
-
-    private val _nextWallpaper = MutableStateFlow<BrainrotWallpaper?>(null)
-    val nextWallpaper: StateFlow<BrainrotWallpaper?> = _nextWallpaper.asStateFlow()
+    /** Composite "source:id" dedup — session-long to prevent repeat items */
+    private val displayedKeys = mutableSetOf<String>()
 
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
 
-    // Undo stack for skipped wallpapers (last 3)
     private val undoStack = ArrayDeque<BrainrotWallpaper>(3)
 
-    /** Fires once per skip so BrainrotScreen can show an Undo snackbar. */
     private val _skipEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val skipEvent: SharedFlow<Unit> = _skipEvent
 
-    /** Fires with source display name when a source fails but fetching continues with others. */
     private val _sourceFailureEvent = MutableSharedFlow<String>(extraBufferCapacity = 3)
     val sourceFailureEvent: SharedFlow<String> = _sourceFailureEvent
 
+    private var fetchJob: Job? = null
+
     init {
         viewModelScope.launch { init() }
-        // React when user enables their first source while on the no-sources screen
         viewModelScope.launch {
             localSources.sources.collect { sources ->
                 if (_noSources.value && sources.any { it.enabled }) {
                     _noSources.update { false }
                     loadLists()
-                    loadFirst()
+                    loadMore(reset = true)
                 }
             }
         }
@@ -138,32 +139,81 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         loadLists()
-        loadFirst()
+        loadMore(reset = true)
     }
 
-    private fun clearQueue() {
-        fillJob?.cancel()
-        fillJob = null
-        cardQueue.clear()
-        seenIds.clear()
-        _nextWallpaper.update { null }
-    }
+    /**
+     * Appends up to 12 new items to the grid.
+     * [reset] = true clears the grid and restarts from scratch (used on filter/source change).
+     */
+    fun loadMore(reset: Boolean = false) {
+        if (reset) {
+            fetchJob?.cancel()
+            fetchJob = null
+            _gridItems.update { emptyList() }
+            displayedKeys.clear()
+            _endReached.update { false }
+            _noResults.update { false }
+        }
+        if (_endReached.value) return
+        if (fetchJob?.isActive == true) return
 
-    private suspend fun enabledSources() =
-        localSources.sources.first().filter { it.enabled }
+        fetchJob = viewModelScope.launch {
+            val isInitial = _gridItems.value.isEmpty()
+            if (isInitial) _loading.update { true } else _loadingMore.update { true }
+
+            val ctx = getApplication<Application>().applicationContext
+            var fetched = 0
+            var nullStreak = 0
+            val target = 12
+
+            while (fetched < target && nullStreak < 3) {
+                val wp = fetchNext()
+                if (wp == null) {
+                    nullStreak++
+                    if (nullStreak < 3) kotlinx.coroutines.delay(300)
+                    continue
+                }
+                val key = "${wp.source}:${wp.id}"
+                if (key in displayedKeys) continue
+                displayedKeys.add(key)
+                nullStreak = 0
+                val url = wp.fullUrl.ifBlank { wp.thumbUrl }
+                if (url.isNotBlank()) {
+                    ctx.imageLoader.enqueue(
+                        ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
+                    )
+                }
+                val thumbUrl = wp.thumbUrl.ifBlank { "" }
+                if (thumbUrl.isNotBlank() && thumbUrl != url) {
+                    ctx.imageLoader.enqueue(
+                        ImageRequest.Builder(ctx).data(thumbUrl).memoryCacheKey(thumbUrl).diskCacheKey(thumbUrl).build()
+                    )
+                }
+                _gridItems.update { it + wp }
+                fetched++
+            }
+
+            if (fetched == 0) {
+                if (_gridItems.value.isEmpty()) _noResults.update { true }
+                _endReached.update { true }
+            }
+
+            if (isInitial) _loading.update { false } else _loadingMore.update { false }
+        }
+    }
 
     private suspend fun fetchNext(): BrainrotWallpaper? {
-        val localEnabled = enabledSources()
+        val localEnabled = localSources.sources.first().filter { it.enabled }
         if (localEnabled.isEmpty()) return null
         val nsfw = prefs.nsfwMode.first()
         val filters = prefs.brainrotFilters.first()
         val explicitQuery = _searchQuery.value
         val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
-        val excludeSnapshot = seenIds.toList()
+        val excludeSnapshot = displayedKeys.toList()
         val triedSources = mutableListOf<String>()
         for (source in localEnabled.shuffled()) {
             val plugin = SourcePluginRegistry.forType(source.type)
-            // If the source strictly requires credentials and none are set, skip silently
             if (plugin?.requiresCredentials == true &&
                 (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) {
                 continue
@@ -175,76 +225,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 malTitles.isNotEmpty() -> malTitles.shuffled().take(3) + listOf("")
                 else -> listOf("")
             }
-            for (query in queriesToTry) {                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+            for (query in queriesToTry) {
+                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
                 if (wp != null) {
                     _lastTriedSources.update { emptyList() }
                     return wp
                 }
             }
-            // All queries for this source returned null — emit banner only when others remain
             if (localEnabled.size > 1) {
                 _sourceFailureEvent.tryEmit(source.type.displayName)
             }
         }
         _lastTriedSources.update { triedSources.distinct() }
         return null
-    }
-
-    private fun loadFirst() {
-        viewModelScope.launch {
-            if (enabledSources().isEmpty()) {
-                _noSources.update { true }
-                _loading.update { false }
-                return@launch
-            }
-            _loading.update { true }
-            _noResults.update { false }
-            val wp = fetchNext()
-            if (wp != null) addSeen(wp.id)
-            _current.update { wp }
-            _noResults.update { wp == null }
-            _loading.update { false }
-            if (wp != null) fillQueue()
-        }
-    }
-
-    private fun addSeen(id: String) {
-        seenIds.add(id)
-        if (seenIds.size > 30) seenIds.removeAt(0)
-    }
-
-    private fun fillQueue() {
-        if (fillJob?.isActive == true) return
-        fillJob = viewModelScope.launch {
-            val ctx = getApplication<Application>().applicationContext
-            var nullStreak = 0
-            while (cardQueue.size < queueTargetSize) {
-                val wp = fetchNext()
-                if (wp == null) {
-                    nullStreak++
-                    if (nullStreak >= 3) break // give up after 3 consecutive misses
-                    kotlinx.coroutines.delay(500)
-                    continue
-                }
-                nullStreak = 0
-                addSeen(wp.id)
-                val url = wp.fullUrl.ifBlank { wp.thumbUrl }
-                if (url.isNotBlank()) {
-                    ctx.imageLoader.enqueue(
-                        ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
-                    )
-                }
-                // Preload thumb into memory cache so the placeholder renders instantly
-                val thumbUrl = wp.thumbUrl.ifBlank { "" }
-                if (thumbUrl.isNotBlank() && thumbUrl != url) {
-                    ctx.imageLoader.enqueue(
-                        ImageRequest.Builder(ctx).data(thumbUrl).memoryCacheKey(thumbUrl).diskCacheKey(thumbUrl).build()
-                    )
-                }
-                cardQueue.addLast(wp)
-                if (cardQueue.size == 1) _nextWallpaper.update { wp }
-            }
-        }
     }
 
     private fun loadLists() {
@@ -256,89 +249,32 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun advanceCard() {
-        val nxt = cardQueue.removeFirstOrNull()
-        _nextWallpaper.update { cardQueue.firstOrNull() }
-        if (nxt != null) {
-            _current.update { nxt }
-            _noResults.update { false }
-            _loading.update { false }
-        } else {
-            // Queue was empty — fetch inline; retry a few times before declaring no results
-            viewModelScope.launch {
-                _loading.update { true }
-                var wp: BrainrotWallpaper? = null
-                repeat(3) { attempt ->
-                    if (wp != null) return@repeat
-                    if (attempt > 0) kotlinx.coroutines.delay(800L * attempt)
-                    wp = fetchNext()
-                }
-                if (wp != null) addSeen(wp!!.id)
-                _current.update { wp }
-                _noResults.update { wp == null }
-                _loading.update { false }
-            }
-        }
-        if (cardQueue.size < queueRefillThreshold) fillQueue()
+    /** Opens the fullscreen detail modal for [wp], or closes it when null. */
+    fun selectItem(wp: BrainrotWallpaper?) {
+        _selectedItem.update { wp }
     }
 
-    fun setNsfwMode(enabled: Boolean) {
-        viewModelScope.launch {
-            prefs.setNsfwMode(enabled)
-            clearQueue()
-            loadFirst()
-        }
-    }
-
-    fun setMinResolution(value: MinResolution) {
-        viewModelScope.launch {
-            prefs.setMinResolution(value)
-            clearQueue()
-            loadFirst()
-        }
-    }
-
-    fun setAspectRatio(value: AspectRatio) {
-        viewModelScope.launch {
-            prefs.setAspectRatio(value)
-            clearQueue()
-            loadFirst()
-        }
-    }
-
-    fun setSearchQuery(query: String) {
-        if (query == _searchQuery.value) return
-        _searchQuery.update { query }
-        clearQueue()
-        loadFirst()
-    }
-
-    fun skip() {
-        if (_busy.value) return
-        val current = _current.value ?: return
+    fun skip(wp: BrainrotWallpaper) {
         _sessionSkipped.update { it + 1 }
         if (undoStack.size >= 3) undoStack.removeFirst()
-        undoStack.addLast(current)
+        undoStack.addLast(wp)
         _skipEvent.tryEmit(Unit)
-        advanceCard()
+        removeFromGrid(wp)
+        _selectedItem.update { null }
     }
 
     fun undo() {
         val wp = undoStack.removeLastOrNull() ?: return
         _sessionSkipped.update { (it - 1).coerceAtLeast(0) }
-        seenIds.remove(wp.id)
-        // Re-insert as current; push existing current back to front of queue
-        _current.value?.let { existing -> cardQueue.addFirst(existing) }
-        _current.update { wp }
-        _nextWallpaper.update { cardQueue.firstOrNull() }
+        displayedKeys.remove("${wp.source}:${wp.id}")
+        _gridItems.update { listOf(wp) + it }
     }
 
-    fun addToList(listId: String) {
-        if (_busy.value) return
-        val wp = _current.value ?: return
+    fun addToList(listId: String, wp: BrainrotWallpaper) {
         _selectedListId.update { listId }
         _sessionSaved.update { it + 1 }
-        advanceCard()
+        removeFromGrid(wp)
+        _selectedItem.update { null }
         viewModelScope.launch {
             val ok = localLists.addWallpaper(listId, wp)
             val ctx = getApplication<Application>().applicationContext
@@ -349,6 +285,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 _sessionSaved.update { it - 1 }
                 Toast.makeText(ctx, "Already in \"$listName\"", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    private fun removeFromGrid(wp: BrainrotWallpaper) {
+        _gridItems.update { items ->
+            items.filter { it.source != wp.source || it.id != wp.id }
         }
     }
 
@@ -364,9 +306,34 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun retry() {
-        _noResults.update { false }
-        clearQueue()
-        loadFirst()
+        loadMore(reset = true)
+    }
+
+    fun setNsfwMode(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setNsfwMode(enabled)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setMinResolution(value: MinResolution) {
+        viewModelScope.launch {
+            prefs.setMinResolution(value)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setAspectRatio(value: AspectRatio) {
+        viewModelScope.launch {
+            prefs.setAspectRatio(value)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        if (query == _searchQuery.value) return
+        _searchQuery.update { query }
+        loadMore(reset = true)
     }
 
     fun downloadToRotation(wp: BrainrotWallpaper) {
@@ -378,7 +345,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl)
             val ctx = getApplication<Application>().applicationContext
             if (ok) {
-                // Record in discover history with source + tags metadata
                 val history = historyFromJson(prefs.historyJson.first()).toMutableList()
                 history.add(0, WallpaperHistoryItem(
                     thumbUrl = wp.thumbUrl,

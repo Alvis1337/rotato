@@ -12,6 +12,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -46,6 +51,17 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.launch
 
+/** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
+private fun parseAspectRatio(resolution: String): Float {
+    if (resolution.isBlank()) return 16f / 9f
+    val parts = resolution.lowercase().split("x")
+    if (parts.size != 2) return 16f / 9f
+    val w = parts[0].trim().toFloatOrNull() ?: return 16f / 9f
+    val h = parts[1].trim().toFloatOrNull() ?: return 16f / 9f
+    if (w <= 0f || h <= 0f) return 16f / 9f
+    return w / h
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrainrotScreen(
@@ -56,25 +72,25 @@ fun BrainrotScreen(
     val context = LocalContext.current
     val vm: BrainrotViewModel = externalViewModel ?: viewModel()
 
-    val current by vm.current.collectAsStateWithLifecycle()
+    val gridItems by vm.gridItems.collectAsStateWithLifecycle()
+    val selectedItem by vm.selectedItem.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
+    val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
     val noSources by vm.noSources.collectAsStateWithLifecycle()
     val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
     val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
-    val busy by vm.busy.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
-    val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
     val lastTriedSources by vm.lastTriedSources.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Undo snackbar after each skip
     LaunchedEffect(snackbarHostState) {
         vm.skipEvent.collect {
             snackbarHostState.currentSnackbarData?.dismiss()
@@ -87,7 +103,6 @@ fun BrainrotScreen(
         }
     }
 
-    // Source failure banner (non-blocking)
     LaunchedEffect(snackbarHostState) {
         vm.sourceFailureEvent.collect { sourceName ->
             snackbarHostState.showSnackbar(
@@ -97,16 +112,15 @@ fun BrainrotScreen(
         }
     }
 
-    var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
-    var showZoom by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
-
     var showCreateListDialog by remember { mutableStateOf(false) }
+    var pendingAddWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
+
     if (showCreateListDialog) {
         var newListName by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showCreateListDialog = false },
+            onDismissRequest = { showCreateListDialog = false; pendingAddWallpaper = null },
             title = { Text("New Collection") },
             text = {
                 OutlinedTextField(
@@ -117,36 +131,43 @@ fun BrainrotScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { if (newListName.isNotBlank()) { vm.createList(newListName); showCreateListDialog = false } }, enabled = newListName.isNotBlank()) {
-                    Text("Create")
-                }
+                TextButton(
+                    onClick = {
+                        if (newListName.isNotBlank()) {
+                            vm.createList(newListName)
+                            showCreateListDialog = false
+                        }
+                    },
+                    enabled = newListName.isNotBlank()
+                ) { Text("Create") }
             },
-            dismissButton = { TextButton(onClick = { showCreateListDialog = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { showCreateListDialog = false; pendingAddWallpaper = null }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
-    val onAddToList: () -> Unit = {
+    fun onAddToList(wp: BrainrotWallpaper) {
         when {
-            lists.isEmpty() -> showCreateListDialog = true
-            else -> vm.addToList(selectedListId ?: lists.first().id)
+            lists.isEmpty() -> {
+                pendingAddWallpaper = wp
+                showCreateListDialog = true
+            }
+            else -> vm.addToList(selectedListId ?: lists.first().id, wp)
         }
     }
 
-    if (showSettings) {
-        DiscoverSettingsDialog(
-            nsfwMode = nsfwMode,
-            filters = brainrotFilters,
-            lists = lists,
-            selectedListId = selectedListId,
-            onSelectList = { vm.setSelectedList(it) },
-            onSetNsfwMode = { vm.setNsfwMode(it) },
-            onSetMinResolution = { vm.setMinResolution(it) },
-            onSetAspectRatio = { vm.setAspectRatio(it) },
-            onDismiss = { showSettings = false }
-        )
+    // React to newly created list by completing pending add
+    LaunchedEffect(selectedListId) {
+        val pending = pendingAddWallpaper
+        if (pending != null && selectedListId != null && lists.isNotEmpty()) {
+            vm.addToList(selectedListId!!, pending)
+            pendingAddWallpaper = null
+        }
     }
 
-    // SearchDialog is always accessible, even in no-results state
     if (showSearch) {
         SearchDialog(
             current = searchQuery,
@@ -155,75 +176,182 @@ fun BrainrotScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    if (showSettings) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettings = false },
+            sheetState = settingsSheetState
+        ) {
+            DiscoverSettingsSheetContent(
+                nsfwMode = nsfwMode,
+                filters = brainrotFilters,
+                lists = lists,
+                selectedListId = selectedListId,
+                onSelectList = { vm.setSelectedList(it) },
+                onSetNsfwMode = { vm.setNsfwMode(it) },
+                onSetMinResolution = { vm.setMinResolution(it) },
+                onSetAspectRatio = { vm.setAspectRatio(it) },
+                onDismiss = { showSettings = false }
+            )
+        }
+    }
+
+    // Fullscreen detail modal for selected item
+    if (selectedItem != null) {
+        val wp = selectedItem!!
+        var showZoom by remember { mutableStateOf(false) }
+        Dialog(
+            onDismissRequest = { vm.selectItem(null) },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                FullScreenSwipeCard(
+                    wallpaper = wp,
+                    busy = false,
+                    showInfo = false,
+                    sessionSaved = sessionSaved,
+                    sessionSkipped = sessionSkipped,
+                    selectedListName = lists.find { it.id == selectedListId }?.name,
+                    searchQuery = searchQuery,
+                    isDownloading = downloadingIds.contains(wp.id),
+                    onToggleInfo = { /* handled internally */ },
+                    onSkip = { vm.skip(wp) },
+                    onAddToList = { onAddToList(wp) },
+                    onDownloadToRotation = { vm.downloadToRotation(wp) },
+                    onImageTap = { showZoom = true },
+                    onShare = {
+                        val url = wp.pageUrl.ifBlank { wp.fullUrl }
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, url)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
+                    },
+                    onOpenSettings = { vm.selectItem(null); showSettings = true },
+                    onOpenSearch = { vm.selectItem(null); showSearch = true },
+                    onClose = { vm.selectItem(null) },
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (showZoom) {
+                    ZoomImageDialog(wallpaper = wp, onDismiss = { showZoom = false })
+                }
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
         when {
             noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
             noResults -> NoResultsState(
                 triedSources = lastTriedSources,
                 searchQuery = searchQuery,
                 onRetry = { vm.retry() },
-                onClearSearch = { vm.setSearchQuery(""); vm.retry() },
+                onClearSearch = { vm.setSearchQuery("") },
                 onOpenSearch = { showSearch = true },
                 onOpenSettings = { showSettings = true }
             )
-            loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
+            loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-            current != null -> {
-                // Always render a background image behind the swipe card.
-                // Prefer the preloaded next card; fall back to the current card
-                // (already in Coil memory cache) so the background is never black.
-                val bgWallpaper = nextWallpaper?.takeIf { it.id != current!!.id } ?: current!!
-                val bgUrl = bgWallpaper.fullUrl.ifBlank { bgWallpaper.thumbUrl }
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(bgUrl)
-                        .memoryCacheKey(bgUrl)
-                        .diskCacheKey(bgUrl)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-                key(current!!.id) {
-                    FullScreenSwipeCard(
-                        wallpaper = current!!,
-                        loading = loading,
-                        busy = busy,
-                        showInfo = showInfo,
-                        sessionSaved = sessionSaved,
-                        sessionSkipped = sessionSkipped,
-                        selectedListName = lists.find { it.id == selectedListId }?.name,
-                        searchQuery = searchQuery,
-                        isDownloading = downloadingIds.contains(current!!.id),
-                        onToggleInfo = { showInfo = !showInfo },
-                        onSkip = { vm.skip() },
-                        onAddToList = onAddToList,
-                        onDownloadToRotation = { vm.downloadToRotation(current!!) },
-                        onImageTap = { showZoom = true },
-                        onShare = {
-                            val url = current!!.pageUrl.ifBlank { current!!.fullUrl }
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, url)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
-                        },
-                        onOpenSettings = { showSettings = true },
-                        onOpenSearch = { showSearch = true },
-                        modifier = Modifier.fillMaxSize()
-                    )
+            else -> {
+                val gridState = rememberLazyStaggeredGridState()
+
+                // Infinite scroll trigger: load more when near the bottom
+                val shouldLoadMore by remember {
+                    derivedStateOf {
+                        val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                        val total = gridState.layoutInfo.totalItemsCount
+                        lastVisible >= total - 4
+                    }
                 }
-                if (showZoom) {
-                    ZoomImageDialog(
-                        wallpaper = current!!,
-                        onDismiss = { showZoom = false }
-                    )
+                LaunchedEffect(shouldLoadMore) {
+                    if (shouldLoadMore && !endReached) vm.loadMore()
+                }
+
+                LazyVerticalStaggeredGrid(
+                    columns = StaggeredGridCells.Fixed(2),
+                    state = gridState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalItemSpacing = 8.dp
+                ) {
+                    // Session stats header chip row
+                    if (sessionSaved > 0 || sessionSkipped > 0) {
+                        item(span = StaggeredGridItemSpan.FullLine) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
+                                if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
+                            }
+                        }
+                    }
+
+                    items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
+                        DiscoverGridItem(
+                            wallpaper = wp,
+                            isDownloading = downloadingIds.contains(wp.id),
+                            onClick = { vm.selectItem(wp) }
+                        )
+                    }
+
+                    if (loadingMore) {
+                        item(span = StaggeredGridItemSpan.FullLine) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                }
+
+                // Bottom action bar: search + settings FAB row
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (searchQuery.isNotBlank()) {
+                        AssistChip(
+                            onClick = { showSearch = true },
+                            label = { Text(searchQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            trailingIcon = {
+                                IconButton(onClick = { vm.setSearchQuery("") }, modifier = Modifier.size(16.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    SmallFloatingActionButton(onClick = { showSearch = true }) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    FloatingActionButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Tune, contentDescription = "Discover settings")
+                    }
                 }
             }
         }
 
-        // Snackbar overlay (undo skips + source failure banners)
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -234,9 +362,65 @@ fun BrainrotScreen(
 }
 
 @Composable
+private fun DiscoverGridItem(
+    wallpaper: BrainrotWallpaper,
+    isDownloading: Boolean,
+    onClick: () -> Unit
+) {
+    val ratio = parseAspectRatio(wallpaper.resolution)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(ratio)
+            .clip(MaterialTheme.shapes.medium)
+    ) {
+        val imageUrl = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl }
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(imageUrl)
+                .memoryCacheKey(imageUrl)
+                .diskCacheKey(imageUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClick() })
+                }
+        )
+
+        // Source color badge — bottom-left
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp)
+                .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                wallpaper.source.replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
+        if (isDownloading) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
 private fun FullScreenSwipeCard(
     wallpaper: BrainrotWallpaper,
-    loading: Boolean,
     busy: Boolean,
     showInfo: Boolean,
     sessionSaved: Int,
@@ -252,11 +436,13 @@ private fun FullScreenSwipeCard(
     onShare: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     val xOffset = remember { Animatable(0f) }
     var isAnimating by remember { mutableStateOf(false) }
+    var showInfoLocal by remember { mutableStateOf(showInfo) }
     val density = LocalDensity.current
     val config = LocalConfiguration.current
     val screenWidthPx = remember(config) { with(density) { config.screenWidthDp.dp.toPx() } }
@@ -266,7 +452,6 @@ private fun FullScreenSwipeCard(
     val skipAlpha = (-xOffset.value / threshold).coerceIn(0f, 1f)
 
     Box(modifier = modifier) {
-        // ── Swipeable image layer (only this translates) ──────────────────────
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -274,8 +459,6 @@ private fun FullScreenSwipeCard(
                     translationX = xOffset.value
                     rotationZ = (xOffset.value / screenWidthPx) * 6f
                 }
-                // Black background fills the letterbox gaps from ContentScale.Fit
-                // so the background layer never bleeds through
                 .background(Color.Black)
                 .pointerInput(isAnimating) {
                     if (isAnimating) return@pointerInput
@@ -330,18 +513,14 @@ private fun FullScreenSwipeCard(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Small non-blocking spinner — only shown when image genuinely isn't cached
             if (imageLoading) {
                 CircularProgressIndicator(
                     color = Color.White.copy(alpha = 0.85f),
                     strokeWidth = 2.dp,
-                    modifier = Modifier
-                        .size(28.dp)
-                        .align(Alignment.Center)
+                    modifier = Modifier.size(28.dp).align(Alignment.Center)
                 )
             }
 
-            // Save overlay (right swipe)
             if (saveAlpha > 0.02f) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.8f)),
@@ -357,7 +536,6 @@ private fun FullScreenSwipeCard(
                 }
             }
 
-            // Skip overlay (left swipe)
             if (skipAlpha > 0.02f) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.8f)),
@@ -369,9 +547,21 @@ private fun FullScreenSwipeCard(
                     }
                 }
             }
-        } // end inner swipeable Box
+        }
 
-        // Top gradient overlay — session stats (fixed)
+        // Close button top-right
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(8.dp)
+                .background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small)
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+        }
+
+        // Top stats
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -383,8 +573,8 @@ private fun FullScreenSwipeCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically,
-                ) {
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (sessionSaved > 0) StatChip("📌 $sessionSaved")
                 if (sessionSkipped > 0) {
                     Spacer(Modifier.width(8.dp))
@@ -393,7 +583,7 @@ private fun FullScreenSwipeCard(
             }
         }
 
-        // Bottom gradient overlay — source/title + action buttons
+        // Bottom info + actions
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -410,7 +600,6 @@ private fun FullScreenSwipeCard(
                 .padding(bottom = 20.dp, top = 48.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Source chip + resolution
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -436,7 +625,6 @@ private fun FullScreenSwipeCard(
                 }
             }
 
-            // Anime/title from tags
             val titleTags = wallpaper.tags
                 .map { it.replace('_', ' ').split(" ").joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } } }
                 .take(3)
@@ -451,8 +639,7 @@ private fun FullScreenSwipeCard(
                 )
             }
 
-            // Expanded tags row
-            if (showInfo && wallpaper.tags.size > 3) {
+            if (showInfoLocal && wallpaper.tags.size > 3) {
                 Text(
                     wallpaper.tags.drop(3).take(8).joinToString("  ·  ") { it.replace('_', ' ') },
                     style = MaterialTheme.typography.labelSmall,
@@ -462,13 +649,11 @@ private fun FullScreenSwipeCard(
                 )
             }
 
-            // Action buttons row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Skip
                 OutlinedIconButton(
                     onClick = {
                         if (!isAnimating) {
@@ -486,24 +671,22 @@ private fun FullScreenSwipeCard(
                     Icon(Icons.Default.Close, contentDescription = "Skip", tint = Color.White, modifier = Modifier.size(22.dp))
                 }
 
-                // Info
                 OutlinedIconButton(
-                    onClick = onToggleInfo,
+                    onClick = { showInfoLocal = !showInfoLocal },
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(
                         1.5.dp,
-                        if (showInfo) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
+                        if (showInfoLocal) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
                     )
                 ) {
                     Icon(
                         Icons.Default.Info,
                         contentDescription = "Info",
-                        tint = if (showInfo) MaterialTheme.colorScheme.primary else Color.White,
+                        tint = if (showInfoLocal) MaterialTheme.colorScheme.primary else Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                 }
 
-                // Download to rotation pool
                 OutlinedIconButton(
                     onClick = onDownloadToRotation,
                     enabled = !isDownloading,
@@ -517,7 +700,6 @@ private fun FullScreenSwipeCard(
                     }
                 }
 
-                // Save (primary action)
                 FilledIconButton(
                     onClick = {
                         if (!isAnimating) {
@@ -535,7 +717,6 @@ private fun FullScreenSwipeCard(
                     Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
                 }
 
-                // Share
                 OutlinedIconButton(
                     onClick = onShare,
                     modifier = Modifier.size(44.dp),
@@ -544,7 +725,6 @@ private fun FullScreenSwipeCard(
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
                 }
 
-                // Search
                 OutlinedIconButton(
                     onClick = onOpenSearch,
                     modifier = Modifier.size(44.dp),
@@ -556,7 +736,6 @@ private fun FullScreenSwipeCard(
                     Icon(Icons.Default.Search, contentDescription = "Search", tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(18.dp))
                 }
 
-                // Settings
                 OutlinedIconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.size(52.dp),
@@ -618,7 +797,7 @@ private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiscoverSettingsDialog(
+private fun DiscoverSettingsSheetContent(
     nsfwMode: Boolean,
     filters: BrainrotFilters,
     lists: List<LocalList>,
@@ -632,87 +811,90 @@ private fun DiscoverSettingsDialog(
     var listExpanded by remember { mutableStateOf(false) }
     var resExpanded by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Discover Settings") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (lists.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Save to list", style = MaterialTheme.typography.labelMedium)
-                        ExposedDropdownMenuBox(expanded = listExpanded, onExpandedChange = { listExpanded = it }) {
-                            OutlinedTextField(
-                                value = lists.find { it.id == selectedListId }?.name ?: "None",
-                                onValueChange = {},
-                                readOnly = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(listExpanded) },
-                                modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                                singleLine = true
-                            )
-                            ExposedDropdownMenu(expanded = listExpanded, onDismissRequest = { listExpanded = false }) {
-                                lists.forEach { list ->
-                                    DropdownMenuItem(
-                                        text = { Text(list.name) },
-                                        onClick = { onSelectList(list.id); listExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Text("Discover Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("NSFW", style = MaterialTheme.typography.bodyMedium)
-                        Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    }
-                    Switch(checked = nsfwMode, onCheckedChange = onSetNsfwMode)
-                }
-
-                // Min resolution
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Min resolution", style = MaterialTheme.typography.labelMedium)
-                    ExposedDropdownMenuBox(expanded = resExpanded, onExpandedChange = { resExpanded = it }) {
-                        OutlinedTextField(
-                            value = filters.minResolution.label,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(resExpanded) },
-                            modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                            singleLine = true
-                        )
-                        ExposedDropdownMenu(expanded = resExpanded, onDismissRequest = { resExpanded = false }) {
-                            MinResolution.entries.forEach { res ->
-                                DropdownMenuItem(
-                                    text = { Text(res.label) },
-                                    onClick = { onSetMinResolution(res); resExpanded = false }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Aspect ratio chips
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AspectRatio.entries.forEach { ratio ->
-                            FilterChip(
-                                selected = filters.aspectRatio == ratio,
-                                onClick = { onSetAspectRatio(ratio) },
-                                label = { Text(ratio.label) }
+        if (lists.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Save to list", style = MaterialTheme.typography.labelMedium)
+                ExposedDropdownMenuBox(expanded = listExpanded, onExpandedChange = { listExpanded = it }) {
+                    OutlinedTextField(
+                        value = lists.find { it.id == selectedListId }?.name ?: "None",
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(listExpanded) },
+                        modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                        singleLine = true
+                    )
+                    ExposedDropdownMenu(expanded = listExpanded, onDismissRequest = { listExpanded = false }) {
+                        lists.forEach { list ->
+                            DropdownMenuItem(
+                                text = { Text(list.name) },
+                                onClick = { onSelectList(list.id); listExpanded = false }
                             )
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
-    )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("NSFW", style = MaterialTheme.typography.bodyMedium)
+                Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+            Switch(checked = nsfwMode, onCheckedChange = onSetNsfwMode)
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Min resolution", style = MaterialTheme.typography.labelMedium)
+            ExposedDropdownMenuBox(expanded = resExpanded, onExpandedChange = { resExpanded = it }) {
+                OutlinedTextField(
+                    value = filters.minResolution.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(resExpanded) },
+                    modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                    singleLine = true
+                )
+                ExposedDropdownMenu(expanded = resExpanded, onDismissRequest = { resExpanded = false }) {
+                    MinResolution.entries.forEach { res ->
+                        DropdownMenuItem(
+                            text = { Text(res.label) },
+                            onClick = { onSetMinResolution(res); resExpanded = false }
+                        )
+                    }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AspectRatio.entries.forEach { ratio ->
+                    FilterChip(
+                        selected = filters.aspectRatio == ratio,
+                        onClick = { onSetAspectRatio(ratio) },
+                        label = { Text(ratio.label) }
+                    )
+                }
+            }
+        }
+
+        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            Text("Done")
+        }
+    }
 }
 
 @Composable
@@ -781,7 +963,6 @@ private fun NoResultsState(
             Button(onClick = onRetry) { Text("Retry") }
         }
 
-        // Always-visible bottom row so user can open Search or Settings
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -822,12 +1003,7 @@ private fun ZoomImageDialog(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = {
-                            if (scale > 1f) {
-                                scale = 1f
-                                offset = Offset.Zero
-                            } else {
-                                scale = 2.5f
-                            }
+                            if (scale > 1f) { scale = 1f; offset = Offset.Zero } else { scale = 2.5f }
                         }
                     )
                 }

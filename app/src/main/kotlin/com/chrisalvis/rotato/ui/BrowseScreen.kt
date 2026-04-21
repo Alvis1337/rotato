@@ -10,8 +10,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -33,6 +31,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +50,7 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
 
     val lists by vm.lists.collectAsStateWithLifecycle()
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
+    val listCovers by vm.listCovers.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
@@ -139,6 +140,7 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
             ListPickerContent(
                 lists = lists,
                 listCounts = listCounts,
+                listCovers = listCovers,
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
@@ -192,10 +194,12 @@ private fun CreateListDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit)
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ListPickerContent(
     lists: List<LocalList>,
     listCounts: Map<String, Int>,
+    listCovers: Map<String, String?>,
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
@@ -212,10 +216,12 @@ private fun ListPickerContent(
             }
         }
     } else {
-        LazyColumn(
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
             modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(lists, key = { it.id }) { list ->
                 var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -225,54 +231,155 @@ private fun ListPickerContent(
                         title = { Text("Delete \"${list.name}\"?") },
                         text = { Text("All saved wallpapers in this collection will be removed.") },
                         confirmButton = {
-                            TextButton(onClick = { onDeleteList(list); showDeleteConfirm = false }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                            TextButton(onClick = { onDeleteList(list); showDeleteConfirm = false }) {
+                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                            }
                         },
                         dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
                     )
                 }
                 val count = listCounts[list.id] ?: 0
-                ListItem(
-                    headlineContent = { Text(list.name, fontWeight = FontWeight.Medium) },
-                    supportingContent = {
-                        val label = buildString {
-                            append("$count wallpaper${if (count != 1) "s" else ""}")
-                            if (list.useAsRotation) append(" · synced to Library")
-                        }
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (list.useAsRotation) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    trailingContent = {
-                        Row {
-                            IconButton(onClick = { onPickImages(list) }) {
-                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Add photos from device", tint = MaterialTheme.colorScheme.outline)
-                            }
-                            IconButton(onClick = { onToggleRotation(list) }) {
-                                Icon(
-                                    if (list.useAsRotation) Icons.Default.Wallpaper
-                                    else Icons.Outlined.Wallpaper,
-                                    contentDescription = if (list.useAsRotation) "Remove from Library source" else "Use as Library source",
-                                    tint = if (list.useAsRotation) MaterialTheme.colorScheme.primary
-                                           else MaterialTheme.colorScheme.outline
-                                )
-                            }
-                            IconButton(onClick = { showDeleteConfirm = true }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable { onSelectList(list) }
+                val coverUrl = listCovers[list.id]
+                CollectionCard(
+                    list = list,
+                    count = count,
+                    coverUrl = coverUrl,
+                    onClick = { onSelectList(list) },
+                    onDelete = { showDeleteConfirm = true },
+                    onToggleRotation = { onToggleRotation(list) },
+                    onPickImages = { onPickImages(list) }
                 )
             }
         }
     }
 }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CollectionCard(
+    list: LocalList,
+    count: Int,
+    coverUrl: String?,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleRotation: () -> Unit,
+    onPickImages: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(3f / 4f)
+            .combinedClickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (coverUrl != null) {
+                AsyncImage(
+                    model = coverUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+
+            // Bottom gradient with name + count
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                        )
+                    )
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Text(
+                        list.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "$count image${if (count != 1) "s" else ""}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                }
+            }
+
+            // Rotation badge top-left
+            if (list.useAsRotation) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                ) {
+                    Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Action icons top-right
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+            ) {
+                IconButton(onClick = onPickImages, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.AddPhotoAlternate,
+                        contentDescription = "Add photos",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                    )
+                }
+                IconButton(onClick = onToggleRotation, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (list.useAsRotation) Icons.Default.Wallpaper else Icons.Outlined.Wallpaper,
+                        contentDescription = "Toggle Library",
+                        tint = if (list.useAsRotation) MaterialTheme.colorScheme.primaryContainer else Color.White,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                    )
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun WallpaperGridContent(

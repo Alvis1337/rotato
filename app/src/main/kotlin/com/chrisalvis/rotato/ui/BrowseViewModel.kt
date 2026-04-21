@@ -40,6 +40,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .map { all -> all.groupBy { it.listId }.mapValues { (_, v) -> v.size } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    val listCovers: StateFlow<Map<String, String?>> = localLists.allWallpapers
+        .map { all ->
+            all.groupBy { it.listId }
+                .mapValues { (_, entries) ->
+                    entries.lastOrNull()?.let { entry ->
+                        val rawUrl = entry.thumbUrl.ifBlank { entry.fullUrl }
+                        if (rawUrl.startsWith("list_images/")) File(app.filesDir, rawUrl).toURI().toString() else rawUrl
+                    }
+                }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     private val _selectedList = MutableStateFlow<LocalList?>(null)
     val selectedList: StateFlow<LocalList?> = _selectedList.asStateFlow()
 
