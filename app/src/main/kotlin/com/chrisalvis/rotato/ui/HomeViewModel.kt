@@ -107,7 +107,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     if (!onDisk) {
                         if (entry.source == "device" && entry.fullUrl.startsWith("list_images/")) {
                             // Local image — copy from list_images/ to rotation pool
-                            val src = File(application.filesDir, entry.fullUrl)
+                            val src = File(getApplication<android.app.Application>().filesDir, entry.fullUrl)
                             if (src.exists()) {
                                 val ext = src.extension.ifBlank { "jpg" }
                                 src.copyTo(File(imageDir, "$key.$ext"), overwrite = true)
