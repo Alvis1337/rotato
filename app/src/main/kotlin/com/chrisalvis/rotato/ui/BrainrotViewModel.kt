@@ -23,7 +23,10 @@ import com.chrisalvis.rotato.data.fetchPageFromSource
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import com.chrisalvis.rotato.data.toJson
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -105,8 +108,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
 
-    /** Page-level cache: one API call fetches ~100 items; subsequent fetchNext() drains the queue */
-    private val pageCache = mutableMapOf<String, ArrayDeque<BrainrotWallpaper>>()
+    /** Page-level cache: keyed by "SOURCETYPE:query", populated in parallel at load time */
+    private val pageCache = java.util.concurrent.ConcurrentHashMap<String, ArrayDeque<BrainrotWallpaper>>()
 
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
@@ -143,8 +146,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Appends up to 12 new items to the grid.
-     * [reset] = true clears the grid and restarts from scratch (used on filter/source change).
+     * Loads the next batch of items into the grid.
+     * [reset] = true clears the grid and caches (pull-to-refresh, filter change, etc.).
+     *
+     * Strategy:
+     *  1. Pre-warm page caches for all enabled sources **in parallel** (one API call each).
+     *  2. Drain from the in-memory caches — no network during drain.
+     *  3. Batch-update the grid with all new items in a single state emission.
      */
     fun loadMore(reset: Boolean = false) {
         if (reset) {
@@ -164,100 +172,96 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             if (isInitial) _loading.update { true } else _loadingMore.update { true }
 
             val ctx = getApplication<Application>().applicationContext
-            var fetched = 0
-            var nullStreak = 0
+            val nsfw = prefs.nsfwMode.first()
+            val filters = prefs.brainrotFilters.first()
+            val explicitQuery = _searchQuery.value
+            val malTitles: List<String> =
+                if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
+            val localEnabled = localSources.sources.first().filter { it.enabled }
             val target = if (isInitial) 40 else 20
 
+            // Step 1: fetch pages from ALL sources in parallel (network bound)
+            val seenKeys = displayedKeys.toSet()
+            localEnabled.mapNotNull { source ->
+                val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
+                if (plugin.requiresCredentials &&
+                    (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) return@mapNotNull null
+                val sourceKey = source.type.name.lowercase()
+                val queries = queriesFor(source, explicitQuery, malTitles)
+                // Skip if cache already has items for every query
+                if (queries.all { q -> pageCache[cacheKey(source, q)]?.isNotEmpty() == true }) return@mapNotNull null
+                async(Dispatchers.IO) {
+                    for (q in queries) {
+                        val ck = cacheKey(source, q)
+                        if (pageCache[ck]?.isNotEmpty() == true) continue
+                        val excludes = seenKeys
+                            .filter { it.startsWith("$sourceKey:") }
+                            .map { it.removePrefix("$sourceKey:") }
+                        val page = fetchPageFromSource(source, q, excludes, nsfw, filters)
+                        if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
+                    }
+                }
+            }.awaitAll()
+
+            // Step 2: drain from caches — purely in-memory, no network
+            val newItems = mutableListOf<BrainrotWallpaper>()
+            var nullStreak = 0
             var dupStreak = 0
-            while (fetched < target && nullStreak < 3) {
-                val wp = fetchNext()
-                if (wp == null) {
-                    nullStreak++
-                    dupStreak = 0
-                    if (nullStreak < 3) kotlinx.coroutines.delay(300)
-                    continue
-                }
+            while (newItems.size < target && nullStreak < 3) {
+                val wp = drainOne(localEnabled, explicitQuery, malTitles)
+                if (wp == null) { nullStreak++; dupStreak = 0; continue }
                 val key = "${wp.source}:${wp.id}"
-                if (key in displayedKeys) {
-                    if (++dupStreak >= 15) break  // safety valve: too many consecutive dups
-                    continue
-                }
-                dupStreak = 0
+                if (key in displayedKeys) { if (++dupStreak >= 30) break; continue }
+                dupStreak = 0; nullStreak = 0
                 displayedKeys.add(key)
-                nullStreak = 0
                 val url = wp.sampleUrl.ifBlank { wp.fullUrl }
                 if (url.isNotBlank()) {
                     ctx.imageLoader.enqueue(
                         ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
                     )
                 }
-                _gridItems.update { it + wp }
-                fetched++
+                newItems += wp
             }
+            _lastTriedSources.update { emptyList() }
 
-            if (fetched == 0) {
+            if (newItems.isEmpty()) {
                 if (_gridItems.value.isEmpty()) _noResults.update { true }
                 _endReached.update { true }
+            } else {
+                _gridItems.update { it + newItems }  // single batch update → one recomposition
             }
 
             if (isInitial) _loading.update { false } else _loadingMore.update { false }
         }
     }
 
-    private suspend fun fetchNext(): BrainrotWallpaper? {
-        val localEnabled = localSources.sources.first().filter { it.enabled }
-        if (localEnabled.isEmpty()) return null
-        val nsfw = prefs.nsfwMode.first()
-        val filters = prefs.brainrotFilters.first()
-        val explicitQuery = _searchQuery.value
-        val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
-        val triedSources = mutableListOf<String>()
+    private fun cacheKey(source: LocalSource, query: String) = "${source.type.name}:$query"
+
+    private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>): List<String> = when {
+        source.tags.isNotBlank() -> listOf(source.tags)
+        explicitQuery.isNotBlank() -> listOf(explicitQuery)
+        malTitles.isNotEmpty() -> malTitles.shuffled().take(3)
+        else -> listOf("")
+    }
+
+    /** Pull one unseen item from the in-memory page caches (no network calls). */
+    private fun drainOne(
+        localEnabled: List<LocalSource>,
+        explicitQuery: String,
+        malTitles: List<String>,
+    ): BrainrotWallpaper? {
         for (source in localEnabled.shuffled()) {
-            val plugin = SourcePluginRegistry.forType(source.type)
-            if (plugin?.requiresCredentials == true &&
-                (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) {
-                continue
-            }
-            triedSources += source.type.displayName
-            val sourceKey = source.type.name.lowercase()
-            val queriesToTry: List<String> = when {
-                source.tags.isNotBlank() -> listOf(source.tags)
-                explicitQuery.isNotBlank() -> listOf(explicitQuery)
-                malTitles.isNotEmpty() -> malTitles.shuffled().take(5)
-                else -> listOf("")
-            }
-            for (query in queriesToTry) {
-                val cacheKey = "${source.type.name}:$query"
-                // Drain page cache before making a new API call
-                val cached = pageCache[cacheKey]
-                if (cached != null) {
-                    while (cached.isNotEmpty()) {
-                        val wp = cached.removeFirst()
-                        if ("${wp.source}:${wp.id}" !in displayedKeys) {
-                            _lastTriedSources.update { emptyList() }
-                            return wp
-                        }
-                    }
-                }
-                // Cache empty — fetch a full page from the source
-                val sourceExcludes = displayedKeys
-                    .filter { it.startsWith("$sourceKey:") }
-                    .map { it.removePrefix("$sourceKey:") }
-                val page = fetchPageFromSource(source, query, sourceExcludes, nsfw, filters)
-                if (page.isNotEmpty()) {
-                    val deque = ArrayDeque(page.shuffled())
-                    pageCache[cacheKey] = deque
-                    while (deque.isNotEmpty()) {
-                        val wp = deque.removeFirst()
-                        if ("${wp.source}:${wp.id}" !in displayedKeys) {
-                            _lastTriedSources.update { emptyList() }
-                            return wp
-                        }
-                    }
+            val plugin = SourcePluginRegistry.forType(source.type) ?: continue
+            if (plugin.requiresCredentials &&
+                (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) continue
+            for (q in queriesFor(source, explicitQuery, malTitles)) {
+                val cached = pageCache[cacheKey(source, q)] ?: continue
+                while (cached.isNotEmpty()) {
+                    val wp = cached.removeFirst()
+                    if ("${wp.source}:${wp.id}" !in displayedKeys) return wp
                 }
             }
         }
-        _lastTriedSources.update { triedSources.distinct() }
         return null
     }
 
