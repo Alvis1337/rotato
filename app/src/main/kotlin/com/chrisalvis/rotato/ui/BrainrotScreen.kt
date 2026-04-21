@@ -1,13 +1,9 @@
 package com.chrisalvis.rotato.ui
 
 import android.content.Intent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -25,14 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -189,46 +182,33 @@ fun BrainrotScreen(
         }
     }
 
-    // Fullscreen detail modal for selected item
+    // Detail bottom sheet for selected item
     if (selectedItem != null) {
         val wp = selectedItem!!
         var showZoom by remember { mutableStateOf(false) }
-        Dialog(
+        ModalBottomSheet(
             onDismissRequest = { vm.selectItem(null) },
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                FullScreenSwipeCard(
-                    wallpaper = wp,
-                    busy = false,
-                    showInfo = false,
-                    sessionSaved = sessionSaved,
-                    sessionSkipped = sessionSkipped,
-                    selectedListName = lists.find { it.id == selectedListId }?.name,
-                    searchQuery = searchQuery,
-                    isDownloading = downloadingIds.contains(wp.id),
-                    onToggleInfo = { /* handled internally */ },
-                    onSkip = { vm.skip(wp) },
-                    onAddToList = { onAddToList(wp) },
-                    onDownloadToRotation = { vm.downloadToRotation(wp) },
-                    onImageTap = { showZoom = true },
-                    onShare = {
-                        val url = wp.pageUrl.ifBlank { wp.fullUrl }
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, url)
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
-                    },
-                    onOpenSettings = { vm.selectItem(null); showSettings = true },
-                    onOpenSearch = { vm.selectItem(null); showSearch = true },
-                    onClose = { vm.selectItem(null) },
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (showZoom) {
-                    ZoomImageDialog(wallpaper = wp, onDismiss = { showZoom = false })
-                }
-            }
+            WallpaperDetailSheet(
+                wallpaper = wp,
+                isDownloading = downloadingIds.contains(wp.id),
+                selectedListName = lists.find { it.id == selectedListId }?.name,
+                onSkip = { vm.skip(wp); vm.selectItem(null) },
+                onAddToList = { onAddToList(wp); vm.selectItem(null) },
+                onDownloadToRotation = { vm.downloadToRotation(wp) },
+                onShare = {
+                    val url = wp.pageUrl.ifBlank { wp.fullUrl }
+                    context.startActivity(Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) },
+                        "Share wallpaper"
+                    ))
+                },
+                onImageTap = { showZoom = true }
+            )
+        }
+        if (showZoom) {
+            ZoomImageDialog(wallpaper = wp, onDismiss = { showZoom = false })
         }
     }
 
@@ -425,84 +405,30 @@ private fun DiscoverGridItem(
     }
 }
 
+
 @Composable
-private fun FullScreenSwipeCard(
+private fun WallpaperDetailSheet(
     wallpaper: BrainrotWallpaper,
-    busy: Boolean,
-    showInfo: Boolean,
-    sessionSaved: Int,
-    sessionSkipped: Int,
-    selectedListName: String?,
-    searchQuery: String,
     isDownloading: Boolean,
-    onToggleInfo: () -> Unit,
+    selectedListName: String?,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
     onDownloadToRotation: () -> Unit,
-    onImageTap: () -> Unit,
     onShare: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenSearch: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    onImageTap: () -> Unit
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    val xOffset = remember { Animatable(0f) }
-    var isAnimating by remember { mutableStateOf(false) }
-    var showInfoLocal by remember { mutableStateOf(showInfo) }
-    val density = LocalDensity.current
-    val config = LocalConfiguration.current
-    val screenWidthPx = remember(config) { with(density) { config.screenWidthDp.dp.toPx() } }
-    val threshold = screenWidthPx * 0.35f
-
-    val saveAlpha = (xOffset.value / threshold).coerceIn(0f, 1f)
-    val skipAlpha = (-xOffset.value / threshold).coerceIn(0f, 1f)
-
-    Box(modifier = modifier) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+    ) {
+        // Image preview
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    translationX = xOffset.value
-                    rotationZ = (xOffset.value / screenWidthPx) * 6f
-                }
-                .background(Color.Black)
-                .pointerInput(isAnimating) {
-                    if (isAnimating) return@pointerInput
-                    detectDragGestures(
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            coroutineScope.launch { xOffset.snapTo(xOffset.value + dragAmount.x) }
-                        },
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                when {
-                                    xOffset.value > threshold -> {
-                                        isAnimating = true
-                                        xOffset.animateTo(screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
-                                        isAnimating = false
-                                        onAddToList()
-                                    }
-                                    xOffset.value < -threshold -> {
-                                        isAnimating = true
-                                        xOffset.animateTo(-screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
-                                        isAnimating = false
-                                        onSkip()
-                                    }
-                                    else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
-                            }
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onImageTap() })
-                }
+                .fillMaxWidth()
+                .heightIn(max = 360.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .pointerInput(Unit) { detectTapGestures(onTap = { onImageTap() }) }
         ) {
             val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
             var imageLoading by remember { mutableStateOf(false) }
@@ -517,95 +443,20 @@ private fun FullScreenSwipeCard(
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 onState = { imageLoading = it is AsyncImagePainter.State.Loading },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxWidth()
             )
-
             if (imageLoading) {
                 CircularProgressIndicator(
-                    color = Color.White.copy(alpha = 0.85f),
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(28.dp).align(Alignment.Center)
                 )
             }
-
-            if (saveAlpha > 0.02f) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
-                        Text(
-                            if (selectedListName != null) "Save to \"$selectedListName\"" else "Save to List",
-                            color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall
-                        )
-                    }
-                }
-            }
-
-            if (skipAlpha > 0.02f) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
-                        Text("Skip", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
-                    }
-                }
-            }
         }
 
-        // Close button top-right
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(8.dp)
-                .background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small)
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-        }
-
-        // Top stats
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)))
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                if (sessionSkipped > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    StatChip("✕ $sessionSkipped")
-                }
-            }
-        }
-
-        // Bottom info + actions
+        // Info
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.3f to Color.Black.copy(alpha = 0.5f),
-                        1f to Color.Black.copy(alpha = 0.92f)
-                    )
-                )
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp, top = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -627,129 +478,83 @@ private fun FullScreenSwipeCard(
                     Text(
                         wallpaper.resolution,
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.55f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            val titleTags = wallpaper.tags
+            val tags = wallpaper.tags
                 .map { it.replace('_', ' ').split(" ").joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } } }
-                .take(3)
-            if (titleTags.isNotEmpty()) {
+            if (tags.isNotEmpty()) {
                 Text(
-                    titleTags.joinToString("  ·  "),
-                    style = MaterialTheme.typography.titleMedium,
+                    tags.take(5).joinToString("  ·  "),
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
 
-            if (showInfoLocal && wallpaper.tags.size > 3) {
-                Text(
-                    wallpaper.tags.drop(3).take(8).joinToString("  ·  ") { it.replace('_', ' ') },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.65f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+        // Action row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Skip
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedIconButton(onClick = onSkip, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Skip", modifier = Modifier.size(22.dp))
+                }
+                Text("Skip", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedIconButton(
-                    onClick = {
-                        if (!isAnimating) {
-                            isAnimating = true
-                            coroutineScope.launch {
-                                xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
-                                onSkip()
-                            }
-                        }
-                    },
-                    enabled = !isAnimating,
-                    modifier = Modifier.size(52.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Skip", tint = Color.White, modifier = Modifier.size(22.dp))
-                }
-
-                OutlinedIconButton(
-                    onClick = { showInfoLocal = !showInfoLocal },
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(
-                        1.5.dp,
-                        if (showInfoLocal) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = "Info",
-                        tint = if (showInfoLocal) MaterialTheme.colorScheme.primary else Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
+            // Download to rotation
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedIconButton(
                     onClick = onDownloadToRotation,
                     enabled = !isDownloading,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                    modifier = Modifier.size(52.dp)
                 ) {
                     if (isDownloading) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     } else {
-                        Icon(Icons.Default.Download, contentDescription = "Add to rotation", tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Download, contentDescription = "Add to rotation", modifier = Modifier.size(22.dp))
                     }
                 }
+                Text("Rotation", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
+            // Save to list (primary CTA)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilledIconButton(
-                    onClick = {
-                        if (!isAnimating) {
-                            isAnimating = true
-                            coroutineScope.launch {
-                                xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                                onAddToList()
-                            }
-                        }
-                    },
+                    onClick = onAddToList,
                     modifier = Modifier.size(68.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    enabled = !isAnimating
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
+                    Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(30.dp))
                 }
+                Text(
+                    selectedListName?.let { "\"$it\"" } ?: "Save",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
-                OutlinedIconButton(
-                    onClick = onShare,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
+            // Share
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedIconButton(onClick = onShare, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(22.dp))
                 }
-
-                OutlinedIconButton(
-                    onClick = onOpenSearch,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(
-                        1.5.dp,
-                        if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(18.dp))
-                }
-
-                OutlinedIconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.size(52.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(22.dp))
-                }
+                Text("Share", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
