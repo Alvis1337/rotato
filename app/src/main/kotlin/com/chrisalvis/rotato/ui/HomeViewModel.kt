@@ -93,7 +93,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 var changed = false
                 toSync.forEach { entry ->
                     if (entry.fullUrl.isBlank()) return@forEach
-                    val key = sanitizeFilename(entry.sourceId)                    val onDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
+                    val key = sanitizeFilename(entry.sourceId)
+                    val onDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
                     if (!onDisk) {
                         feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
                         changed = true
