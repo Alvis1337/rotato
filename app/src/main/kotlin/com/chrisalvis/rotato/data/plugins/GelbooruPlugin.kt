@@ -22,7 +22,8 @@ object GelbooruPlugin : SourcePlugin() {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
         }.trim()
-        val urlBase = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=20&tags=${tagQuery.urlEncode()}"
+        val pid = (0..200).random()
+        val urlBase = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=20&pid=$pid&tags=${tagQuery.urlEncode()}"
         val url = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
             "$urlBase&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
         else urlBase

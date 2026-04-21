@@ -33,8 +33,7 @@ suspend fun fetchFromSource(
         if (result != null) {
             SourceHealthTracker.recordSuccess(source.type)
         } else {
-            // null means no matching results — not a hard error but track it
-            SourceHealthTracker.recordError(source.type, "No results for query")
+            // null = no matching results — not a hard error, don't penalize source health
         }
         result
     } catch (e: Exception) {

@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.matches
 
 object KonachanPlugin : SourcePlugin() {
     override val id = "KONACHAN"
@@ -50,9 +51,21 @@ private suspend fun fetchMoebooru(
     }.trim()
     val url = "https://$host/post.json?tags=${tagQuery.urlEncode()}&limit=20"
     val arr = getJsonArray(url) ?: return@onIO null
-    val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return@onIO null
+    // Iterate shuffled posts to find one that passes filters and has an accessible file_url
+    val post = run {
+        val indices = (0 until arr.length()).shuffled()
+        for (i in indices) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.optInt("id", 0).toString()
+            if (exclude.contains(id)) continue
+            val w = obj.optInt("width"); val h = obj.optInt("height")
+            if (!filters.matches(w, h)) continue
+            if (obj.optString("file_url").isNotBlank()) return@run obj
+        }
+        null
+    } ?: return@onIO null
     val id = post.optInt("id", 0).toString()
-    val fullUrl = post.optString("file_url").ifBlank { return@onIO null }
+    val fullUrl = post.optString("file_url")
     BrainrotWallpaper(
         id = id, source = sourceName,
         thumbUrl = post.optString("preview_url").ifBlank { fullUrl },

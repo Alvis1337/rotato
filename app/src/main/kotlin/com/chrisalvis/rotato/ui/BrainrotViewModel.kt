@@ -167,15 +167,21 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             var nullStreak = 0
             val target = 12
 
+            var dupStreak = 0
             while (fetched < target && nullStreak < 3) {
                 val wp = fetchNext()
                 if (wp == null) {
                     nullStreak++
+                    dupStreak = 0
                     if (nullStreak < 3) kotlinx.coroutines.delay(300)
                     continue
                 }
                 val key = "${wp.source}:${wp.id}"
-                if (key in displayedKeys) continue
+                if (key in displayedKeys) {
+                    if (++dupStreak >= 15) break  // safety valve: too many consecutive dups
+                    continue
+                }
+                dupStreak = 0
                 displayedKeys.add(key)
                 nullStreak = 0
                 val url = wp.fullUrl.ifBlank { wp.thumbUrl }
@@ -210,7 +216,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val filters = prefs.brainrotFilters.first()
         val explicitQuery = _searchQuery.value
         val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
-        val excludeSnapshot = displayedKeys.toList()
         val triedSources = mutableListOf<String>()
         for (source in localEnabled.shuffled()) {
             val plugin = SourcePluginRegistry.forType(source.type)
@@ -219,6 +224,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 continue
             }
             triedSources += source.type.displayName
+            // Strip source prefix from composite keys so plugins compare bare IDs
+            val sourceKey = source.type.name.lowercase()
+            val sourceExcludes = displayedKeys
+                .filter { it.startsWith("$sourceKey:") }
+                .map { it.removePrefix("$sourceKey:") }
             val queriesToTry: List<String> = when {
                 source.tags.isNotBlank() -> listOf(source.tags)
                 explicitQuery.isNotBlank() -> listOf(explicitQuery)
@@ -226,7 +236,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 else -> listOf("")
             }
             for (query in queriesToTry) {
-                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+                val wp = fetchFromSource(source, query, sourceExcludes, nsfw, filters)
                 if (wp != null) {
                     _lastTriedSources.update { emptyList() }
                     return wp
