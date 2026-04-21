@@ -344,10 +344,10 @@ private fun SourceCard(
                         }
                     )
                 }
-                // Wallhaven-specific: purity filter checkboxes
+                // Wallhaven-specific: purity filter (SFW / Sketchy only — global NSFW toggle controls adult content)
                 if (source.type == SourceType.WALLHAVEN && onSaveWallhavenPurity != null) {
                     Text("Content filter", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val purityOptions = listOf("SFW" to 0, "Sketchy" to 1, "NSFW" to 2)
+                    val purityOptions = listOf("SFW" to 0, "Sketchy" to 1)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         purityOptions.forEach { (label, idx) ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
