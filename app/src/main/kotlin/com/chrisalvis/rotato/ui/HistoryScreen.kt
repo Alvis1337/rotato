@@ -151,13 +151,14 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
     ) {
         items(history, key = { "${it.timestamp}_${it.fullUrl}" }) { item ->
             val isLocal = item.fullUrl.startsWith("/")
+            val openUri = item.pageUrl.ifBlank { if (!isLocal) item.fullUrl else null }
             HistoryCard(
                 item = item,
                 isDownloading = downloading.contains(item.fullUrl),
                 onDownload = { vm.saveToGallery(item) },
                 onRemove = { vm.removeItem(item) },
-                onOpenPage = if (!isLocal) ({
-                    context.startActivity(Intent(Intent.ACTION_VIEW, item.fullUrl.toUri()))
+                onOpenPage = if (openUri != null) ({
+                    context.startActivity(Intent(Intent.ACTION_VIEW, openUri.toUri()))
                 }) else null
             )
         }

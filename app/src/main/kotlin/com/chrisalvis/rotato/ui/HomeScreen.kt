@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -241,7 +242,11 @@ private fun LibraryContent(
                         Spacer(Modifier.width(8.dp))
                         Text("Done!")
                     }
-                    SetNowState.ERROR -> Text("Failed — retry?")
+                    SetNowState.ERROR -> {
+                        Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Failed — retry?")
+                    }
                     SetNowState.IDLE -> {
                         Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
@@ -389,12 +394,20 @@ private fun EmptyState(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                text = "Add photos with \"Add Photos\", go to Discover and swipe right to save wallpapers, or open Collections → tap the Wallpaper icon on any collection to automatically sync it here.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
+            Spacer(Modifier.height(4.dp))
+            listOf(
+                "Tap \"Add Photos\" to import from your gallery",
+                "Swipe right on Discover to save wallpapers",
+                "Open Collections → tap ⊞ to sync a whole collection"
+            ).forEach { tip ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(tip, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+            }
         }
     }
 }

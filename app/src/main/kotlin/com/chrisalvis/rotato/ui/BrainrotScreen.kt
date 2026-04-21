@@ -550,10 +550,10 @@ private fun FullScreenSwipeCard(
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(
                         1.5.dp,
-                        if (searchQuery.isNotBlank() && searchQuery != "anime") MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
+                        if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
                     )
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = if (searchQuery.isNotBlank() && searchQuery != "anime") MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Search, contentDescription = "Search", tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(18.dp))
                 }
 
                 // Settings
@@ -607,7 +607,7 @@ private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss:
             TextButton(onClick = { onSearch(text.trim()) }) { Text("Search") }
         },
         dismissButton = {
-            if (current.isNotBlank() && current != "anime") {
+            if (current.isNotBlank()) {
                 TextButton(onClick = { onSearch("") }) { Text("Clear") }
             } else {
                 TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -789,10 +789,10 @@ private fun NoResultsState(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             OutlinedIconButton(onClick = onOpenSearch, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                Icon(Icons.Default.Search, contentDescription = "Search")
             }
             OutlinedIconButton(onClick = onOpenSettings, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
         }
     }

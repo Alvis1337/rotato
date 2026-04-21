@@ -197,6 +197,16 @@ private fun SourceCard(
     // Wallhaven purity: "SFW|Sketchy|NSFW" bitmask (index 0=SFW, 1=Sketchy, 2=NSFW)
     var wallhavenPurity by remember(source) { mutableStateOf(source.wallhavenPurity.padStart(3, '0')) }
 
+    var showPremiumInfo by remember { mutableStateOf(false) }
+    if (showPremiumInfo) {
+        AlertDialog(
+            onDismissRequest = { showPremiumInfo = false },
+            title = { Text("Premium source") },
+            text = { Text("This source is part of the premium tier. In-app purchases are coming in a future update.") },
+            confirmButton = { TextButton(onClick = { showPremiumInfo = false }) { Text("OK") } }
+        )
+    }
+
     // Health dot color: grey = untested, green = last fetch ok, red = last fetch errored
     val healthDotColor = when {
         health == null || !health.hasData -> Color.Gray.copy(alpha = 0.4f)
@@ -277,7 +287,7 @@ private fun SourceCard(
                             Text(if (expanded) "Close" else "Configure")
                         }
                     } else {
-                        TextButton(onClick = { /* TODO: launch IAP purchase flow */ }) {
+                        TextButton(onClick = { showPremiumInfo = true }) {
                             Text("Unlock")
                         }
                     }
