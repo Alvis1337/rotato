@@ -48,6 +48,9 @@ import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalList
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.material3.PullToRefreshContainer
+import androidx.compose.material3.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.launch
 
@@ -259,10 +262,18 @@ fun BrainrotScreen(
                     if (shouldLoadMore && !endReached) vm.loadMore()
                 }
 
-                PullToRefreshBox(
-                    isRefreshing = loading,
-                    onRefresh = { vm.loadMore(reset = true) },
-                    modifier = Modifier.fillMaxSize()
+                val pullRefreshState = rememberPullToRefreshState()
+                LaunchedEffect(pullRefreshState.isRefreshing) {
+                    if (pullRefreshState.isRefreshing) vm.loadMore(reset = true)
+                }
+                LaunchedEffect(loading) {
+                    if (!loading) pullRefreshState.endRefresh()
+                }
+
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .nestedScroll(pullRefreshState.nestedScrollConnection)
                 ) {
                 LazyVerticalStaggeredGrid(
                     columns = StaggeredGridCells.Fixed(2),
@@ -308,7 +319,11 @@ fun BrainrotScreen(
                         }
                     }
                 }
-                } // end PullToRefreshBox
+                    PullToRefreshContainer(
+                        state = pullRefreshState,
+                        modifier = Modifier.align(Alignment.TopCenter)
+                    )
+                } // end Box(nestedScroll)
 
                 // Bottom action bar: search + settings FAB row
                 Row(
