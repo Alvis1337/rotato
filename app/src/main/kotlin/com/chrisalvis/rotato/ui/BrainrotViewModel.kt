@@ -232,7 +232,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val queriesToTry: List<String> = when {
                 source.tags.isNotBlank() -> listOf(source.tags)
                 explicitQuery.isNotBlank() -> listOf(explicitQuery)
-                malTitles.isNotEmpty() -> malTitles.shuffled().take(3) + listOf("")
+                malTitles.isNotEmpty() -> malTitles.shuffled().take(5)
                 else -> listOf("")
             }
             for (query in queriesToTry) {
