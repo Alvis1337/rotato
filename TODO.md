@@ -2,6 +2,89 @@
 
 ## 🏗️ Architecture / Monetisation
 
+### Sources as installable plugins with IAP unlock ✅ DONE
+Plugin architecture implemented: `SourcePlugin` abstract class, `SourcePluginRegistry`,
+`PluginEntitlement` stub (all unlocked), per-source premium badges and lock icons in UI.
+Phases 1–3 complete. Phase 4 (Google Play Billing) and Phase 5 (restore) still pending.
+
+**Implementation phases**
+1. ✅ Extract each booru fetcher into its own `SourcePlugin` implementation class.
+2. ✅ Build `SourcePluginRegistry` + basic entitlement stub (all unlocked, no billing yet).
+3. ✅ Add "Premium" badge + lock icon in the Source picker for gated plugins.
+4. ⬜ Integrate Google Play Billing: purchase flow, receipt verification, entitlement cache.
+5. ⬜ Add restore-purchases and "already purchased?" flows.
+
+### End-to-end build and release pipeline ✅ DONE
+CI workflow builds, signs, and publishes a release APK to GitHub Releases on every push to main.
+MAL_CLIENT_ID and MAL_CLIENT_SECRET are configured as GitHub Actions secrets.
+
+---
+
+## 🔴 Critical / UX-Breaking
+
+### Collections wallpapers not showing up in Library
+- `HomeViewModel._images` is populated once at startup and doesn't observe the filesystem.
+- **Proper fix**: make `ImageRepository.getImages()` return a `Flow<List<File>>` backed by
+  a `FileObserver` (API 29+) or a polling coroutine so `HomeViewModel._images` updates
+  reactively whenever any file is added/removed from `rotato_images/`.
+
+### Danbooru free-account tag limit
+Free Danbooru accounts support max 2 query tags. Server-side `-id:X` exclusion was removed
+and replaced with client-side dedup. However:
+- If the user has a paid Danbooru account (Gold/Platinum), server-side exclusion is more
+  efficient. Detect account tier via `/profile.json` and re-enable `-id:X` tags conditionally.
+- With `random=true` and no server-side exclusion, the same 20-post window can be returned
+  repeatedly. Client-side `seenIds` (cap 30) mitigates this.
+
+---
+
+## 🟡 Usability / Polish
+
+### Source health indicator in Settings > Sources ✅ DONE
+- `SourceHealthTracker` singleton tracks last success/error per source in-memory (session-scoped).
+- Green/grey/red dot shown per source in Sources list.
+- Tapping error message shows last error detail text.
+
+### Better "No wallpapers found" screen ✅ DONE
+- Shows which sources were tried by name.
+- Actionable hint to check Sources for red health indicators.
+
+### Source failure handling on swipe screen ✅ DONE
+- `fetchFromSource()` wraps plugin.fetch() in try/catch and records health.
+- `fetchNext()` iterates all sources silently, never aborts on single-source failure.
+- Fetch errors are logged with `SourceHealthTracker`.
+
+### Collections → Library workflow clarity ✅ DONE
+- Library empty state now explains the full workflow including Collections.
+
+### Wallhaven purity filter
+- Currently hardcoded: `sfw+sketchy` when NSFW off, `sfw+sketchy+nsfw` when on.
+- Add a Wallhaven-specific purity picker (SFW / Sketchy / NSFW checkboxes) in
+  `DiscoverSettingsDialog` or per-source settings.
+
+---
+
+## 🟢 Nice-to-Have
+
+### History tab — source & tags metadata
+- History entries show thumbnail only. Add source badge + first 3 tags under each card.
+
+### Per-source tag defaults
+- Let the user set default tags per source (e.g. Danbooru always searches "scenery",
+  Wallhaven searches "nature"). Currently `source.tags` does this but it's not surfaced
+  clearly in the UI.
+
+### Swipe undo
+- If the user accidentally swipes left (skip), there's no way to get the wallpaper back.
+  Keep a small "undo" stack (last 1–3 skipped wallpapers) and show an undo snackbar for
+  ~5 seconds after a skip.
+
+### Queue size / prefetch settings
+- `queueTargetSize = 10` is hardcoded. Expose this in Settings > Discover.
+
+
+## 🏗️ Architecture / Monetisation
+
 ### Sources as installable plugins with IAP unlock
 Right now sources (Danbooru, Gelbooru, Safebooru, Wallhaven, Konachan, Yandere) are
 hard-coded `SourceType` enum values baked into `DirectSourceRepository`. The goal is to
