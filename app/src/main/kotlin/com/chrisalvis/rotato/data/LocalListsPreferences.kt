@@ -85,6 +85,24 @@ class LocalListsPreferences(private val context: Context) {
         return added
     }
 
+    suspend fun addLocalImage(listId: String, relativePath: String) {
+        val uuid = relativePath.substringAfterLast("/").substringBeforeLast(".")
+        context.dataStore.edit { prefs ->
+            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
+            val entry = LocalWallpaperEntry(
+                listId = listId,
+                sourceId = uuid,
+                source = "device",
+                thumbUrl = relativePath,
+                fullUrl = relativePath,
+                resolution = "",
+                pageUrl = "",
+                tags = emptyList()
+            )
+            prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
+        }
+    }
+
     suspend fun removeWallpaper(entryId: String) {
         context.dataStore.edit { prefs ->
             val updated = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.id != entryId }

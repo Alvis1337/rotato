@@ -1,6 +1,8 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,19 +11,24 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 
 class BrowseViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val app = application
     private val localLists = LocalListsPreferences(application)
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
@@ -39,7 +46,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     val wallpapers: StateFlow<List<BrowseWallpaper>> =
         combine(localLists.allWallpapers, _selectedList) { all, selected ->
             val listId = selected?.id ?: return@combine emptyList()
-            all.filter { it.listId == listId }.map { it.toBrowseWallpaper() }.reversed()
+            all.filter { it.listId == listId }.map { it.toBrowseWallpaper(app.filesDir) }.reversed()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _inRotation = MutableStateFlow<Set<String>>(emptySet())
@@ -88,7 +95,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteList(list: LocalList) {
         viewModelScope.launch {
             if (_selectedList.value?.id == list.id) clearSelection()
+            // Collect device-image entries before they're deleted from DataStore
+            val deviceEntries = localLists.allWallpapers.first()
+                .filter { it.listId == list.id && it.source == "device" }
             localLists.deleteList(list.id)
+            // Remove all local image files for this collection
+            File(app.filesDir, "list_images/${list.id}").deleteRecursively()
+            // Also clean rotation-pool copies for device images from this list
+            deviceEntries.forEach { entry ->
+                val key = sanitize(entry.sourceId)
+                imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
+                _inRotation.update { it - key }
+            }
         }
     }
 
@@ -98,7 +116,19 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun removeWallpaper(entryId: String) {
-        viewModelScope.launch { localLists.removeWallpaper(entryId) }
+        val wp = wallpapers.value.find { it.entryId == entryId }
+        viewModelScope.launch {
+            localLists.removeWallpaper(entryId)
+            if (wp?.source == "device") {
+                // Delete the local image file
+                val uri = Uri.parse(wp.fullUrl)
+                uri.path?.let { File(it).delete() }
+                // Also remove from rotation pool if present
+                val key = sanitize(wp.sourceId)
+                imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
+                _inRotation.update { it - key }
+            }
+        }
     }
 
     fun enterSelectionMode(wallpaper: BrowseWallpaper) {
@@ -119,9 +149,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun downloadSelected() {
-        val toDownload = wallpapers.value.filter { _selected.value.contains(it.sourceId) }
+        val allSelected = wallpapers.value.filter { _selected.value.contains(it.sourceId) }
+        val toDownload = allSelected.filter { it.source != "device" }
+        val deviceCount = allSelected.size - toDownload.size
         exitSelectionMode()
-        val ctx = getApplication<Application>().applicationContext
+        val ctx = app.applicationContext
         viewModelScope.launch {
             var saved = 0; var failed = 0
             toDownload.forEach { wp ->
@@ -132,7 +164,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 _downloading.update { it - wp.sourceId }
             }
             val msg = when {
-                failed == 0 -> "Saved $saved photo${if (saved != 1) "s" else ""} to Pictures/Rotato"
+                failed == 0 && deviceCount == 0 -> "Saved $saved photo${if (saved != 1) "s" else ""} to Pictures/Rotato"
+                failed == 0 && deviceCount > 0  -> "Saved $saved to Pictures/Rotato ($deviceCount device photo${if (deviceCount != 1) "s" else ""} already on device)"
                 saved == 0  -> "Failed to save $failed photo${if (failed != 1) "s" else ""}"
                 else        -> "Saved $saved, failed $failed"
             }
@@ -146,14 +179,17 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val key = sanitize(wallpaper.sourceId)
         if (_downloading.value.contains(wallpaper.sourceId)) return
         if (_inRotation.value.contains(key)) {
-            // Remove from rotation pool
             imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
             _inRotation.update { it - key }
             return
         }
         viewModelScope.launch {
             _downloading.update { it + wallpaper.sourceId }
-            val ok = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
+            val ok = if (wallpaper.source == "device") {
+                copyLocalToRotation(wallpaper.fullUrl, key)
+            } else {
+                feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
+            }
             if (ok) _inRotation.update { it + key }
             _downloading.update { it - wallpaper.sourceId }
         }
@@ -161,14 +197,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun addAllToRotation() {
         val toAdd = wallpapers.value.filter { !isInRotation(it) }
-        val ctx = getApplication<Application>().applicationContext
+        val ctx = app.applicationContext
         viewModelScope.launch {
             var added = 0
             toAdd.forEach { wp ->
                 if (_downloading.value.contains(wp.sourceId)) return@forEach
                 val key = sanitize(wp.sourceId)
                 _downloading.update { it + wp.sourceId }
-                val ok = feedRepo.downloadWallpaper(wp.sourceId, wp.fullUrl)
+                val ok = if (wp.source == "device") {
+                    copyLocalToRotation(wp.fullUrl, key)
+                } else {
+                    feedRepo.downloadWallpaper(wp.sourceId, wp.fullUrl)
+                }
                 if (ok) { _inRotation.update { it + key }; added++ }
                 _downloading.update { it - wp.sourceId }
             }
@@ -182,6 +222,64 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun addLocalImages(listId: String, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = lists.value.find { it.id == listId } ?: return@launch
+            val listImagesDir = File(app.filesDir, "list_images/$listId").also { it.mkdirs() }
+            var added = 0
+            uris.forEach { uri ->
+                try {
+                    val mimeType = app.contentResolver.getType(uri) ?: "image/jpeg"
+                    val ext = when {
+                        mimeType.contains("png")  -> "png"
+                        mimeType.contains("webp") -> "webp"
+                        mimeType.contains("gif")  -> "gif"
+                        else -> "jpg"
+                    }
+                    val uuid = UUID.randomUUID().toString()
+                    val destFile = File(listImagesDir, "$uuid.$ext")
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        destFile.outputStream().use { output -> input.copyTo(output) }
+                    } ?: return@forEach
+                    if (!destFile.exists() || destFile.length() == 0L) {
+                        destFile.delete(); return@forEach
+                    }
+                    val relativePath = "list_images/$listId/$uuid.$ext"
+                    localLists.addLocalImage(listId, relativePath)
+                    if (list.useAsRotation) {
+                        val key = sanitize(uuid)
+                        val rotationDest = File(imageDir, "$key.$ext")
+                        destFile.copyTo(rotationDest, overwrite = true)
+                        _inRotation.update { it + key }
+                    }
+                    added++
+                } catch (e: Exception) {
+                    Log.e("BrowseViewModel", "Failed to import image $uri", e)
+                }
+            }
+            val count = added
+            withContext(Dispatchers.Main) {
+                if (count > 0)
+                    Toast.makeText(app, "Added $count image${if (count != 1) "s" else ""} to ${list.name}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Copies a device image (fullUrl = file:// URI string) to the rotation pool. */
+    private fun copyLocalToRotation(fullUrl: String, key: String): Boolean {
+        return try {
+            val src = File(Uri.parse(fullUrl).path ?: return false)
+            if (!src.exists()) return false
+            val ext = src.extension.ifBlank { "jpg" }
+            src.copyTo(File(imageDir, "$key.$ext"), overwrite = true)
+            true
+        } catch (e: Exception) {
+            Log.e("BrowseViewModel", "copyLocalToRotation failed: $fullUrl", e)
+            false
+        }
+    }
+
     fun toggleCollectionRotation(list: LocalList) {
         viewModelScope.launch {
             localLists.setUseAsRotation(list.id, !list.useAsRotation)
@@ -191,10 +289,15 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 }
 
-private fun LocalWallpaperEntry.toBrowseWallpaper() = BrowseWallpaper(
+private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpaper(
     sourceId = sourceId,
     entryId = id,
-    fullUrl = fullUrl,
-    thumbUrl = thumbUrl,
-    animeTitle = tags.take(3).joinToString(", ")
+    fullUrl = resolveEntryUrl(fullUrl, filesDir),
+    thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir),
+    animeTitle = tags.take(3).joinToString(", "),
+    source = source
 )
+
+/** Relative paths (list_images/…) are resolved to file:// URIs; remote URLs are passed through. */
+private fun resolveEntryUrl(url: String, filesDir: File): String =
+    if (url.startsWith("list_images/")) File(filesDir, url).toURI().toString() else url

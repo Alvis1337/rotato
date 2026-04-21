@@ -105,7 +105,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     val key = sanitizeFilename(entry.sourceId)
                     val onDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
                     if (!onDisk) {
-                        feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+                        if (entry.source == "device" && entry.fullUrl.startsWith("list_images/")) {
+                            // Local image — copy from list_images/ to rotation pool
+                            val src = File(application.filesDir, entry.fullUrl)
+                            if (src.exists()) {
+                                val ext = src.extension.ifBlank { "jpg" }
+                                src.copyTo(File(imageDir, "$key.$ext"), overwrite = true)
+                            }
+                        } else {
+                            feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+                        }
                         changed = true
                     }
                 }

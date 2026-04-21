@@ -1,6 +1,9 @@
 package com.chrisalvis.rotato.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -55,6 +59,16 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
 
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
+
+    // Track which collection the picker was launched for
+    var pickerTargetListId by remember { mutableStateOf<String?>(null) }
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        val listId = pickerTargetListId
+        if (!uris.isNullOrEmpty() && listId != null) vm.addLocalImages(listId, uris)
+        pickerTargetListId = null
+    }
 
     BackHandler(enabled = selectionMode) { vm.exitSelectionMode() }
     BackHandler(enabled = !selectionMode && selectedList != null) { vm.clearSelection() }
@@ -101,6 +115,14 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
                             Icon(Icons.Default.Download, contentDescription = "Download selected to gallery")
                         }
                     }
+                    if (!selectionMode && selectedList != null) {
+                        IconButton(onClick = {
+                            pickerTargetListId = selectedList!!.id
+                            photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Add from device")
+                        }
+                    }
                     if (!selectionMode && selectedList != null && wallpapers.isNotEmpty()) {
                         IconButton(onClick = { vm.addAllToRotation() }) {
                             Icon(Icons.Default.Wallpaper, contentDescription = "Add all to Library")
@@ -122,6 +144,10 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
+                onPickImages = { list ->
+                    pickerTargetListId = list.id
+                    photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
                 onCreateList = { vm.showCreateDialog() },
                 modifier = Modifier.padding(padding)
             )
@@ -175,6 +201,7 @@ private fun ListPickerContent(
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
+    onPickImages: (LocalList) -> Unit,
     onCreateList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -222,6 +249,9 @@ private fun ListPickerContent(
                     },
                     trailingContent = {
                         Row {
+                            IconButton(onClick = { onPickImages(list) }) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Add photos from device", tint = MaterialTheme.colorScheme.outline)
+                            }
                             IconButton(onClick = { onToggleRotation(list) }) {
                                 Icon(
                                     if (list.useAsRotation) Icons.Default.Wallpaper
@@ -260,7 +290,7 @@ private fun WallpaperGridContent(
 ) {
     if (wallpapers.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No wallpapers saved yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("No wallpapers yet — tap 📷 to add from your device", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -273,13 +303,13 @@ private fun WallpaperGridContent(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item(span = { GridItemSpan(2) }) {
-            Text(
-                "Tap a wallpaper to add/remove it from the Library rotation. Use ⊞ to add all.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-            )
-        }
+                Text(
+                    "Tap to add/remove from Library rotation. Use ⊞ to add all, or 📷 to import from device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
         items(wallpapers, key = { it.entryId.ifBlank { it.sourceId } }) { wp ->
             WallpaperThumbnail(
                 wallpaper = wp,
