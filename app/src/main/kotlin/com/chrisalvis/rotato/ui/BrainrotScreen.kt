@@ -367,13 +367,15 @@ private fun DiscoverGridItem(
     isDownloading: Boolean,
     onClick: () -> Unit
 ) {
-    // Use resolution aspect ratio for the loading placeholder; natural image size takes over after load.
-    val placeholderRatio = if (wallpaper.resolution.isNotBlank()) parseAspectRatio(wallpaper.resolution) else 3f / 4f
-    var loaded by remember { mutableStateOf(false) }
+    // Always use the resolution-derived ratio so the card never resizes on scroll-back.
+    // Falls back to 3:4 portrait if resolution is unknown.
+    val ratio = parseAspectRatio(wallpaper.resolution)
+        .coerceIn(0.25f, 4f)
+        .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (!loaded) Modifier.aspectRatio(placeholderRatio) else Modifier)
+            .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
     ) {
         val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
@@ -386,10 +388,9 @@ private fun DiscoverGridItem(
                 .crossfade(true)
                 .build(),
             contentDescription = null,
-            contentScale = ContentScale.FillWidth,
-            onSuccess = { loaded = true },
+            contentScale = ContentScale.Crop,
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = { onClick() })
                 }

@@ -22,7 +22,7 @@ object DanbooruPlugin : SourcePlugin() {
     private val accountLevelCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /** Danbooru account level threshold for Gold (can use more tags server-side). */
-    private const val GOLD_LEVEL = 20
+    private const val GOLD_LEVEL = 30
 
     private fun authHeader(source: LocalSource): String? =
         if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
