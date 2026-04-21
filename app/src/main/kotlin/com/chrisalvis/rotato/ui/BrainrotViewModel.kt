@@ -150,9 +150,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
      * [reset] = true clears the grid and caches (pull-to-refresh, filter change, etc.).
      *
      * Strategy:
-     *  1. Pre-warm page caches for all enabled sources **in parallel** (one API call each).
-     *  2. Drain from the in-memory caches — no network during drain.
-     *  3. Batch-update the grid with all new items in a single state emission.
+     *  1. Compute queries once per source (stable — avoids MAL shuffle mismatch between steps).
+     *  2. Pre-warm page caches for all enabled sources **in parallel** (one API call each).
+     *  3. Drain from the in-memory caches — no network during drain.
+     *  4. Batch-update the grid with all new items in a single state emission.
      */
     fun loadMore(reset: Boolean = false) {
         if (reset) {
@@ -180,16 +181,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val localEnabled = localSources.sources.first().filter { it.enabled }
             val target = if (isInitial) 40 else 20
 
-            // Step 1: fetch pages from ALL sources in parallel (network bound)
-            val seenKeys = displayedKeys.toSet()
-            localEnabled.mapNotNull { source ->
+            // Compute queries once per source so pre-warm and drain use the same cache keys.
+            // queriesFor() shuffles MAL titles — calling it twice would produce different keys.
+            val sourcesWithQueries: List<Pair<LocalSource, List<String>>> = localEnabled.mapNotNull { source ->
                 val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
                 if (plugin.requiresCredentials &&
                     (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) return@mapNotNull null
-                val sourceKey = source.type.name.lowercase()
-                val queries = queriesFor(source, explicitQuery, malTitles)
-                // Skip if cache already has items for every query
+                source to queriesFor(source, explicitQuery, malTitles)
+            }
+
+            // Step 1: fetch pages from ALL sources in parallel (network bound)
+            val seenKeys = displayedKeys.toSet()
+            sourcesWithQueries.mapNotNull { (source, queries) ->
                 if (queries.all { q -> pageCache[cacheKey(source, q)]?.isNotEmpty() == true }) return@mapNotNull null
+                val sourceKey = source.type.name.lowercase()
                 async(Dispatchers.IO) {
                     for (q in queries) {
                         val ck = cacheKey(source, q)
@@ -197,7 +202,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         val excludes = seenKeys
                             .filter { it.startsWith("$sourceKey:") }
                             .map { it.removePrefix("$sourceKey:") }
-                        val page = fetchPageFromSource(source, q, excludes, nsfw, filters)
+                        val page = try {
+                            fetchPageFromSource(source, q, excludes, nsfw, filters)
+                        } catch (e: Exception) { emptyList() }
                         if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
                     }
                 }
@@ -205,14 +212,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
             // Step 2: drain from caches — purely in-memory, no network
             val newItems = mutableListOf<BrainrotWallpaper>()
-            var nullStreak = 0
             var dupStreak = 0
-            while (newItems.size < target && nullStreak < 3) {
-                val wp = drainOne(localEnabled, explicitQuery, malTitles)
-                if (wp == null) { nullStreak++; dupStreak = 0; continue }
+            while (newItems.size < target) {
+                val wp = drainOne(sourcesWithQueries) ?: break  // null = all caches empty
                 val key = "${wp.source}:${wp.id}"
                 if (key in displayedKeys) { if (++dupStreak >= 30) break; continue }
-                dupStreak = 0; nullStreak = 0
+                dupStreak = 0
                 displayedKeys.add(key)
                 val url = wp.sampleUrl.ifBlank { wp.fullUrl }
                 if (url.isNotBlank()) {
@@ -222,7 +227,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 newItems += wp
             }
-            _lastTriedSources.update { emptyList() }
 
             if (newItems.isEmpty()) {
                 if (_gridItems.value.isEmpty()) _noResults.update { true }
@@ -245,16 +249,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Pull one unseen item from the in-memory page caches (no network calls). */
-    private fun drainOne(
-        localEnabled: List<LocalSource>,
-        explicitQuery: String,
-        malTitles: List<String>,
-    ): BrainrotWallpaper? {
-        for (source in localEnabled.shuffled()) {
-            val plugin = SourcePluginRegistry.forType(source.type) ?: continue
-            if (plugin.requiresCredentials &&
-                (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) continue
-            for (q in queriesFor(source, explicitQuery, malTitles)) {
+    private fun drainOne(sourcesWithQueries: List<Pair<LocalSource, List<String>>>): BrainrotWallpaper? {
+        for ((source, queries) in sourcesWithQueries.shuffled()) {
+            for (q in queries) {
                 val cached = pageCache[cacheKey(source, q)] ?: continue
                 while (cached.isNotEmpty()) {
                     val wp = cached.removeFirst()
