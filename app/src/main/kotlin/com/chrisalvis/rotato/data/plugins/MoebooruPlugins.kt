@@ -66,9 +66,11 @@ private suspend fun fetchMoebooru(
     } ?: return@onIO null
     val id = post.optInt("id", 0).toString()
     val fullUrl = post.optString("file_url")
+    val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
     BrainrotWallpaper(
         id = id, source = sourceName,
-        thumbUrl = post.optString("preview_url").ifBlank { fullUrl },
+        thumbUrl = post.optString("preview_url").ifBlank { sampleUrl },
+        sampleUrl = sampleUrl,
         fullUrl = fullUrl,
         resolution = "${post.optInt("width")}x${post.optInt("height")}",
         pageUrl = "https://$host/post/show/$id",

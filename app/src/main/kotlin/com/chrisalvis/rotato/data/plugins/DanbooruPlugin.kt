@@ -87,10 +87,12 @@ object DanbooruPlugin : SourcePlugin() {
             null
         } ?: return@onIO null
         val fullUrl = post.optString("file_url")
+        val sampleUrl = post.optString("large_file_url").ifBlank { fullUrl }
         val id = post.optInt("id", 0).toString()
         BrainrotWallpaper(
             id = id, source = "danbooru",
-            thumbUrl = post.optString("preview_file_url").ifBlank { fullUrl },
+            thumbUrl = post.optString("preview_file_url").ifBlank { sampleUrl },
+            sampleUrl = sampleUrl,
             fullUrl = fullUrl,
             resolution = "${post.optInt("image_width")}x${post.optInt("image_height")}",
             pageUrl = "https://danbooru.donmai.us/posts/$id",

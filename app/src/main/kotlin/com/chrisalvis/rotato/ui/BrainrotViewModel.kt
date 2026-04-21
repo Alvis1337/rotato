@@ -181,7 +181,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 dupStreak = 0
                 displayedKeys.add(key)
                 nullStreak = 0
-                val url = wp.fullUrl.ifBlank { wp.thumbUrl }
+                val url = wp.sampleUrl.ifBlank { wp.fullUrl.ifBlank { wp.thumbUrl } }
                 if (url.isNotBlank()) {
                     ctx.imageLoader.enqueue(
                         ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()

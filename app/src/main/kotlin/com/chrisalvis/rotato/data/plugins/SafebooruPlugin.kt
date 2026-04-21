@@ -25,10 +25,11 @@ object SafebooruPlugin : SourcePlugin() {
         val directory = post.optString("directory")
         val image = post.optString("image")
         val fullUrl = "https://safebooru.org/images/$directory/$image"
-        val thumbUrl = post.optString("preview_url").ifBlank { fullUrl }
+        val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
+        val thumbUrl = post.optString("preview_url").ifBlank { sampleUrl }
         BrainrotWallpaper(
             id = id, source = "safebooru",
-            thumbUrl = thumbUrl, fullUrl = fullUrl,
+            thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
             resolution = "${post.optInt("width")}x${post.optInt("height")}",
             pageUrl = "https://safebooru.org/index.php?page=post&s=view&id=$id",
             tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)

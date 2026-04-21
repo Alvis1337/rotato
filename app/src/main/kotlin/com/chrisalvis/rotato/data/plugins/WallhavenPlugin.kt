@@ -41,12 +41,15 @@ object WallhavenPlugin : SourcePlugin() {
         val fullUrl = post.optString("path").ifBlank { return@onIO null }
         val thumbs = post.optJSONObject("thumbs")
         val thumbUrl = thumbs?.optString("small") ?: thumbs?.optString("original") ?: fullUrl
+        val sampleUrl = thumbs?.optString("large")?.ifBlank { null }
+            ?: thumbs?.optString("original")?.ifBlank { null }
+            ?: fullUrl
         val tags = post.optJSONArray("tags")?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
         } ?: emptyList()
         BrainrotWallpaper(
             id = id, source = "wallhaven",
-            thumbUrl = thumbUrl, fullUrl = fullUrl,
+            thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
             resolution = post.optString("resolution").ifBlank { "" },
             pageUrl = "https://wallhaven.cc/w/$id",
             tags = tags.take(12)

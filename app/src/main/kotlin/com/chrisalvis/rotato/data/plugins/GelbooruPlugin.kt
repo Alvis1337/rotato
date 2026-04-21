@@ -32,9 +32,11 @@ object GelbooruPlugin : SourcePlugin() {
         val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return@onIO null
         val id = post.optInt("id", 0).toString()
         val fullUrl = post.optString("file_url").ifBlank { return@onIO null }
+        val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
         BrainrotWallpaper(
             id = id, source = "gelbooru",
-            thumbUrl = post.optString("preview_url").ifBlank { fullUrl },
+            thumbUrl = post.optString("preview_url").ifBlank { sampleUrl },
+            sampleUrl = sampleUrl,
             fullUrl = fullUrl,
             resolution = "${post.optInt("width")}x${post.optInt("height")}",
             pageUrl = "https://gelbooru.com/index.php?page=post&s=view&id=$id",

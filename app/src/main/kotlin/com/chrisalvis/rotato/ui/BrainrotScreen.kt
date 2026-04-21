@@ -369,7 +369,7 @@ private fun DiscoverGridItem(
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
     ) {
-        val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
+        val imageUrl = wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl } }
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(imageUrl)
