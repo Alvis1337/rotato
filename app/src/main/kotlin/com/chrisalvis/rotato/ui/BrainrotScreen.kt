@@ -121,10 +121,26 @@ fun BrainrotScreen(
         )
     }
 
+    // SearchDialog is always accessible, even in no-results state
+    if (showSearch) {
+        SearchDialog(
+            current = searchQuery,
+            onSearch = { vm.setSearchQuery(it); showSearch = false },
+            onDismiss = { showSearch = false }
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         when {
             noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
-            noResults -> NoResultsState(triedSources = lastTriedSources, onRetry = { vm.retry() })
+            noResults -> NoResultsState(
+                triedSources = lastTriedSources,
+                searchQuery = searchQuery,
+                onRetry = { vm.retry() },
+                onClearSearch = { vm.setSearchQuery(""); vm.retry() },
+                onOpenSearch = { showSearch = true },
+                onOpenSettings = { showSettings = true }
+            )
             loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
@@ -171,13 +187,6 @@ fun BrainrotScreen(
                         onOpenSettings = { showSettings = true },
                         onOpenSearch = { showSearch = true },
                         modifier = Modifier.fillMaxSize()
-                    )
-                }
-                if (showSearch) {
-                    SearchDialog(
-                        current = searchQuery,
-                        onSearch = { vm.setSearchQuery(it); showSearch = false },
-                        onDismiss = { showSearch = false }
                     )
                 }
                 if (showZoom) {
@@ -695,15 +704,33 @@ private fun NoSourcesState(onNavigateToSources: () -> Unit) {
 }
 
 @Composable
-private fun NoResultsState(triedSources: List<String>, onRetry: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun NoResultsState(
+    triedSources: List<String>,
+    searchQuery: String,
+    onRetry: () -> Unit,
+    onClearSearch: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(32.dp)
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(32.dp)
         ) {
             Icon(Icons.Default.ImageNotSupported, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
             Text("No wallpapers found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (searchQuery.isNotBlank()) {
+                Text(
+                    "Searching for: \"$searchQuery\"",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+                OutlinedButton(onClick = onClearSearch) { Text("Clear search") }
+            }
             if (triedSources.isNotEmpty()) {
                 Text(
                     "Tried: ${triedSources.joinToString(", ")}",
@@ -719,6 +746,21 @@ private fun NoResultsState(triedSources: List<String>, onRetry: () -> Unit) {
                 textAlign = TextAlign.Center
             )
             Button(onClick = onRetry) { Text("Retry") }
+        }
+
+        // Always-visible bottom row so user can open Search or Settings
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedIconButton(onClick = onOpenSearch, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
+                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+            }
+            OutlinedIconButton(onClick = onOpenSettings, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+            }
         }
     }
 }

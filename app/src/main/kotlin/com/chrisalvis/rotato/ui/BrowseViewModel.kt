@@ -176,6 +176,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun refreshInRotation() {
+        _inRotation.update {
+            imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
+        }
+    }
+
+    fun toggleCollectionRotation(list: LocalList) {
+        viewModelScope.launch {
+            localLists.setUseAsRotation(list.id, !list.useAsRotation)
+        }
+    }
+
     private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 }
 

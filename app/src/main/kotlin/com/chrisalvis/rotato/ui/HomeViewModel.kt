@@ -14,9 +14,13 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import androidx.work.workDataOf
+import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
+import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.RotatoSettings
+import kotlinx.coroutines.flow.combine
 import com.chrisalvis.rotato.worker.WallpaperWorker
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.CHAIN_WORK_NAME
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.KEY_INTERVAL_MINUTES
@@ -38,6 +42,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ImageRepository(application)
     private val preferences = RotatoPreferences(application)
     private val workManager = WorkManager.getInstance(application)
+    private val localLists = LocalListsPreferences(application)
+    private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
+    private val feedRepo = FeedRepository(imageDir)
 
     private val _images = MutableStateFlow<List<File>>(emptyList())
     val images: StateFlow<List<File>> = _images.asStateFlow()
@@ -49,6 +56,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val setNowState: StateFlow<SetNowState> = _setNowState.asStateFlow()
 
 
+    val collections: StateFlow<List<LocalList>> = localLists.lists
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val settings: StateFlow<RotatoSettings> = preferences.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RotatoSettings())
 
@@ -58,6 +68,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     init {
         refreshImages()
         recoverIfNeeded()
+        observeRotationCollections()
     }
 
     private fun refreshImages() {
@@ -69,6 +80,33 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshFromFeeds() {
         viewModelScope.launch {
             _images.update { repository.getImages() }
+        }
+    }
+
+    /** Auto-download wallpapers from any collection marked useAsRotation into the Library pool. */
+    private fun observeRotationCollections() {
+        viewModelScope.launch {
+            localLists.lists.combine(localLists.allWallpapers) { lists, wallpapers ->
+                val rotationIds = lists.filter { it.useAsRotation }.map { it.id }.toSet()
+                wallpapers.filter { it.listId in rotationIds }
+            }.collect { toSync ->
+                var changed = false
+                toSync.forEach { entry ->
+                    if (entry.fullUrl.isBlank()) return@forEach
+                    val key = sanitizeFilename(entry.sourceId)                    val onDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
+                    if (!onDisk) {
+                        feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+                        changed = true
+                    }
+                }
+                if (changed) _images.update { repository.getImages() }
+            }
+        }
+    }
+
+    fun toggleCollectionAsRotation(list: LocalList) {
+        viewModelScope.launch {
+            localLists.setUseAsRotation(list.id, !list.useAsRotation)
         }
     }
 
@@ -246,3 +284,5 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         const val WORK_NAME = "rotato_wallpaper_rotation"
     }
 }
+
+private fun sanitizeFilename(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)

@@ -73,7 +73,7 @@ class WallpaperWorker(
                 source = "local",
                 timestamp = System.currentTimeMillis()
             ))
-            prefs.setHistoryJson(history.take(20).toJson())
+            prefs.setHistoryJson(history.take(50).toJson())
 
             // Post "wallpaper changed" notification
             postWallpaperSetNotification(bitmap)

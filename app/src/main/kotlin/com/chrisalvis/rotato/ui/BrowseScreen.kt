@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -51,6 +52,9 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
+
+    // Keep in-rotation badges in sync with actual filesystem state
+    LaunchedEffect(Unit) { vm.refreshInRotation() }
 
     BackHandler(enabled = selectionMode) { vm.exitSelectionMode() }
     BackHandler(enabled = !selectionMode && selectedList != null) { vm.clearSelection() }
@@ -94,12 +98,12 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
                 actions = {
                     if (selectionMode && selected.isNotEmpty()) {
                         IconButton(onClick = { vm.downloadSelected() }) {
-                            Icon(Icons.Default.Download, contentDescription = "Download selected")
+                            Icon(Icons.Default.Download, contentDescription = "Download selected to gallery")
                         }
                     }
                     if (!selectionMode && selectedList != null && wallpapers.isNotEmpty()) {
                         IconButton(onClick = { vm.addAllToRotation() }) {
-                            Icon(Icons.Default.Wallpaper, contentDescription = "Add all to Library rotation")
+                            Icon(Icons.Default.Wallpaper, contentDescription = "Add all to Library")
                         }
                     }
                     if (!selectionMode && selectedList == null) {
@@ -117,6 +121,7 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
                 listCounts = listCounts,
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
+                onToggleRotation = { vm.toggleCollectionRotation(it) },
                 onCreateList = { vm.showCreateDialog() },
                 modifier = Modifier.padding(padding)
             )
@@ -169,6 +174,7 @@ private fun ListPickerContent(
     listCounts: Map<String, Int>,
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
+    onToggleRotation: (LocalList) -> Unit,
     onCreateList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -203,15 +209,31 @@ private fun ListPickerContent(
                 ListItem(
                     headlineContent = { Text(list.name, fontWeight = FontWeight.Medium) },
                     supportingContent = {
+                        val label = buildString {
+                            append("$count wallpaper${if (count != 1) "s" else ""}")
+                            if (list.useAsRotation) append(" · synced to Library")
+                        }
                         Text(
-                            "$count wallpaper${if (count != 1) "s" else ""}",
+                            label,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (list.useAsRotation) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
                     trailingContent = {
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline)
+                        Row {
+                            IconButton(onClick = { onToggleRotation(list) }) {
+                                Icon(
+                                    if (list.useAsRotation) Icons.Default.Wallpaper
+                                    else Icons.Outlined.Wallpaper,
+                                    contentDescription = if (list.useAsRotation) "Remove from Library source" else "Use as Library source",
+                                    tint = if (list.useAsRotation) MaterialTheme.colorScheme.primary
+                                           else MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            IconButton(onClick = { showDeleteConfirm = true }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline)
+                            }
                         }
                     },
                     modifier = Modifier
