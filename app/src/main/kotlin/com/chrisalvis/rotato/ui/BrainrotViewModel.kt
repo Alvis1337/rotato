@@ -83,7 +83,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _lastTriedSources = MutableStateFlow<List<String>>(emptyList())
     val lastTriedSources: StateFlow<List<String>> = _lastTriedSources.asStateFlow()
 
-
+    private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val seenIds = mutableListOf<String>()
