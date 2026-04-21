@@ -45,7 +45,7 @@ import com.chrisalvis.rotato.data.LocalList
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowseScreen(onNavigateBack: () -> Unit) {
+fun BrowseScreen() {
     val vm: BrowseViewModel = viewModel()
 
     val lists by vm.lists.collectAsStateWithLifecycle()
@@ -85,17 +85,15 @@ fun BrowseScreen(onNavigateBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = {
-                        when {
-                            selectionMode -> vm.exitSelectionMode()
-                            selectedList != null -> vm.clearSelection()
-                            else -> onNavigateBack()
+                    if (selectionMode || selectedList != null) {
+                        IconButton(onClick = {
+                            if (selectionMode) vm.exitSelectionMode() else vm.clearSelection()
+                        }) {
+                            Icon(
+                                if (selectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (selectionMode) "Exit selection" else "Back to collections"
+                            )
                         }
-                    }) {
-                        Icon(
-                            if (selectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
                     }
                 },
                 title = {

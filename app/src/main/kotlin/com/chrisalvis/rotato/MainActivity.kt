@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                             LocalSourcesScreen(onNavigateBack = { navController.popBackStack() })
                         }
                         composable("browse") {
-                            BrowseScreen(onNavigateBack = { navController.popBackStack() })
+                            BrowseScreen()
                         }
                     }
                 }
