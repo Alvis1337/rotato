@@ -47,4 +47,17 @@ abstract class SourcePlugin {
         nsfw: Boolean,
         filters: BrainrotFilters,
     ): BrainrotWallpaper?
+
+    /**
+     * Fetch a batch of wallpapers from this source (up to [limit]).
+     * Override this for efficient bulk fetching; the default falls back to [fetch].
+     */
+    open suspend fun fetchPage(
+        source: LocalSource,
+        query: String,
+        exclude: List<String>,
+        nsfw: Boolean,
+        filters: BrainrotFilters,
+        limit: Int = 100,
+    ): List<BrainrotWallpaper> = listOfNotNull(fetch(source, query, exclude, nsfw, filters))
 }

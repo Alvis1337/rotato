@@ -38,4 +38,30 @@ object SafebooruPlugin : SourcePlugin() {
             tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
         )
     }
+
+    override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
+        val tagQuery = normalizeBooruQuery(query)
+        val pid = (0..200).random()
+        val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=$limit&pid=$pid&tags=${tagQuery.urlEncode()}"
+        val arr = getJsonArray(url) ?: return@onIO emptyList()
+        val videoExts = listOf(".mp4", ".webm", ".mkv")
+        (0 until arr.length()).mapNotNull { i ->
+            val post = arr.optJSONObject(i) ?: return@mapNotNull null
+            val id = post.optInt("id", 0).toString()
+            if (exclude.contains(id)) return@mapNotNull null
+            val image = post.optString("image")
+            if (videoExts.any { image.endsWith(it, ignoreCase = true) }) return@mapNotNull null
+            val directory = post.optString("directory")
+            val fullUrl = "https://safebooru.org/images/$directory/$image"
+            val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
+            val thumbUrl = post.optString("preview_url").ifBlank { sampleUrl }
+            BrainrotWallpaper(
+                id = id, source = "safebooru",
+                thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
+                resolution = "${post.optInt("width")}x${post.optInt("height")}",
+                pageUrl = "https://safebooru.org/index.php?page=post&s=view&id=$id",
+                tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+            )
+        }
+    }
 }

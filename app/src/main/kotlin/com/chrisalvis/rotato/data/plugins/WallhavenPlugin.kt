@@ -55,4 +55,38 @@ object WallhavenPlugin : SourcePlugin() {
             tags = tags.take(12)
         )
     }
+
+    override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
+        val requestedPurity = source.wallhavenPurity.padStart(3, '0')
+        val effectivePurity = if (!nsfw) {
+            val bits = requestedPurity.toCharArray(); bits[2] = '0'; String(bits)
+        } else requestedPurity
+        val purity = if (effectivePurity.all { it == '0' }) "100" else effectivePurity
+        var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
+        if (filters.minResolution != MinResolution.ANY)
+            urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
+        if (filters.aspectRatio != AspectRatio.ANY)
+            urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
+        val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.urlEncode()}" else urlBase
+        val json = getJson(url) ?: return@onIO emptyList()
+        val data = json.optJSONArray("data") ?: return@onIO emptyList()
+        (0 until data.length()).mapNotNull { i ->
+            val post = data.optJSONObject(i) ?: return@mapNotNull null
+            val id = post.optString("id")
+            if (exclude.contains(id)) return@mapNotNull null
+            val fullUrl = post.optString("path").ifBlank { return@mapNotNull null }
+            val thumbs = post.optJSONObject("thumbs")
+            val thumbUrl = thumbs?.optString("small") ?: thumbs?.optString("original") ?: fullUrl
+            val tags = post.optJSONArray("tags")?.let { arr ->
+                (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
+            } ?: emptyList()
+            BrainrotWallpaper(
+                id = id, source = "wallhaven",
+                thumbUrl = thumbUrl, sampleUrl = fullUrl, fullUrl = fullUrl,
+                resolution = post.optString("resolution").ifBlank { "" },
+                pageUrl = "https://wallhaven.cc/w/$id",
+                tags = tags.take(12)
+            )
+        }
+    }
 }

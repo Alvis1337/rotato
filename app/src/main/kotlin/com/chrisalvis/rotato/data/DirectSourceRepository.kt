@@ -42,3 +42,35 @@ suspend fun fetchFromSource(
         null
     }
 }
+
+/**
+ * Bulk version of [fetchFromSource] — returns a full page of wallpapers.
+ * Plugins that override [SourcePlugin.fetchPage] return up to 100 items per API call.
+ */
+suspend fun fetchPageFromSource(
+    source: LocalSource,
+    query: String,
+    exclude: List<String> = emptyList(),
+    nsfwMode: Boolean = false,
+    filters: BrainrotFilters = BrainrotFilters(),
+): List<BrainrotWallpaper> {
+    val plugin = SourcePluginRegistry.forType(source.type)
+    if (plugin == null) {
+        Log.w(TAG, "No plugin registered for source type: ${source.type}")
+        SourceHealthTracker.recordError(source.type, "No plugin registered")
+        return emptyList()
+    }
+    if (!PluginEntitlement.isUnlocked(plugin)) {
+        Log.d(TAG, "Plugin ${plugin.displayName} is locked — skipping")
+        return emptyList()
+    }
+    return try {
+        val results = plugin.fetchPage(source, query, exclude, nsfwMode, filters)
+        if (results.isNotEmpty()) SourceHealthTracker.recordSuccess(source.type)
+        results
+    } catch (e: Exception) {
+        Log.e(TAG, "Plugin ${plugin.displayName} threw exception", e)
+        SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
+        emptyList()
+    }
+}

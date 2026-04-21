@@ -19,7 +19,7 @@ import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
-import com.chrisalvis.rotato.data.fetchFromSource
+import com.chrisalvis.rotato.data.fetchPageFromSource
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import com.chrisalvis.rotato.data.toJson
@@ -105,6 +105,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
 
+    /** Page-level cache: one API call fetches ~100 items; subsequent fetchNext() drains the queue */
+    private val pageCache = mutableMapOf<String, ArrayDeque<BrainrotWallpaper>>()
+
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
 
@@ -149,6 +152,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             fetchJob = null
             _gridItems.update { emptyList() }
             displayedKeys.clear()
+            pageCache.clear()
             _endReached.update { false }
             _noResults.update { false }
         }
@@ -162,7 +166,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>().applicationContext
             var fetched = 0
             var nullStreak = 0
-            val target = 12
+            val target = if (isInitial) 40 else 20
 
             var dupStreak = 0
             while (fetched < target && nullStreak < 3) {
@@ -215,11 +219,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 continue
             }
             triedSources += source.type.displayName
-            // Strip source prefix from composite keys so plugins compare bare IDs
             val sourceKey = source.type.name.lowercase()
-            val sourceExcludes = displayedKeys
-                .filter { it.startsWith("$sourceKey:") }
-                .map { it.removePrefix("$sourceKey:") }
             val queriesToTry: List<String> = when {
                 source.tags.isNotBlank() -> listOf(source.tags)
                 explicitQuery.isNotBlank() -> listOf(explicitQuery)
@@ -227,10 +227,33 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 else -> listOf("")
             }
             for (query in queriesToTry) {
-                val wp = fetchFromSource(source, query, sourceExcludes, nsfw, filters)
-                if (wp != null) {
-                    _lastTriedSources.update { emptyList() }
-                    return wp
+                val cacheKey = "${source.type.name}:$query"
+                // Drain page cache before making a new API call
+                val cached = pageCache[cacheKey]
+                if (cached != null) {
+                    while (cached.isNotEmpty()) {
+                        val wp = cached.removeFirst()
+                        if ("${wp.source}:${wp.id}" !in displayedKeys) {
+                            _lastTriedSources.update { emptyList() }
+                            return wp
+                        }
+                    }
+                }
+                // Cache empty — fetch a full page from the source
+                val sourceExcludes = displayedKeys
+                    .filter { it.startsWith("$sourceKey:") }
+                    .map { it.removePrefix("$sourceKey:") }
+                val page = fetchPageFromSource(source, query, sourceExcludes, nsfw, filters)
+                if (page.isNotEmpty()) {
+                    val deque = ArrayDeque(page.shuffled())
+                    pageCache[cacheKey] = deque
+                    while (deque.isNotEmpty()) {
+                        val wp = deque.removeFirst()
+                        if ("${wp.source}:${wp.id}" !in displayedKeys) {
+                            _lastTriedSources.update { emptyList() }
+                            return wp
+                        }
+                    }
                 }
             }
         }

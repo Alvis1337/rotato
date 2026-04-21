@@ -18,6 +18,9 @@ object KonachanPlugin : SourcePlugin() {
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? =
         fetchMoebooru(query, exclude, nsfw, "konachan.com", "konachan", filters)
+
+    override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> =
+        fetchMoebooruPage(query, exclude, nsfw, "konachan.com", "konachan", filters, limit)
 }
 
 object YanderePlugin : SourcePlugin() {
@@ -33,6 +36,9 @@ object YanderePlugin : SourcePlugin() {
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? =
         fetchMoebooru(query, exclude, nsfw, "yande.re", "yandere", filters)
+
+    override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> =
+        fetchMoebooruPage(query, exclude, nsfw, "yande.re", "yandere", filters, limit)
 }
 
 private suspend fun fetchMoebooru(
@@ -76,4 +82,40 @@ private suspend fun fetchMoebooru(
         pageUrl = "https://$host/post/show/$id",
         tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
     )
+}
+
+private suspend fun fetchMoebooruPage(
+    query: String,
+    exclude: List<String>,
+    nsfw: Boolean,
+    host: String,
+    sourceName: String,
+    filters: BrainrotFilters,
+    limit: Int,
+): List<BrainrotWallpaper> = onIO {
+    val tagQuery = buildString {
+        val normalized = normalizeBooruQuery(query)
+        if (normalized.isNotBlank()) append("$normalized ")
+        if (!nsfw) append("rating:safe ")
+        append("order:random")
+    }.trim()
+    val url = "https://$host/post.json?tags=${tagQuery.urlEncode()}&limit=$limit"
+    val arr = getJsonArray(url) ?: return@onIO emptyList()
+    (0 until arr.length()).mapNotNull { i ->
+        val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+        val id = obj.optInt("id", 0).toString()
+        if (exclude.contains(id)) return@mapNotNull null
+        val w = obj.optInt("width"); val h = obj.optInt("height")
+        if (!filters.matches(w, h)) return@mapNotNull null
+        val fullUrl = obj.optString("file_url").ifBlank { return@mapNotNull null }
+        val sampleUrl = obj.optString("sample_url").ifBlank { fullUrl }
+        BrainrotWallpaper(
+            id = id, source = sourceName,
+            thumbUrl = obj.optString("preview_url").ifBlank { sampleUrl },
+            sampleUrl = sampleUrl, fullUrl = fullUrl,
+            resolution = "${w}x${h}",
+            pageUrl = "https://$host/post/show/$id",
+            tags = obj.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+        )
+    }
 }

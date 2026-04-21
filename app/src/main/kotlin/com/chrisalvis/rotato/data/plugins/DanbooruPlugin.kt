@@ -103,4 +103,46 @@ object DanbooruPlugin : SourcePlugin() {
                 .trim().split(" ").filter { it.isNotBlank() }.take(12)
         )
     }
+
+    override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
+        val normalized = normalizeBooruQuery(query)
+        val auth = authHeader(source)
+        val isPremiumAccount = auth != null && accountLevel(source, auth) >= GOLD_LEVEL
+        val tagQuery = buildString {
+            if (normalized.isNotBlank()) append(normalized)
+            if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+            if (isPremiumAccount && exclude.isNotEmpty()) {
+                exclude.take(3).forEach { id -> append(" -id:$id") }
+            }
+        }.trim()
+        val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.urlEncode()}&limit=$limit&random=true"
+        val req = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
+            .apply { if (auth != null) addHeader("Authorization", auth) }.build()
+        val arr = runCatching {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@onIO emptyList()
+                JSONArray(resp.body?.string() ?: return@onIO emptyList())
+            }
+        }.getOrNull() ?: return@onIO emptyList()
+        val videoExts = listOf(".mp4", ".webm", ".zip")
+        (0 until arr.length()).mapNotNull { i ->
+            val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+            val id = obj.optInt("id", 0).toString()
+            if (exclude.contains(id)) return@mapNotNull null
+            val w = obj.optInt("image_width"); val h = obj.optInt("image_height")
+            if (!filters.matches(w, h)) return@mapNotNull null
+            val fullUrl = obj.optString("file_url").ifBlank { return@mapNotNull null }
+            if (videoExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return@mapNotNull null
+            val sampleUrl = obj.optString("large_file_url").ifBlank { fullUrl }
+            BrainrotWallpaper(
+                id = id, source = "danbooru",
+                thumbUrl = obj.optString("preview_file_url").ifBlank { sampleUrl },
+                sampleUrl = sampleUrl, fullUrl = fullUrl,
+                resolution = "${w}x${h}",
+                pageUrl = "https://danbooru.donmai.us/posts/$id",
+                tags = (obj.optString("tag_string_general") + " " + obj.optString("tag_string_character"))
+                    .trim().split(" ").filter { it.isNotBlank() }.take(12)
+            )
+        }
+    }
 }

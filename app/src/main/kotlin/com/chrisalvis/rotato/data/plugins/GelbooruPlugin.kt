@@ -58,4 +58,43 @@ object GelbooruPlugin : SourcePlugin() {
             tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
         )
     }
+
+    override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
+        val normalized = normalizeBooruQuery(query)
+        val tagQuery = buildString {
+            if (normalized.isNotBlank()) append(normalized)
+            if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+        }.trim()
+        val authSuffix = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
+            "&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
+        else ""
+        val baseUrl = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=$limit&tags=${tagQuery.urlEncode()}$authSuffix"
+        val page0 = getJson("$baseUrl&pid=0") ?: return@onIO emptyList()
+        val count = page0.optJSONObject("@attributes")?.optInt("count", 0) ?: 0
+        val maxPid = ((count - 1) / limit).coerceIn(0, 100)
+        val arr = if (maxPid > 0) {
+            val randomPid = (1..maxPid).random()
+            getJson("$baseUrl&pid=$randomPid")?.optJSONArray("post")
+        } else {
+            page0.optJSONArray("post")
+        } ?: return@onIO emptyList()
+        val videoExtensions = listOf(".mp4", ".webm", ".mkv", ".avi", ".mov")
+        (0 until arr.length()).mapNotNull { i ->
+            val post = arr.optJSONObject(i) ?: return@mapNotNull null
+            val id = post.optInt("id", 0).toString()
+            if (exclude.contains(id)) return@mapNotNull null
+            val fullUrl = post.optString("file_url").ifBlank { return@mapNotNull null }
+            if (videoExtensions.any { fullUrl.endsWith(it, ignoreCase = true) }) return@mapNotNull null
+            val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
+                .let { if (videoExtensions.any { ext -> it.endsWith(ext, ignoreCase = true) }) fullUrl else it }
+            BrainrotWallpaper(
+                id = id, source = "gelbooru",
+                thumbUrl = post.optString("preview_url").ifBlank { sampleUrl },
+                sampleUrl = sampleUrl, fullUrl = fullUrl,
+                resolution = "${post.optInt("width")}x${post.optInt("height")}",
+                pageUrl = "https://gelbooru.com/index.php?page=post&s=view&id=$id",
+                tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+            )
+        }
+    }
 }
