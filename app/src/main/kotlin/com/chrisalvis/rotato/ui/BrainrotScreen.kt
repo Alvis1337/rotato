@@ -48,9 +48,8 @@ import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalList
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.material3.PullToRefreshContainer
-import androidx.compose.material3.rememberPullToRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.launch
 
@@ -263,17 +262,12 @@ fun BrainrotScreen(
                 }
 
                 val pullRefreshState = rememberPullToRefreshState()
-                LaunchedEffect(pullRefreshState.isRefreshing) {
-                    if (pullRefreshState.isRefreshing) vm.loadMore(reset = true)
-                }
-                LaunchedEffect(loading) {
-                    if (!loading) pullRefreshState.endRefresh()
-                }
 
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .nestedScroll(pullRefreshState.nestedScrollConnection)
+                PullToRefreshBox(
+                    isRefreshing = loading,
+                    onRefresh = { vm.loadMore(reset = true) },
+                    state = pullRefreshState,
+                    modifier = Modifier.fillMaxSize()
                 ) {
                 LazyVerticalStaggeredGrid(
                     columns = StaggeredGridCells.Fixed(2),
@@ -319,11 +313,7 @@ fun BrainrotScreen(
                         }
                     }
                 }
-                    PullToRefreshContainer(
-                        state = pullRefreshState,
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    )
-                } // end Box(nestedScroll)
+                } // end PullToRefreshBox
 
                 // Bottom action bar: search + settings FAB row
                 Row(
