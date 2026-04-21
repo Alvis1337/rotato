@@ -367,25 +367,29 @@ private fun DiscoverGridItem(
     isDownloading: Boolean,
     onClick: () -> Unit
 ) {
-    val ratio = parseAspectRatio(wallpaper.resolution)
+    // Use resolution aspect ratio for the loading placeholder; natural image size takes over after load.
+    val placeholderRatio = if (wallpaper.resolution.isNotBlank()) parseAspectRatio(wallpaper.resolution) else 3f / 4f
+    var loaded by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(ratio)
+            .then(if (!loaded) Modifier.aspectRatio(placeholderRatio) else Modifier)
             .clip(MaterialTheme.shapes.medium)
     ) {
-        val imageUrl = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl }
+        val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(imageUrl)
                 .memoryCacheKey(imageUrl)
                 .diskCacheKey(imageUrl)
+                .placeholderMemoryCacheKey(wallpaper.thumbUrl.ifBlank { null })
                 .crossfade(true)
                 .build(),
             contentDescription = null,
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.FillWidth,
+            onSuccess = { loaded = true },
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = { onClick() })
                 }
