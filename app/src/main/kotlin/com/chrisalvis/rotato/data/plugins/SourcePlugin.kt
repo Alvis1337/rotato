@@ -28,6 +28,9 @@ abstract class SourcePlugin {
     /** If false, may return adult content. Used as a default-enable heuristic. */
     abstract val safeContent: Boolean
 
+    /** Whether this plugin strictly requires credentials to function (returns errors without them). */
+    open val requiresCredentials: Boolean = false
+
     /**
      * Fetch one wallpaper from this source.
      *

@@ -21,6 +21,7 @@ import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.fetchFromSource
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -161,6 +162,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val excludeSnapshot = seenIds.toList()
         val triedSources = mutableListOf<String>()
         for (source in localEnabled.shuffled()) {
+            val plugin = SourcePluginRegistry.forType(source.type)
+            // If the source strictly requires credentials and none are set, skip silently
+            if (plugin?.requiresCredentials == true &&
+                (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) {
+                continue
+            }
             triedSources += source.type.displayName
             val queriesToTry: List<String> = when {
                 source.tags.isNotBlank() -> listOf(source.tags)

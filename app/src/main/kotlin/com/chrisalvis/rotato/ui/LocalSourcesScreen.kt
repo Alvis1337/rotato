@@ -280,6 +280,16 @@ private fun SourceCard(
                     if (source.tags.isNotBlank()) {
                         Text("Tags: ${source.tags}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
+                    // Warn when a source that strictly requires credentials is enabled without them
+                    val plugin = source.type.plugin
+                    if (source.enabled && plugin?.requiresCredentials == true &&
+                        (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) {
+                        Text(
+                            "⚠ Credentials required — this source won't fetch until configured",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!isLocked) {

@@ -24,7 +24,7 @@ object SafebooruPlugin : SourcePlugin() {
         val directory = post.optString("directory")
         val image = post.optString("image")
         val fullUrl = "https://safebooru.org/images/$directory/$image"
-        val thumbUrl = "https://safebooru.org/thumbnails/$directory/thumbnail_$image"
+        val thumbUrl = post.optString("preview_url").ifBlank { fullUrl }
         BrainrotWallpaper(
             id = id, source = "safebooru",
             thumbUrl = thumbUrl, fullUrl = fullUrl,

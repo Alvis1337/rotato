@@ -14,6 +14,7 @@ object GelbooruPlugin : SourcePlugin() {
     override val apiKeyLabel = "API Key"
     override val apiUserLabel = "User ID"
     override val safeContent = false
+    override val requiresCredentials = true
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
         val normalized = normalizeBooruQuery(query)
