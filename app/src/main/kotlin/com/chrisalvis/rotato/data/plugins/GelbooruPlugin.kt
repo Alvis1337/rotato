@@ -43,7 +43,11 @@ object GelbooruPlugin : SourcePlugin() {
         val post = pickFiltered(arr, filters, exclude) { it.optInt("id", 0).toString() to (it.optInt("width") to it.optInt("height")) } ?: return@onIO null
         val id = post.optInt("id", 0).toString()
         val fullUrl = post.optString("file_url").ifBlank { return@onIO null }
+        // Skip video posts — Coil can't render mp4/webm and shows blank cards
+        val videoExtensions = listOf(".mp4", ".webm", ".mkv", ".avi", ".mov")
+        if (videoExtensions.any { fullUrl.endsWith(it, ignoreCase = true) }) return@onIO null
         val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
+            .let { if (videoExtensions.any { ext -> it.endsWith(ext, ignoreCase = true) }) fullUrl else it }
         BrainrotWallpaper(
             id = id, source = "gelbooru",
             thumbUrl = post.optString("preview_url").ifBlank { sampleUrl },

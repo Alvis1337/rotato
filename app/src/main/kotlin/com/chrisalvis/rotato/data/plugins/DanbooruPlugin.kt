@@ -88,6 +88,9 @@ object DanbooruPlugin : SourcePlugin() {
         } ?: return@onIO null
         val fullUrl = post.optString("file_url")
         val sampleUrl = post.optString("large_file_url").ifBlank { fullUrl }
+        // Skip video posts (ugoira/mp4/webm) — Coil can't render them
+        val videoExts = listOf(".mp4", ".webm", ".zip")
+        if (videoExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return@onIO null
         val id = post.optInt("id", 0).toString()
         BrainrotWallpaper(
             id = id, source = "danbooru",

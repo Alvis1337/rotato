@@ -24,6 +24,9 @@ object SafebooruPlugin : SourcePlugin() {
         val id = post.optInt("id", 0).toString()
         val directory = post.optString("directory")
         val image = post.optString("image")
+        // Skip video posts
+        val videoExts = listOf(".mp4", ".webm", ".mkv")
+        if (videoExts.any { image.endsWith(it, ignoreCase = true) }) return@onIO null
         val fullUrl = "https://safebooru.org/images/$directory/$image"
         val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
         val thumbUrl = post.optString("preview_url").ifBlank { sampleUrl }
