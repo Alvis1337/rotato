@@ -341,6 +341,7 @@ private fun MalStatusFilter(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MalMinScoreFilter(
     minScore: Int,
