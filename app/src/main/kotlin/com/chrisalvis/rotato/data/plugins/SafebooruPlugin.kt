@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.matches
 
 object SafebooruPlugin : SourcePlugin() {
     override val id = "SAFEBOORU"
@@ -49,6 +50,8 @@ object SafebooruPlugin : SourcePlugin() {
             val post = arr.optJSONObject(i) ?: return@mapNotNull null
             val id = post.optInt("id", 0).toString()
             if (exclude.contains(id)) return@mapNotNull null
+            val w = post.optInt("width"); val h = post.optInt("height")
+            if (!filters.matches(w, h)) return@mapNotNull null
             val image = post.optString("image")
             if (videoExts.any { image.endsWith(it, ignoreCase = true) }) return@mapNotNull null
             val directory = post.optString("directory")
@@ -58,7 +61,7 @@ object SafebooruPlugin : SourcePlugin() {
             BrainrotWallpaper(
                 id = id, source = "safebooru",
                 thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
-                resolution = "${post.optInt("width")}x${post.optInt("height")}",
+                resolution = "${w}x${h}",
                 pageUrl = "https://safebooru.org/index.php?page=post&s=view&id=$id",
                 tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
             )

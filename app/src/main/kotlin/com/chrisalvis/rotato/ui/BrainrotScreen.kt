@@ -89,7 +89,7 @@ fun BrainrotScreen(
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
-    val lastTriedSources by vm.lastTriedSources.collectAsStateWithLifecycle()
+
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -236,7 +236,6 @@ fun BrainrotScreen(
         when {
             noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
             noResults -> NoResultsState(
-                triedSources = lastTriedSources,
                 searchQuery = searchQuery,
                 onRetry = { vm.retry() },
                 onClearSearch = { vm.setSearchQuery("") },
@@ -928,7 +927,6 @@ private fun NoSourcesState(onNavigateToSources: () -> Unit) {
 
 @Composable
 private fun NoResultsState(
-    triedSources: List<String>,
     searchQuery: String,
     onRetry: () -> Unit,
     onClearSearch: () -> Unit,
@@ -953,14 +951,6 @@ private fun NoResultsState(
                     textAlign = TextAlign.Center
                 )
                 OutlinedButton(onClick = onClearSearch) { Text("Clear search") }
-            }
-            if (triedSources.isNotEmpty()) {
-                Text(
-                    "Tried: ${triedSources.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    textAlign = TextAlign.Center
-                )
             }
             Text(
                 "Check Settings → Sources for red health indicators, adjust your search query, or enable more sources.",
