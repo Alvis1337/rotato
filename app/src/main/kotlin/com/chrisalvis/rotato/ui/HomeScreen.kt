@@ -375,7 +375,8 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(32.dp)
         ) {
             Icon(
                 imageVector = Icons.Outlined.Wallpaper,
@@ -384,14 +385,15 @@ private fun EmptyState(modifier: Modifier = Modifier) {
                 tint = MaterialTheme.colorScheme.outline
             )
             Text(
-                text = "No photos yet",
+                text = "Your rotation pool is empty",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Add photos from your gallery to start rotating",
+                text = "Add photos with \"Add Photos\", or go to Discover → swipe right on a wallpaper to save it to a Collection, then use the download button in a Collection to add it here.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }
     }

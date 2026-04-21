@@ -1,9 +1,11 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
@@ -11,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -21,6 +24,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
+import com.chrisalvis.rotato.data.SourceHealth
+import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +38,8 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     val sources: StateFlow<List<LocalSource>> = prefs.sources
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val health = SourceHealthTracker.health
 
     fun setEnabled(type: SourceType, enabled: Boolean) {
         viewModelScope.launch { prefs.update(type, enabled = enabled) }
@@ -52,6 +59,7 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val vm: LocalSourcesViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
+    val healthMap by vm.health.collectAsStateWithLifecycle()
 
     // Partition: free first, then premium
     val freeSources = sources.filter { !it.type.isPremium }
@@ -94,6 +102,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                 items(freeSources, key = { it.type.name }) { source ->
                     SourceCard(
                         source = source,
+                        health = healthMap[source.type],
                         onToggle = { vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
                         onSaveTags = { vm.setTags(source.type, it) }
@@ -115,6 +124,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     val unlocked = plugin == null || PluginEntitlement.isUnlocked(plugin)
                     SourceCard(
                         source = source,
+                        health = healthMap[source.type],
                         isPremium = true,
                         isLocked = !unlocked,
                         onToggle = { if (unlocked) vm.setEnabled(source.type, it) },
@@ -130,6 +140,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
 @Composable
 private fun SourceCard(
     source: LocalSource,
+    health: SourceHealth? = null,
     isPremium: Boolean = false,
     isLocked: Boolean = false,
     onToggle: (Boolean) -> Unit,
@@ -141,6 +152,14 @@ private fun SourceCard(
     var apiUser by remember(source) { mutableStateOf(source.apiUser) }
     var tags by remember(source) { mutableStateOf(source.tags) }
     var showKey by remember { mutableStateOf(false) }
+    var showHealthDetail by remember { mutableStateOf(false) }
+
+    // Health dot color: grey = untested, green = last fetch ok, red = last fetch errored
+    val healthDotColor = when {
+        health == null || !health.hasData -> Color.Gray.copy(alpha = 0.4f)
+        health.isHealthy -> Color(0xFF4CAF50)
+        else -> Color(0xFFF44336)
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -154,6 +173,14 @@ private fun SourceCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        // Health dot — only shown for enabled sources
+                        if (source.enabled && !isLocked) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(healthDotColor, CircleShape)
+                            )
+                        }
                         Text(source.type.displayName, fontWeight = FontWeight.Medium)
                         if (isPremium) {
                             SuggestionChip(
@@ -170,7 +197,6 @@ private fun SourceCard(
                             )
                         }
                     }
-                    // Description from plugin, or fallback to old safeContent hint
                     val description = source.type.plugin?.description ?: run {
                         if (!source.type.safeContent) "May include adult content"
                         else if (!source.type.needsApiKey && !source.type.needsApiUser) "Works without credentials"
@@ -183,6 +209,20 @@ private fun SourceCard(
                             color = if (!source.type.safeContent) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.outline
                         )
+                    }
+                    // Last error message (tappable)
+                    if (source.enabled && !isLocked && health != null && health.hasData && !health.isHealthy) {
+                        TextButton(
+                            onClick = { showHealthDetail = !showHealthDetail },
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.height(24.dp)
+                        ) {
+                            Text(
+                                if (showHealthDetail) health.lastError else "Last fetch failed — tap for details",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                     if (source.tags.isNotBlank()) {
                         Text("Tags: ${source.tags}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)

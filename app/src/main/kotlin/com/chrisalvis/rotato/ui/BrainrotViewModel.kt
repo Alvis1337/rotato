@@ -17,6 +17,7 @@ import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.fetchFromSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,7 +77,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         .map { it.filter { s -> s.enabled } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _searchQuery = MutableStateFlow("")
+    val sourceHealth = SourceHealthTracker.health
+
+    // Names of sources tried during the last fetchNext() that returned no result
+    private val _lastTriedSources = MutableStateFlow<List<String>>(emptyList())
+    val lastTriedSources: StateFlow<List<String>> = _lastTriedSources.asStateFlow()
+
+
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val seenIds = mutableListOf<String>()
@@ -134,30 +141,26 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val nsfw = prefs.nsfwMode.first()
         val filters = prefs.brainrotFilters.first()
         val explicitQuery = _searchQuery.value
-        // If user typed a search, use it. Otherwise rotate through MAL anime titles (if logged in).
         val malTitles = if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
-        val excludeSnapshot = seenIds.toList() // snapshot so IO thread reads don't race with addSeen()
+        val excludeSnapshot = seenIds.toList()
+        val triedSources = mutableListOf<String>()
         for (source in localEnabled.shuffled()) {
+            triedSources += source.type.displayName
             val queriesToTry: List<String> = when {
                 source.tags.isNotBlank() -> listOf(source.tags)
                 explicitQuery.isNotBlank() -> listOf(explicitQuery)
-                malTitles.isNotEmpty() -> {
-                    // Try 3 different anime titles; last entry is empty so the source falls back
-                    // to returning any image if all specific title queries miss.
-                    malTitles.shuffled().take(3) + listOf("")
-                }
+                malTitles.isNotEmpty() -> malTitles.shuffled().take(3) + listOf("")
                 else -> listOf("")
             }
             for (query in queriesToTry) {
-                val wp = try {
-                    fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
-                } catch (e: Exception) {
-                    android.util.Log.w("BrainrotVM", "fetchFromSource threw for ${source.type}: ${e.message}")
-                    null
+                val wp = fetchFromSource(source, query, excludeSnapshot, nsfw, filters)
+                if (wp != null) {
+                    _lastTriedSources.update { emptyList() }
+                    return wp
                 }
-                if (wp != null) return wp
             }
         }
+        _lastTriedSources.update { triedSources.distinct() }
         return null
     }
 

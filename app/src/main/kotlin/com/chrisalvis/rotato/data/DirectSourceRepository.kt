@@ -8,7 +8,8 @@ private const val TAG = "DirectSource"
 
 /**
  * Entry point for fetching one wallpaper from a [LocalSource].
- * Delegates to the matching [SourcePlugin] in [SourcePluginRegistry].
+ * Delegates to the matching [SourcePlugin] in [SourcePluginRegistry] and
+ * records fetch health in [SourceHealthTracker].
  */
 suspend fun fetchFromSource(
     source: LocalSource,
@@ -20,6 +21,7 @@ suspend fun fetchFromSource(
     val plugin = SourcePluginRegistry.forType(source.type)
     if (plugin == null) {
         Log.w(TAG, "No plugin registered for source type: ${source.type}")
+        SourceHealthTracker.recordError(source.type, "No plugin registered")
         return null
     }
     if (!PluginEntitlement.isUnlocked(plugin)) {
@@ -27,9 +29,17 @@ suspend fun fetchFromSource(
         return null
     }
     return try {
-        plugin.fetch(source, query, exclude, nsfwMode, filters)
+        val result = plugin.fetch(source, query, exclude, nsfwMode, filters)
+        if (result != null) {
+            SourceHealthTracker.recordSuccess(source.type)
+        } else {
+            // null means no matching results — not a hard error but track it
+            SourceHealthTracker.recordError(source.type, "No results for query")
+        }
+        result
     } catch (e: Exception) {
         Log.e(TAG, "Plugin ${plugin.displayName} threw exception", e)
+        SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
         null
     }
 }

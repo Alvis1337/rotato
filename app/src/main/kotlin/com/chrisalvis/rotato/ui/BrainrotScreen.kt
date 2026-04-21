@@ -70,6 +70,7 @@ fun BrainrotScreen(
     val nextWallpaper by vm.nextWallpaper.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
+    val lastTriedSources by vm.lastTriedSources.collectAsStateWithLifecycle()
 
     var showInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -123,7 +124,7 @@ fun BrainrotScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         when {
             noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
-            noResults -> NoResultsState(onRetry = { vm.retry() })
+            noResults -> NoResultsState(triedSources = lastTriedSources, onRetry = { vm.retry() })
             loading && current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
@@ -694,7 +695,7 @@ private fun NoSourcesState(onNavigateToSources: () -> Unit) {
 }
 
 @Composable
-private fun NoResultsState(onRetry: () -> Unit) {
+private fun NoResultsState(triedSources: List<String>, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -703,8 +704,16 @@ private fun NoResultsState(onRetry: () -> Unit) {
         ) {
             Icon(Icons.Default.ImageNotSupported, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
             Text("No wallpapers found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (triedSources.isNotEmpty()) {
+                Text(
+                    "Tried: ${triedSources.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center
+                )
+            }
             Text(
-                "Try enabling more sources in Settings → Manage Sources, or adjust your search query",
+                "Check Settings → Sources for red health indicators, adjust your search query, or enable more sources.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center
