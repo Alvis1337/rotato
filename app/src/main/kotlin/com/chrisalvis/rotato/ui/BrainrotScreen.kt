@@ -369,13 +369,14 @@ private fun DiscoverGridItem(
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
     ) {
-        val imageUrl = wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl } }
+        // Never use thumbUrl in the grid — booru thumbs are square-cropped (150px)
+        // and will appear heavily zoomed when Cropped into a non-square card.
+        val imageUrl = wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl }
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
-                .data(imageUrl)
-                .memoryCacheKey(imageUrl)
-                .diskCacheKey(imageUrl)
-                .placeholderMemoryCacheKey(wallpaper.thumbUrl.ifBlank { null })
+                .data(imageUrl.ifBlank { null })
+                .memoryCacheKey(imageUrl.ifBlank { null })
+                .diskCacheKey(imageUrl.ifBlank { null })
                 .crossfade(true)
                 .build(),
             contentDescription = null,

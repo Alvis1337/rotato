@@ -181,16 +181,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 dupStreak = 0
                 displayedKeys.add(key)
                 nullStreak = 0
-                val url = wp.sampleUrl.ifBlank { wp.fullUrl.ifBlank { wp.thumbUrl } }
+                val url = wp.sampleUrl.ifBlank { wp.fullUrl }
                 if (url.isNotBlank()) {
                     ctx.imageLoader.enqueue(
                         ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
-                    )
-                }
-                val thumbUrl = wp.thumbUrl.ifBlank { "" }
-                if (thumbUrl.isNotBlank() && thumbUrl != url) {
-                    ctx.imageLoader.enqueue(
-                        ImageRequest.Builder(ctx).data(thumbUrl).memoryCacheKey(thumbUrl).diskCacheKey(thumbUrl).build()
                     )
                 }
                 _gridItems.update { it + wp }
