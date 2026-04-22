@@ -330,8 +330,8 @@ private fun ListPickerContent(
     if (lists.isEmpty() && lockedHiddenCount == 0) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
-                Text("No collections yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
+                Text("No collections yet", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(onClick = onCreateList) { Text("Create Collection") }
             }
         }
@@ -587,7 +587,11 @@ private fun WallpaperGridContent(
 ) {
     if (wallpapers.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No wallpapers yet — tap 📷 to add from your device", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "No wallpapers yet — tap 📷 to add from your device",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         return
     }
@@ -595,7 +599,7 @@ private fun WallpaperGridContent(
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(8.dp),
+        contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {

@@ -124,7 +124,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sources") },
+                title = { Text("Sources", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -251,7 +251,7 @@ private fun SourceCard(
     val healthDotColor = when {
         health == null || !health.hasData -> Color.Gray.copy(alpha = 0.4f)
         health.isHealthy -> Color(0xFF4CAF50)
-        else -> Color(0xFFF44336)
+        else -> MaterialTheme.colorScheme.error
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -335,7 +335,7 @@ private fun SourceCard(
                     if (!isLocked) {
                         if (source.enabled) {
                             if (isTesting) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                             } else {
                                 TextButton(onClick = onTest) { Text("Test") }
                             }
@@ -415,7 +415,7 @@ private fun SourceCard(
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    FilledTonalButton(onClick = {
+                    OutlinedButton(onClick = {
                         onSaveTags(tags.trim())
                         onSaveCredentials(apiKey, apiUser)
                         if (source.type == SourceType.WALLHAVEN) {

@@ -29,7 +29,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilledTonalButton
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -112,7 +112,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text("Settings", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -190,7 +190,7 @@ fun SettingsScreen(
             HorizontalDivider()
 
             SettingsSection(title = "Sources") {
-                FilledTonalButton(
+                OutlinedButton(
                     onClick = onNavigateToSources,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -224,7 +224,7 @@ fun SettingsScreen(
             HorizontalDivider()
 
             SettingsSection(title = "Schedule") {
-                FilledTonalButton(
+                OutlinedButton(
                     onClick = onNavigateToSchedule,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -239,7 +239,7 @@ fun SettingsScreen(
             SettingsSection(title = "MyAnimeList") {
                 if (malLoading) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Loading…", style = MaterialTheme.typography.bodySmall)
                     }
@@ -278,7 +278,7 @@ fun SettingsScreen(
                     )
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(
+                        OutlinedButton(
                             onClick = { malViewModel.refresh() },
                             modifier = Modifier.weight(1f)
                         ) { Text("Refresh List") }
@@ -303,7 +303,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    FilledTonalButton(
+                    OutlinedButton(
                         onClick = { malViewModel.login(context) },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Connect MyAnimeList") }
@@ -320,13 +320,13 @@ fun SettingsScreen(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(
+                    OutlinedButton(
                         onClick = { exportLauncher.launch("rotato-backup-$today.json") },
                         enabled = backupState == BackupState.IDLE,
                         modifier = Modifier.weight(1f)
                     ) {
                         if (backupState == BackupState.BUSY) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         } else {
                             Text(if (backupState == BackupState.SUCCESS) "Exported!" else if (backupState == BackupState.ERROR) "Failed" else "Export")
                         }
@@ -382,6 +382,7 @@ private fun SettingsSection(
         Text(
             text = title,
             style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary
         )
         content()
@@ -408,7 +409,7 @@ private fun MalStatusFilter(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MAL_STATUS_OPTIONS.forEach { (key, label) ->
                 FilterChip(
                     selected = key in selected,

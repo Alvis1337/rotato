@@ -118,7 +118,7 @@ private fun ScheduleEntryCard(
     onToggleEnabled: (Boolean) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(listName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)

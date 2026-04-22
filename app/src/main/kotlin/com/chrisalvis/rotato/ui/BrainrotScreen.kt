@@ -272,7 +272,7 @@ fun BrainrotScreen(
                 onOpenSettings = { showSettings = true }
             )
             loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             }
             else -> {
                 val gridState = rememberLazyStaggeredGridState()
@@ -301,7 +301,7 @@ fun BrainrotScreen(
                     columns = StaggeredGridCells.Fixed(2),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalItemSpacing = 8.dp
                 ) {
@@ -565,7 +565,7 @@ private fun FullScreenSwipeCard(
                 CircularProgressIndicator(
                     color = Color.White.copy(alpha = 0.85f),
                     strokeWidth = 2.dp,
-                    modifier = Modifier.size(28.dp).align(Alignment.Center)
+                    modifier = Modifier.size(24.dp).align(Alignment.Center)
                 )
             }
 
@@ -725,7 +725,7 @@ private fun FullScreenSwipeCard(
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
                     if (isDownloading) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     } else {
                         Icon(Icons.Default.Download, contentDescription = "Add to rotation", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
@@ -755,7 +755,7 @@ private fun FullScreenSwipeCard(
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
                     if (isSavingToGallery) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     } else {
                         Icon(Icons.Default.SaveAlt, contentDescription = "Save to gallery", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
@@ -916,7 +916,7 @@ private fun DiscoverSettingsSheetContent(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AspectRatio.entries.forEach { ratio ->
                     FilterChip(
                         selected = filters.aspectRatio == ratio,
@@ -965,7 +965,7 @@ private fun NoSourcesState(onNavigateToSources: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(32.dp)
         ) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
+            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
             Text("No sources enabled", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(
                 "Enable image sources in Settings → Manage Sources to start discovering wallpapers",

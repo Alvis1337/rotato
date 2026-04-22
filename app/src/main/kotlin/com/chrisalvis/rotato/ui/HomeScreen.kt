@@ -229,7 +229,7 @@ private fun LibraryContent(
                 modifier = Modifier
                     .weight(1f)
                     .gridDragSelect(items = images, state = dragSelectState),
-                contentPadding = PaddingValues(8.dp),
+                contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -259,7 +259,7 @@ private fun LibraryContent(
             ) {
                 when (setNowState) {
                     SetNowState.SETTING -> {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Setting...")
                     }
@@ -480,7 +480,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             Icon(
                 imageVector = Icons.Outlined.Wallpaper,
                 contentDescription = null,
-                modifier = Modifier.size(72.dp),
+                modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.outline
             )
             Text(
