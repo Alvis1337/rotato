@@ -34,6 +34,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import android.graphics.drawable.Drawable
+import android.graphics.Canvas
+import android.graphics.Bitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -51,6 +55,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
@@ -59,7 +64,10 @@ import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
-import kotlinx.coroutines.launch
+import androidx.palette.graphics.Palette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.graphics.Bitmap
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
 private fun parseAspectRatio(resolution: String): Float {
@@ -70,6 +78,18 @@ private fun parseAspectRatio(resolution: String): Float {
     val h = parts[1].trim().toFloatOrNull() ?: return 16f / 9f
     if (w <= 0f || h <= 0f) return 16f / 9f
     return w / h
+}
+
+private fun Int.toComposeColor(): Color = Color((this and 0xFFFFFF) or 0xFF000000.toInt())
+
+private fun Drawable.toBitmap(): Bitmap? = try {
+    val bitmap = Bitmap.createBitmap(intrinsicWidth, intrinsicHeight, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    setBounds(0, 0, canvas.width, canvas.height)
+    draw(canvas)
+    bitmap
+} catch (e: Exception) {
+    null
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -414,6 +434,9 @@ private fun DiscoverGridItem(
     val ratio = parseAspectRatio(wallpaper.resolution)
         .coerceIn(0.25f, 4f)
         .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
+    val context = LocalContext.current
+    var dominantColor by remember { mutableStateOf(sourceColor(wallpaper.source)) }
+    
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -424,7 +447,7 @@ private fun DiscoverGridItem(
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         with(sharedTransitionScope) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
+                model = ImageRequest.Builder(context)
                     .data(imageUrl.ifBlank { null })
                     .memoryCacheKey(imageUrl.ifBlank { null })
                     .diskCacheKey(imageUrl.ifBlank { null })
@@ -441,16 +464,25 @@ private fun DiscoverGridItem(
                     )
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { onClick() })
+                    },
+                onState = { state ->
+                    if (state is AsyncImagePainter.State.Success) {
+                        state.drawable.toBitmap()?.let { bitmap ->
+                            Palette.from(bitmap).generate { palette ->
+                                dominantColor = palette?.dominantSwatch?.rgb?.toComposeColor() ?: sourceColor(wallpaper.source)
+                            }
+                        }
                     }
+                }
             )
         }
 
-        // Source color badge — bottom-left
+        // Source color badge — bottom-left, tinted with dominant color
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(6.dp)
-                .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
+                .background(dominantColor.copy(alpha = 0.88f), MaterialTheme.shapes.small)
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
             Text(

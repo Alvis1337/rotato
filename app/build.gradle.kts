@@ -104,6 +104,7 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.drag.select.compose)
     implementation(libs.play.services.oss.licenses)
+    implementation(libs.androidx.palette)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
