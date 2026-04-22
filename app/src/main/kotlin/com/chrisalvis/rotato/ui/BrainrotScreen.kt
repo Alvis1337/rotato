@@ -1,13 +1,17 @@
 package com.chrisalvis.rotato.ui
 
 import android.content.Intent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.spring
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -30,9 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,7 +44,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
@@ -91,6 +92,19 @@ fun BrainrotScreen(
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
 
+    val gridState = rememberLazyStaggeredGridState()
+    val coroutineScope = rememberCoroutineScope()
+    val showScrollTop by remember { derivedStateOf { gridState.firstVisibleItemIndex > 5 } }
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val total = gridState.layoutInfo.totalItemsCount
+            total > 0 && lastVisible >= total - 4
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null) vm.loadMore()
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -192,213 +206,193 @@ fun BrainrotScreen(
         }
     }
 
-    // Fullscreen detail modal for selected item
-    if (selectedItem != null) {
-        val wp = selectedItem!!
-        var showZoom by remember { mutableStateOf(false) }
-        var showReportSheet by remember { mutableStateOf(false) }
-        val reportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-        if (showReportSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showReportSheet = false },
-                sheetState = reportSheetState
-            ) {
-                ReportSheetContent(
-                    wallpaperUrl = wp.fullUrl,
-                    onReport = { reason ->
-                        vm.blockAndRemove(wp)
-                        val subject = "Rotato Image Report"
-                        val body = "Reason: $reason\n\nImage URL: ${wp.fullUrl}\nPage URL: ${wp.pageUrl}"
-                        val mailto = android.net.Uri.parse(
-                            "mailto:alvisleet@gmail.com?subject=${android.net.Uri.encode(subject)}&body=${android.net.Uri.encode(body)}"
-                        )
-                        context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
-                        showReportSheet = false
-                    },
-                    onDismiss = { showReportSheet = false }
-                )
-            }
-        }
-
-        Dialog(
-            onDismissRequest = { vm.selectItem(null) },
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    // Report sheet — hoisted so it survives selectedItem becoming null after block/dismiss
+    var reportingWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
+    var showReportSheet by remember { mutableStateOf(false) }
+    val reportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    if (showReportSheet && reportingWallpaper != null) {
+        val wp = reportingWallpaper!!
+        ModalBottomSheet(
+            onDismissRequest = { showReportSheet = false },
+            sheetState = reportSheetState
         ) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                FullScreenSwipeCard(
-                    wallpaper = wp,
-                    busy = false,
-                    showInfo = false,
-                    sessionSaved = sessionSaved,
-                    sessionSkipped = sessionSkipped,
-                    selectedListName = lists.find { it.id == selectedListId }?.name,
-                    searchQuery = searchQuery,
-                    isDownloading = downloadingIds.contains(wp.id),
-                    isSavingToGallery = downloadingIds.contains("gallery:${wp.id}"),
-                    onToggleInfo = { /* handled internally */ },
-                    onSkip = { vm.skip(wp) },
-                    onAddToList = { onAddToList(wp) },
-                    onDownloadToRotation = { vm.downloadToRotation(wp) },
-                    onSaveToGallery = { vm.saveToGallery(wp) },
-                    onImageTap = { showZoom = true },
-                    onShare = {
-                        val url = wp.pageUrl.ifBlank { wp.fullUrl }
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, url)
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
-                    },
-                    onReport = { showReportSheet = true },
-                    onClose = { vm.selectItem(null) },
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (showZoom) {
-                    ZoomImageDialog(wallpaper = wp, onDismiss = { showZoom = false })
-                }
-            }
+            ReportSheetContent(
+                wallpaperUrl = wp.fullUrl,
+                onReport = { reason ->
+                    vm.blockAndRemove(wp)
+                    val subject = "Rotato Image Report"
+                    val body = "Reason: $reason\n\nImage URL: ${wp.fullUrl}\nPage URL: ${wp.pageUrl}"
+                    val mailto = android.net.Uri.parse(
+                        "mailto:alvisleet@gmail.com?subject=${android.net.Uri.encode(subject)}&body=${android.net.Uri.encode(body)}"
+                    )
+                    context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
+                    showReportSheet = false
+                    reportingWallpaper = null
+                },
+                onDismiss = { showReportSheet = false }
+            )
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when {
-            noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
-            noResults -> NoResultsState(
-                searchQuery = searchQuery,
-                onRetry = { vm.retry() },
-                onClearSearch = { vm.setSearchQuery("") },
-                onOpenSearch = { showSearch = true },
-                onOpenSettings = { showSettings = true }
-            )
-            loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-            }
-            else -> {
-                val gridState = rememberLazyStaggeredGridState()
-
-                // Infinite scroll trigger: load more when near the bottom
-                val shouldLoadMore by remember {
-                    derivedStateOf {
-                        val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                        val total = gridState.layoutInfo.totalItemsCount
-                        lastVisible >= total - 4
-                    }
+    SharedTransitionLayout {
+        Box(modifier = Modifier.fillMaxSize()) {
+            when {
+                noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
+                noResults -> NoResultsState(
+                    searchQuery = searchQuery,
+                    onRetry = { vm.retry() },
+                    onClearSearch = { vm.setSearchQuery("") },
+                    onOpenSearch = { showSearch = true },
+                    onOpenSettings = { showSettings = true }
+                )
+                loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 }
-                LaunchedEffect(shouldLoadMore) {
-                    if (shouldLoadMore && !endReached) vm.loadMore()
-                }
-
-                val pullRefreshState = rememberPullToRefreshState()
-
-                PullToRefreshBox(
-                    isRefreshing = loading,
-                    onRefresh = { vm.loadMore(reset = true) },
-                    state = pullRefreshState,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                LazyVerticalStaggeredGrid(
-                    columns = StaggeredGridCells.Fixed(2),
-                    state = gridState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalItemSpacing = 8.dp
-                ) {
-                    // Session stats header chip row
-                    if (sessionSaved > 0 || sessionSkipped > 0) {
-                        item(span = StaggeredGridItemSpan.FullLine) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                                if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
-                            }
-                        }
-                    }
-
-                    items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
-                        DiscoverGridItem(
-                            wallpaper = wp,
-                            isDownloading = downloadingIds.contains(wp.id),
-                            onClick = { vm.selectItem(wp) }
-                        )
-                    }
-
-                    if (loadingMore) {
-                        item(span = StaggeredGridItemSpan.FullLine) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                            }
-                        }
-                    }
-                }
-                } // end PullToRefreshBox
-
-                // Bottom action bar: search + settings FAB row
-                val coroutineScopeGrid = rememberCoroutineScope()
-                val showScrollTop by remember { derivedStateOf { gridState.firstVisibleItemIndex > 5 } }
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (showScrollTop) {
-                        SmallFloatingActionButton(
-                            onClick = { coroutineScopeGrid.launch { gridState.scrollToItem(0) } },
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
-                        }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    if (searchQuery.isNotBlank()) {
-                        AssistChip(
-                            onClick = { showSearch = true },
-                            label = { Text(searchQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            trailingIcon = {
-                                IconButton(onClick = { vm.setSearchQuery("") }, modifier = Modifier.size(16.dp)) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
+                else -> {
+                    AnimatedContent(
+                        targetState = selectedItem,
+                        transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+                        label = "discover"
+                    ) { selected ->
+                        if (selected == null) {
+                            val pullRefreshState = rememberPullToRefreshState()
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                PullToRefreshBox(
+                                    isRefreshing = loading,
+                                    onRefresh = { vm.loadMore(reset = true) },
+                                    state = pullRefreshState,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    LazyVerticalStaggeredGrid(
+                                        columns = StaggeredGridCells.Fixed(2),
+                                        state = gridState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalItemSpacing = 8.dp
+                                    ) {
+                                        if (sessionSaved > 0 || sessionSkipped > 0) {
+                                            item(span = StaggeredGridItemSpan.FullLine) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    if (sessionSaved > 0) StatChip("📌 $sessionSaved")
+                                                    if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
+                                                }
+                                            }
+                                        }
+                                        items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
+                                            DiscoverGridItem(
+                                                wallpaper = wp,
+                                                isDownloading = downloadingIds.contains(wp.id),
+                                                sharedTransitionScope = this@SharedTransitionLayout,
+                                                animatedVisibilityScope = this@AnimatedContent,
+                                                onClick = { vm.selectItem(wp) }
+                                            )
+                                        }
+                                        if (loadingMore) {
+                                            item(span = StaggeredGridItemSpan.FullLine) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(16.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    SmallFloatingActionButton(onClick = { showSearch = true }) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    FloatingActionButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Tune, contentDescription = "Discover settings")
+                                // Bottom action bar
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .navigationBarsPadding()
+                                        .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
+                                        .fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (showScrollTop) {
+                                        SmallFloatingActionButton(
+                                            onClick = { coroutineScope.launch { gridState.scrollToItem(0) } },
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    if (searchQuery.isNotBlank()) {
+                                        AssistChip(
+                                            onClick = { showSearch = true },
+                                            label = { Text(searchQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                            trailingIcon = {
+                                                IconButton(onClick = { vm.setSearchQuery("") }, modifier = Modifier.size(16.dp)) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    SmallFloatingActionButton(onClick = { showSearch = true }) {
+                                        Icon(
+                                            Icons.Default.Search,
+                                            contentDescription = "Search",
+                                            tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    FloatingActionButton(onClick = { showSettings = true }) {
+                                        Icon(Icons.Default.Tune, contentDescription = "Discover settings")
+                                    }
+                                }
+                            }
+                        } else {
+                            WallpaperDetailOverlay(
+                                wallpaper = selected,
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedVisibilityScope = this@AnimatedContent,
+                                sessionSaved = sessionSaved,
+                                sessionSkipped = sessionSkipped,
+                                selectedListName = lists.find { it.id == selectedListId }?.name,
+                                isDownloading = downloadingIds.contains(selected.id),
+                                isSavingToGallery = downloadingIds.contains("gallery:${selected.id}"),
+                                onSkip = { vm.skip(selected) },
+                                onAddToList = { onAddToList(selected) },
+                                onDownloadToRotation = { vm.downloadToRotation(selected) },
+                                onSaveToGallery = { vm.saveToGallery(selected) },
+                                onShare = {
+                                    val url = selected.pageUrl.ifBlank { selected.fullUrl }
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, url)
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
+                                },
+                                onReport = {
+                                    reportingWallpaper = selected
+                                    showReportSheet = true
+                                },
+                                onDismiss = { vm.selectItem(null) }
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 80.dp)
-        )
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp)
+            )
+        }
     }
 }
 
@@ -406,10 +400,10 @@ fun BrainrotScreen(
 private fun DiscoverGridItem(
     wallpaper: BrainrotWallpaper,
     isDownloading: Boolean,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     onClick: () -> Unit
 ) {
-    // Always use the resolution-derived ratio so the card never resizes on scroll-back.
-    // Falls back to 3:4 portrait if resolution is unknown.
     val ratio = parseAspectRatio(wallpaper.resolution)
         .coerceIn(0.25f, 4f)
         .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
@@ -419,24 +413,30 @@ private fun DiscoverGridItem(
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
     ) {
-        // Never use thumbUrl in the grid — booru thumbs are square-cropped (150px)
-        // and will appear heavily zoomed when Cropped into a non-square card.
         val imageUrl = wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl }
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(imageUrl.ifBlank { null })
-                .memoryCacheKey(imageUrl.ifBlank { null })
-                .diskCacheKey(imageUrl.ifBlank { null })
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onClick() })
-                }
-        )
+        val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
+        with(sharedTransitionScope) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(imageUrl.ifBlank { null })
+                    .memoryCacheKey(imageUrl.ifBlank { null })
+                    .diskCacheKey(imageUrl.ifBlank { null })
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .sharedElement(
+                        state = rememberSharedContentState(key = imageKey),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = { _, _ -> tween(350) }
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { onClick() })
+                    }
+            )
+        }
 
         // Source color badge — bottom-left
         Box(
@@ -466,150 +466,61 @@ private fun DiscoverGridItem(
 }
 
 @Composable
-private fun FullScreenSwipeCard(
+private fun WallpaperDetailOverlay(
     wallpaper: BrainrotWallpaper,
-    busy: Boolean,
-    showInfo: Boolean,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     sessionSaved: Int,
     sessionSkipped: Int,
     selectedListName: String?,
-    searchQuery: String,
     isDownloading: Boolean,
-    isSavingToGallery: Boolean = false,
-    onToggleInfo: () -> Unit,
+    isSavingToGallery: Boolean,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
     onDownloadToRotation: () -> Unit,
-    onSaveToGallery: () -> Unit = {},
-    onImageTap: () -> Unit,
+    onSaveToGallery: () -> Unit,
     onShare: () -> Unit,
     onReport: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    onDismiss: () -> Unit
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    val xOffset = remember { Animatable(0f) }
-    var isAnimating by remember { mutableStateOf(false) }
-    var showInfoLocal by remember { mutableStateOf(showInfo) }
-    val density = LocalDensity.current
-    val config = LocalConfiguration.current
-    val screenWidthPx = remember(config) { with(density) { config.screenWidthDp.dp.toPx() } }
-    val threshold = screenWidthPx * 0.35f
+    BackHandler(onBack = onDismiss)
+    var showZoom by remember { mutableStateOf(false) }
+    var showInfoExpanded by remember { mutableStateOf(false) }
 
-    val saveAlpha = (xOffset.value / threshold).coerceIn(0f, 1f)
-    val skipAlpha = (-xOffset.value / threshold).coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
+        val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
+        val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
 
-    Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    translationX = xOffset.value
-                    rotationZ = (xOffset.value / screenWidthPx) * 6f
-                }
-                .background(Color.Black)
-                .pointerInput(isAnimating) {
-                    if (isAnimating) return@pointerInput
-                    detectDragGestures(
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            coroutineScope.launch { xOffset.snapTo(xOffset.value + dragAmount.x) }
-                        },
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                when {
-                                    xOffset.value > threshold -> {
-                                        isAnimating = true
-                                        xOffset.animateTo(screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
-                                        isAnimating = false
-                                        onAddToList()
-                                    }
-                                    xOffset.value < -threshold -> {
-                                        isAnimating = true
-                                        xOffset.animateTo(-screenWidthPx * 2, tween(durationMillis = 180, easing = FastOutLinearInEasing))
-                                        isAnimating = false
-                                        onSkip()
-                                    }
-                                    else -> xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                xOffset.animateTo(0f, spring(stiffness = 400f, dampingRatio = 0.65f))
-                            }
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onImageTap() })
-                }
-        ) {
-            val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
-            var imageLoading by remember { mutableStateOf(false) }
+        with(sharedTransitionScope) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data(imageUrl)
-                    .memoryCacheKey(imageUrl)
-                    .diskCacheKey(imageUrl)
-                    .placeholderMemoryCacheKey(wallpaper.thumbUrl)
-                    .crossfade(true)
+                    .data(fullImageUrl)
+                    .memoryCacheKey(fullImageUrl)
+                    .diskCacheKey(fullImageUrl)
+                    .placeholderMemoryCacheKey(placeholderKey)
+                    .crossfade(false)
                     .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                onState = { imageLoading = it is AsyncImagePainter.State.Loading },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .sharedElement(
+                        state = rememberSharedContentState(key = imageKey),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = { _, _ -> tween(350) }
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures(onDoubleTap = { showZoom = true })
+                    }
             )
-
-            if (imageLoading) {
-                CircularProgressIndicator(
-                    color = Color.White.copy(alpha = 0.85f),
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(24.dp).align(Alignment.Center)
-                )
-            }
-
-            if (saveAlpha > 0.02f) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF1B5E20).copy(alpha = saveAlpha * 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
-                        Text(
-                            if (selectedListName != null) "Save to \"$selectedListName\"" else "Save to List",
-                            color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall
-                        )
-                    }
-                }
-            }
-
-            if (skipAlpha > 0.02f) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF7F0000).copy(alpha = skipAlpha * 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(80.dp))
-                        Text("Skip", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
-                    }
-                }
-            }
         }
 
-        // Close button top-right
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(8.dp)
-                .background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small)
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-        }
-
-        // Top stats
+        // Top stats bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -687,7 +598,7 @@ private fun FullScreenSwipeCard(
                 )
             }
 
-            if (showInfoLocal && wallpaper.tags.size > 3) {
+            if (showInfoExpanded && wallpaper.tags.size > 3) {
                 Text(
                     wallpaper.tags.drop(3).take(8).joinToString("  ·  ") { it.replace('_', ' ') },
                     style = MaterialTheme.typography.labelSmall,
@@ -703,17 +614,17 @@ private fun FullScreenSwipeCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedIconButton(
-                    onClick = { showInfoLocal = !showInfoLocal },
+                    onClick = { showInfoExpanded = !showInfoExpanded },
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(
                         1.5.dp,
-                        if (showInfoLocal) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
+                        if (showInfoExpanded) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
                     )
                 ) {
                     Icon(
                         Icons.Default.Info,
                         contentDescription = "Info",
-                        tint = if (showInfoLocal) MaterialTheme.colorScheme.primary else Color.White,
+                        tint = if (showInfoExpanded) MaterialTheme.colorScheme.primary else Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -732,18 +643,9 @@ private fun FullScreenSwipeCard(
                 }
 
                 FilledIconButton(
-                    onClick = {
-                        if (!isAnimating) {
-                            isAnimating = true
-                            coroutineScope.launch {
-                                xOffset.animateTo(screenWidthPx * 2, spring(stiffness = 200f))
-                                onAddToList()
-                            }
-                        }
-                    },
+                    onClick = onAddToList,
                     modifier = Modifier.size(68.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    enabled = !isAnimating
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
                 }
@@ -777,6 +679,20 @@ private fun FullScreenSwipeCard(
                     Icon(Icons.Default.Flag, contentDescription = "Report", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                 }
             }
+
+            OutlinedButton(
+                onClick = { onSkip(); onDismiss() },
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+            ) {
+                Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Skip", color = Color.White)
+            }
+        }
+
+        if (showZoom) {
+            ZoomImageDialog(wallpaper = wallpaper, onDismiss = { showZoom = false })
         }
     }
 }

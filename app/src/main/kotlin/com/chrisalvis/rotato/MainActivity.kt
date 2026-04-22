@@ -85,6 +85,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val showBottomBar = currentRoute !in setOf("sources", "setup")
+                    && brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null
 
                 // Handle navigation from notification (e.g., locked collection alert)
                 val pendingNav = _pendingNavigate.value
