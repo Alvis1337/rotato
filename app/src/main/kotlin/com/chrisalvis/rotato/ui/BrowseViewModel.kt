@@ -172,6 +172,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Re-hide a session-unlocked collection without removing its permanent lock. */
+    fun relockForSession(listId: String) {
+        _unlockedListIds.update { it - listId }
+    }
+
     /** Grant session-level access to all locked collections without removing their lock. */
     fun grantSessionAccess() {
         val locked = _allLists.value.filter { it.isLocked }.map { it.id }.toSet()

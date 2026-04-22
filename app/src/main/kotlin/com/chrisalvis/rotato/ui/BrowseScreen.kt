@@ -52,6 +52,7 @@ fun BrowseScreen() {
     val vm: BrowseViewModel = viewModel()
 
     val lists by vm.lists.collectAsStateWithLifecycle()
+    val unlockedListIds by vm.unlockedListIds.collectAsStateWithLifecycle()
     val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
     val listCovers by vm.listCovers.collectAsStateWithLifecycle()
@@ -186,6 +187,7 @@ fun BrowseScreen() {
                 listCounts = listCounts,
                 listCovers = listCovers,
                 lockedHiddenCount = lockedHiddenCount,
+                unlockedListIds = unlockedListIds,
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
@@ -197,6 +199,7 @@ fun BrowseScreen() {
                         onSuccess = { vm.unlockCollection(list.id) }
                     )
                 },
+                onRelockForSession = { vm.relockForSession(it.id) },
                 onShowHidden = {
                     BiometricHelper.authenticate(
                         activity = activity,
@@ -312,11 +315,13 @@ private fun ListPickerContent(
     listCounts: Map<String, Int>,
     listCovers: Map<String, String?>,
     lockedHiddenCount: Int,
+    unlockedListIds: Set<String>,
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
     onLockCollection: (LocalList) -> Unit,
     onUnlockCollection: (LocalList) -> Unit,
+    onRelockForSession: (LocalList) -> Unit,
     onShowHidden: () -> Unit,
     onPickImages: (LocalList) -> Unit,
     onCreateList: () -> Unit,
@@ -359,11 +364,13 @@ private fun ListPickerContent(
                     list = list,
                     count = count,
                     coverUrl = coverUrl,
+                    isSessionUnlocked = list.isLocked && list.id in unlockedListIds,
                     onClick = { onSelectList(list) },
                     onDelete = { showDeleteConfirm = true },
                     onToggleRotation = { onToggleRotation(list) },
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
+                    onRelockForSession = { onRelockForSession(list) },
                     onPickImages = { onPickImages(list) }
                 )
             }
@@ -398,11 +405,13 @@ private fun CollectionCard(
     list: LocalList,
     count: Int,
     coverUrl: String?,
+    isSessionUnlocked: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onToggleRotation: () -> Unit,
     onLock: () -> Unit,
     onUnlock: () -> Unit,
+    onRelockForSession: () -> Unit,
     onPickImages: () -> Unit
 ) {
     Card(
@@ -516,15 +525,33 @@ private fun CollectionCard(
                             .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
                     )
                 }
-                // Lock toggle: lock icon = currently unlocked (tap to lock); unlock icon = locked (tap to permanently unlock via biometric)
+                // Lock toggle: 3 states —
+                //   not locked  → white Lock,     tap to permanently lock
+                //   session-unlocked → white LockOpen, tap to re-hide for session
+                //   permanently locked (shouldn't appear here) → blue LockOpen, tap to permanently unlock
+                val lockIcon = when {
+                    !list.isLocked -> Icons.Default.Lock
+                    isSessionUnlocked -> Icons.Default.LockOpen
+                    else -> Icons.Default.LockOpen
+                }
+                val lockTint = when {
+                    !list.isLocked -> Color.White
+                    isSessionUnlocked -> Color.White
+                    else -> MaterialTheme.colorScheme.primaryContainer
+                }
+                val lockAction = when {
+                    !list.isLocked -> onLock
+                    isSessionUnlocked -> onRelockForSession
+                    else -> onUnlock
+                }
                 IconButton(
-                    onClick = if (list.isLocked) onUnlock else onLock,
+                    onClick = lockAction,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        if (list.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                        contentDescription = if (list.isLocked) "Remove lock" else "Lock collection",
-                        tint = if (list.isLocked) MaterialTheme.colorScheme.primaryContainer else Color.White,
+                        lockIcon,
+                        contentDescription = if (!list.isLocked) "Lock collection" else if (isSessionUnlocked) "Re-hide collection" else "Remove lock",
+                        tint = lockTint,
                         modifier = Modifier
                             .size(20.dp)
                             .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
