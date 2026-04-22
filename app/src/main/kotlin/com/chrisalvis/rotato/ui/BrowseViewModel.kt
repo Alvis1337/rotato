@@ -35,6 +35,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val localLists = LocalListsPreferences(application)
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
+    private lateinit var processLifecycleObserver: DefaultLifecycleObserver
 
     // All lists including locked ones (source of truth)
     private val _allLists: StateFlow<List<LocalList>> = localLists.lists
@@ -102,9 +103,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
         }
         // Re-lock all collections when the entire app is backgrounded
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+        processLifecycleObserver = object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) = lockAll()
-        })
+        }
+        ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
     }
 
     fun selectList(list: LocalList) {
@@ -388,7 +390,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun moveSelectedToList(targetListId: String) {
-        val currentListId = _selectedList.value?.id ?: return
+        val currentListId = selectedList.value?.id ?: return
         if (targetListId == currentListId) { exitSelectionMode(); return }
         val selectedIds = _selected.value
         viewModelScope.launch {
@@ -408,6 +410,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
+
+    override fun onCleared() {
+        super.onCleared()
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(processLifecycleObserver)
+    }
 }
 
 private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpaper(

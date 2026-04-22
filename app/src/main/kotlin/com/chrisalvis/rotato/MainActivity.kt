@@ -211,6 +211,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         val uri = intent.data
         if (uri?.scheme == "rotato" && uri.host == "callback") {
             val code = uri.getQueryParameter("code") ?: return
