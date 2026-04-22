@@ -225,8 +225,6 @@ fun BrainrotScreen(
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
                     },
-                    onOpenSettings = { vm.selectItem(null); showSettings = true },
-                    onOpenSearch = { vm.selectItem(null); showSearch = true },
                     onClose = { vm.selectItem(null) },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -459,8 +457,6 @@ private fun FullScreenSwipeCard(
     onSaveToGallery: () -> Unit = {},
     onImageTap: () -> Unit,
     onShare: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenSearch: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -680,23 +676,6 @@ private fun FullScreenSwipeCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedIconButton(
-                    onClick = {
-                        if (!isAnimating) {
-                            isAnimating = true
-                            coroutineScope.launch {
-                                xOffset.animateTo(-screenWidthPx * 2, spring(stiffness = 200f))
-                                onSkip()
-                            }
-                        }
-                    },
-                    enabled = !isAnimating,
-                    modifier = Modifier.size(52.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Skip", tint = Color.White, modifier = Modifier.size(22.dp))
-                }
-
-                OutlinedIconButton(
                     onClick = { showInfoLocal = !showInfoLocal },
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(
@@ -725,19 +704,6 @@ private fun FullScreenSwipeCard(
                     }
                 }
 
-                OutlinedIconButton(
-                    onClick = onSaveToGallery,
-                    enabled = !isSavingToGallery,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    if (isSavingToGallery) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                    } else {
-                        Icon(Icons.Default.SaveAlt, contentDescription = "Save to gallery", tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                }
-
                 FilledIconButton(
                     onClick = {
                         if (!isAnimating) {
@@ -756,30 +722,24 @@ private fun FullScreenSwipeCard(
                 }
 
                 OutlinedIconButton(
+                    onClick = onSaveToGallery,
+                    enabled = !isSavingToGallery,
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    if (isSavingToGallery) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                    } else {
+                        Icon(Icons.Default.SaveAlt, contentDescription = "Save to gallery", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                OutlinedIconButton(
                     onClick = onShare,
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
-                }
-
-                OutlinedIconButton(
-                    onClick = onOpenSearch,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(
-                        1.5.dp,
-                        if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(18.dp))
-                }
-
-                OutlinedIconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.size(52.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(22.dp))
                 }
             }
         }

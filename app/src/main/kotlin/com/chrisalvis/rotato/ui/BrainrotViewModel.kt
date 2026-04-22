@@ -79,6 +79,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val sessionSkipped: StateFlow<Int> = _sessionSkipped.asStateFlow()
 
     val lists: StateFlow<List<LocalList>> = localLists.lists
+        .map { all -> all.filter { !it.isLocked } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _selectedListId = MutableStateFlow<String?>(null)
