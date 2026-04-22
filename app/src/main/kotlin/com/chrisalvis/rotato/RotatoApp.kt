@@ -54,12 +54,20 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 NotificationManager.IMPORTANCE_MIN
             ).apply { description = "Background worker for wallpaper rotation" }
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_LOCKED_LIST,
+                "Locked Collections",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = "Alert when a scheduled collection is locked" }
+        )
     }
 
     companion object {
         const val CHANNEL_WALLPAPER_SET = "rotato_wallpaper_set"
         const val CHANNEL_LOW_QUEUE = "rotato_low_queue"
         const val CHANNEL_WORKER = "rotato_worker"
+        const val CHANNEL_LOCKED_LIST = "rotato_locked_list"
     }
 }
 

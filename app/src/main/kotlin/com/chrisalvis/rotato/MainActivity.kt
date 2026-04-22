@@ -2,9 +2,9 @@ package com.chrisalvis.rotato
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -36,14 +36,17 @@ import com.chrisalvis.rotato.ui.SettingsScreen
 import com.chrisalvis.rotato.ui.ScheduleScreen
 import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
+import com.chrisalvis.rotato.worker.ScheduleReceiver
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var malViewModelRef: MalViewModel
+    private val _pendingNavigate = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        _pendingNavigate.value = intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)
         setContent {
             RotatoTheme {
                 val rotatoPrefs = remember { RotatoPreferences(applicationContext) }
@@ -76,6 +79,19 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val showBottomBar = currentRoute !in setOf("sources", "setup")
+
+                // Handle navigation from notification (e.g., locked collection alert)
+                val pendingNav = _pendingNavigate.value
+                LaunchedEffect(pendingNav) {
+                    if (pendingNav == "browse") {
+                        navController.navigate("browse") {
+                            popUpTo("discover") { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                        _pendingNavigate.value = null
+                    }
+                }
 
                 Scaffold(
                     contentWindowInsets = WindowInsets(0),
@@ -195,12 +211,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val uri = intent.data ?: return
-        if (uri.scheme == "rotato" && uri.host == "callback") {
+        val uri = intent.data
+        if (uri?.scheme == "rotato" && uri.host == "callback") {
             val code = uri.getQueryParameter("code") ?: return
             if (::malViewModelRef.isInitialized) {
                 malViewModelRef.handleCallback(code)
             }
+            return
+        }
+        // Handle navigation extras from notifications
+        intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)?.let {
+            _pendingNavigate.value = it
         }
     }
 }

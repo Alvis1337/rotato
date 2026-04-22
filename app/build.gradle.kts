@@ -100,6 +100,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.okhttp)
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.biometric)
     implementation(libs.drag.select.compose)
     implementation(libs.play.services.oss.licenses)
 

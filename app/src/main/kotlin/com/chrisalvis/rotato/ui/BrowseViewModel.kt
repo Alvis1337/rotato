@@ -6,6 +6,9 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
@@ -33,8 +36,23 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
 
-    val lists: StateFlow<List<LocalList>> = localLists.lists
+    // All lists including locked ones (source of truth)
+    private val _allLists: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // IDs of locked lists unlocked for this session (cleared when app is backgrounded)
+    private val _unlockedListIds = MutableStateFlow<Set<String>>(emptySet())
+    val unlockedListIds: StateFlow<Set<String>> = _unlockedListIds.asStateFlow()
+
+    // Lists visible to the user: unlocked + not locked
+    val lists: StateFlow<List<LocalList>> = combine(_allLists, _unlockedListIds) { all, unlocked ->
+        all.filter { !it.isLocked || unlocked.contains(it.id) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Count of locked collections hidden from the grid
+    val lockedHiddenCount: StateFlow<Int> = combine(_allLists, _unlockedListIds) { all, unlocked ->
+        all.count { it.isLocked && !unlocked.contains(it.id) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val listCounts: StateFlow<Map<String, Int>> = localLists.allWallpapers
         .map { all -> all.groupBy { it.listId }.mapValues { (_, v) -> v.size } }
@@ -52,13 +70,16 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    private val _selectedList = MutableStateFlow<LocalList?>(null)
-    val selectedList: StateFlow<LocalList?> = _selectedList.asStateFlow()
+    // Store selected list by ID so it auto-clears when a list becomes hidden (locked)
+    private val _selectedListId = MutableStateFlow<String?>(null)
+    val selectedList: StateFlow<LocalList?> = combine(lists, _selectedListId) { visible, id ->
+        visible.find { it.id == id }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val wallpapers: StateFlow<List<BrowseWallpaper>> =
-        combine(localLists.allWallpapers, _selectedList) { all, selected ->
-            val listId = selected?.id ?: return@combine emptyList()
-            all.filter { it.listId == listId }.map { it.toBrowseWallpaper(app.filesDir) }.reversed()
+        combine(localLists.allWallpapers, _selectedListId, lists) { all, id, visible ->
+            if (id == null || visible.none { it.id == id }) return@combine emptyList()
+            all.filter { it.listId == id }.map { it.toBrowseWallpaper(app.filesDir) }.reversed()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _inRotation = MutableStateFlow<Set<String>>(emptySet())
@@ -80,15 +101,19 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
         }
+        // Re-lock all collections when the entire app is backgrounded
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) = lockAll()
+        })
     }
 
     fun selectList(list: LocalList) {
-        _selectedList.update { list }
+        _selectedListId.update { list.id }
         exitSelectionMode()
     }
 
     fun clearSelection() {
-        _selectedList.update { null }
+        _selectedListId.update { null }
         exitSelectionMode()
     }
 
@@ -100,13 +125,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val list = localLists.createList(name)
             _showCreateDialog.update { false }
-            _selectedList.update { list }
+            _selectedListId.update { list.id }
         }
     }
 
     fun deleteList(list: LocalList) {
         viewModelScope.launch {
-            if (_selectedList.value?.id == list.id) clearSelection()
+            if (_selectedListId.value == list.id) clearSelection()
             // Collect device-image entries before they're deleted from DataStore
             val deviceEntries = localLists.allWallpapers.first()
                 .filter { it.listId == list.id && it.source == "device" }
@@ -125,6 +150,35 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun renameList(id: String, name: String) {
         if (name.isBlank()) return
         viewModelScope.launch { localLists.renameList(id, name) }
+    }
+
+    /** Permanently lock a collection. No auth required — just hides it. */
+    fun lockCollection(listId: String) {
+        viewModelScope.launch {
+            localLists.setLocked(listId, true)
+            _unlockedListIds.update { it - listId }
+            // Auto-clear selection if the locked list was selected
+            if (_selectedListId.value == listId) clearSelection()
+        }
+    }
+
+    /** Permanently remove the lock from a collection. Call only after biometric succeeds. */
+    fun unlockCollection(listId: String) {
+        viewModelScope.launch {
+            localLists.setLocked(listId, false)
+            _unlockedListIds.update { it + listId }
+        }
+    }
+
+    /** Grant session-level access to all locked collections without removing their lock. */
+    fun grantSessionAccess() {
+        val locked = _allLists.value.filter { it.isLocked }.map { it.id }.toSet()
+        _unlockedListIds.update { it + locked }
+    }
+
+    /** Re-lock all collections (clears session access). Called when app is backgrounded. */
+    fun lockAll() {
+        _unlockedListIds.update { emptySet() }
     }
 
     fun removeWallpaper(entryId: String) {

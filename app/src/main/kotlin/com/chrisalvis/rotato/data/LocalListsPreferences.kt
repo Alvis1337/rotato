@@ -74,6 +74,15 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setLocked(listId: String, locked: Boolean) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(isLocked = locked) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
     suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
         var added = false
         context.dataStore.edit { prefs ->
@@ -138,7 +147,8 @@ class LocalListsPreferences(private val context: Context) {
                 id = o.getString("id"),
                 name = o.getString("name"),
                 createdAt = o.optLong("createdAt", System.currentTimeMillis()),
-                useAsRotation = o.optBoolean("useAsRotation", false)
+                useAsRotation = o.optBoolean("useAsRotation", false),
+                isLocked = o.optBoolean("isLocked", false)
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -151,6 +161,7 @@ class LocalListsPreferences(private val context: Context) {
                     put("name", l.name)
                     put("createdAt", l.createdAt)
                     put("useAsRotation", l.useAsRotation)
+                    put("isLocked", l.isLocked)
                 })
             }
         }.toString()

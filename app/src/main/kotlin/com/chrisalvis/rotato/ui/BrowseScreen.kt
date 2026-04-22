@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,6 +52,7 @@ fun BrowseScreen() {
     val vm: BrowseViewModel = viewModel()
 
     val lists by vm.lists.collectAsStateWithLifecycle()
+    val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
     val listCovers by vm.listCovers.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
@@ -177,13 +180,30 @@ fun BrowseScreen() {
         }
     ) { padding ->
         if (selectedList == null) {
+            val activity = androidx.compose.ui.platform.LocalContext.current as androidx.fragment.app.FragmentActivity
             ListPickerContent(
                 lists = lists,
                 listCounts = listCounts,
                 listCovers = listCovers,
+                lockedHiddenCount = lockedHiddenCount,
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
+                onLockCollection = { vm.lockCollection(it.id) },
+                onUnlockCollection = { list ->
+                    BiometricHelper.authenticate(
+                        activity = activity,
+                        title = "Unlock \"${list.name}\"",
+                        onSuccess = { vm.unlockCollection(list.id) }
+                    )
+                },
+                onShowHidden = {
+                    BiometricHelper.authenticate(
+                        activity = activity,
+                        title = "Show locked collections",
+                        onSuccess = { vm.grantSessionAccess() }
+                    )
+                },
                 onPickImages = { list ->
                     pickerTargetListId = list.id
                     photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -291,14 +311,18 @@ private fun ListPickerContent(
     lists: List<LocalList>,
     listCounts: Map<String, Int>,
     listCovers: Map<String, String?>,
+    lockedHiddenCount: Int,
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
+    onLockCollection: (LocalList) -> Unit,
+    onUnlockCollection: (LocalList) -> Unit,
+    onShowHidden: () -> Unit,
     onPickImages: (LocalList) -> Unit,
     onCreateList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (lists.isEmpty()) {
+    if (lists.isEmpty() && lockedHiddenCount == 0) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
@@ -338,8 +362,31 @@ private fun ListPickerContent(
                     onClick = { onSelectList(list) },
                     onDelete = { showDeleteConfirm = true },
                     onToggleRotation = { onToggleRotation(list) },
+                    onLock = { onLockCollection(list) },
+                    onUnlock = { onUnlockCollection(list) },
                     onPickImages = { onPickImages(list) }
                 )
+            }
+            if (lockedHiddenCount > 0) {
+                item(span = { GridItemSpan(2) }) {
+                    TextButton(
+                        onClick = onShowHidden,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "$lockedHiddenCount locked collection${if (lockedHiddenCount != 1) "s" else ""} — tap to unlock",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
     }
@@ -354,6 +401,8 @@ private fun CollectionCard(
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onToggleRotation: () -> Unit,
+    onLock: () -> Unit,
+    onUnlock: () -> Unit,
     onPickImages: () -> Unit
 ) {
     Card(
@@ -417,7 +466,7 @@ private fun CollectionCard(
                 }
             }
 
-            // Rotation badge top-left
+            // Rotation badge top-left; lock badge overlaid if locked
             if (list.useAsRotation) {
                 Box(
                     modifier = Modifier
@@ -428,6 +477,17 @@ private fun CollectionCard(
                 ) {
                     Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
                 }
+            }
+            if (list.isLocked) {
+                Icon(
+                    Icons.Default.Lock,
+                    contentDescription = "Locked",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(if (list.useAsRotation) 40.dp else 8.dp)
+                        .size(18.dp)
+                )
             }
 
             // Action icons top-right
@@ -451,6 +511,20 @@ private fun CollectionCard(
                         if (list.useAsRotation) Icons.Default.Wallpaper else Icons.Outlined.Wallpaper,
                         contentDescription = "Toggle Library",
                         tint = if (list.useAsRotation) MaterialTheme.colorScheme.primaryContainer else Color.White,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                    )
+                }
+                // Lock toggle: lock icon = currently unlocked (tap to lock); unlock icon = locked (tap to permanently unlock via biometric)
+                IconButton(
+                    onClick = if (list.isLocked) onUnlock else onLock,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        if (list.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        contentDescription = if (list.isLocked) "Remove lock" else "Lock collection",
+                        tint = if (list.isLocked) MaterialTheme.colorScheme.primaryContainer else Color.White,
                         modifier = Modifier
                             .size(20.dp)
                             .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
