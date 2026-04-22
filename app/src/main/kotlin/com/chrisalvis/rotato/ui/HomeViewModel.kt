@@ -82,9 +82,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
     init {
+        android.util.Log.d("RotatoDebug", "HomeViewModel.init start")
         observeImageDir()
         recoverIfNeeded()
         observeRotationCollections()
+        android.util.Log.d("RotatoDebug", "HomeViewModel.init done")
     }
 
     /** Polls rotato_images/ every 2 s and pushes changes into [_images]. */
