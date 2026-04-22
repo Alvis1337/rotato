@@ -31,6 +31,7 @@ class RotatoPreferences(private val context: Context) {
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
+        val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
     }
 
@@ -123,6 +124,23 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setGlobalBlacklist(tags: Set<String>) {
         context.dataStore.edit { it[GLOBAL_BLACKLIST] = tags.joinToString(",") }
+    }
+
+    val blockedUrls: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val raw = prefs[BLOCKED_URLS] ?: ""
+            if (raw.isBlank()) emptySet() else raw.split("\n").filter { it.isNotBlank() }.toSet()
+        }
+
+    suspend fun blockUrl(url: String) {
+        if (url.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val existing = prefs[BLOCKED_URLS] ?: ""
+            val set = if (existing.isBlank()) mutableSetOf() else existing.split("\n").filter { it.isNotBlank() }.toMutableSet()
+            set.add(url)
+            prefs[BLOCKED_URLS] = set.joinToString("\n")
+        }
     }
 
     /** Number of items to fetch per scroll-load on the Discover screen. Default 20. */

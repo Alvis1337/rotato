@@ -178,6 +178,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
             val blacklist = prefs.globalBlacklist.first()
+            val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
             val malTitles: List<String> =
                 if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
@@ -222,6 +223,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val key = "${wp.source}:${wp.id}"
                 if (key in displayedKeys) { if (++totalSkipped >= 200) break; continue }
                 if (blacklist.isNotEmpty() && wp.tags.any { it.lowercase() in blacklist }) { totalSkipped++; continue }
+                if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
                 val url = wp.sampleUrl.ifBlank { wp.fullUrl }
@@ -293,6 +295,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (undoStack.size >= 3) undoStack.removeFirst()
         undoStack.addLast(wp)
         _skipEvent.tryEmit(Unit)
+        removeFromGrid(wp)
+        _selectedItem.update { null }
+    }
+
+    /** Block a URL permanently and remove the wallpaper from the current grid. */
+    fun blockAndRemove(wp: BrainrotWallpaper) {
+        viewModelScope.launch { prefs.blockUrl(wp.fullUrl) }
+        displayedKeys.remove("${wp.source}:${wp.id}")
         removeFromGrid(wp)
         _selectedItem.update { null }
     }

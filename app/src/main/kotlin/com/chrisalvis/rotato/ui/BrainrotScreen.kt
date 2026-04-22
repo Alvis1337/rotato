@@ -196,6 +196,31 @@ fun BrainrotScreen(
     if (selectedItem != null) {
         val wp = selectedItem!!
         var showZoom by remember { mutableStateOf(false) }
+        var showReportSheet by remember { mutableStateOf(false) }
+        val reportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        if (showReportSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showReportSheet = false },
+                sheetState = reportSheetState
+            ) {
+                ReportSheetContent(
+                    wallpaperUrl = wp.fullUrl,
+                    onReport = { reason ->
+                        vm.blockAndRemove(wp)
+                        val subject = "Rotato Image Report"
+                        val body = "Reason: $reason\n\nImage URL: ${wp.fullUrl}\nPage URL: ${wp.pageUrl}"
+                        val mailto = android.net.Uri.parse(
+                            "mailto:alvisleet@gmail.com?subject=${android.net.Uri.encode(subject)}&body=${android.net.Uri.encode(body)}"
+                        )
+                        context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
+                        showReportSheet = false
+                    },
+                    onDismiss = { showReportSheet = false }
+                )
+            }
+        }
+
         Dialog(
             onDismissRequest = { vm.selectItem(null) },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -225,6 +250,7 @@ fun BrainrotScreen(
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
                     },
+                    onReport = { showReportSheet = true },
                     onClose = { vm.selectItem(null) },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -457,6 +483,7 @@ private fun FullScreenSwipeCard(
     onSaveToGallery: () -> Unit = {},
     onImageTap: () -> Unit,
     onShare: () -> Unit,
+    onReport: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -740,6 +767,14 @@ private fun FullScreenSwipeCard(
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+
+                OutlinedIconButton(
+                    onClick = onReport,
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    Icon(Icons.Default.Flag, contentDescription = "Report", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -1054,6 +1089,55 @@ private fun ZoomImageDialog(
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
+        }
+    }
+}
+
+@Composable
+private fun ReportSheetContent(
+    wallpaperUrl: String,
+    onReport: (reason: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val reasons = listOf(
+        "Inappropriate / explicit content",
+        "Not wallpaper material",
+        "Copyright / stolen content",
+        "Other"
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            "Report image",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        Text(
+            "Select a reason. The image will be hidden immediately and a report will be sent via email.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        reasons.forEach { reason ->
+            OutlinedButton(
+                onClick = { onReport(reason) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(reason)
+            }
+        }
+        TextButton(
+            onClick = onDismiss,
+            modifier = Modifier.align(Alignment.End)
+        ) {
+            Text("Cancel")
         }
     }
 }
