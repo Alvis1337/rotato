@@ -6,6 +6,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +36,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.widget.Toast
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -428,7 +435,7 @@ private fun DiscoverGridItem(
                 modifier = Modifier
                     .fillMaxSize()
                     .sharedElement(
-                        state = rememberSharedContentState(key = imageKey),
+                        sharedContentState = rememberSharedContentState(key = imageKey),
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = { _, _ -> tween(350) }
                     )
@@ -486,11 +493,19 @@ private fun WallpaperDetailOverlay(
     BackHandler(onBack = onDismiss)
     var showZoom by remember { mutableStateOf(false) }
     var showInfoExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var translationY by remember { mutableFloatStateOf(0f) }
+    val animTranslationY = remember { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .graphicsLayer {
+                this.translationY = animTranslationY.value
+                this.alpha = (1f - (animTranslationY.value / 500f).coerceIn(0f, 1f))
+            }
     ) {
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
@@ -498,7 +513,7 @@ private fun WallpaperDetailOverlay(
 
         with(sharedTransitionScope) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
+                model = ImageRequest.Builder(context)
                     .data(fullImageUrl)
                     .memoryCacheKey(fullImageUrl)
                     .diskCacheKey(fullImageUrl)
@@ -510,15 +525,51 @@ private fun WallpaperDetailOverlay(
                 modifier = Modifier
                     .fillMaxSize()
                     .sharedElement(
-                        state = rememberSharedContentState(key = imageKey),
+                        sharedContentState = rememberSharedContentState(key = imageKey),
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = { _, _ -> tween(350) }
                     )
                     .pointerInput(Unit) {
-                        detectTapGestures(onDoubleTap = { showZoom = true })
+                        detectTapGestures(
+                            onDoubleTap = { showZoom = true },
+                            onLongPress = {
+                                val url = wallpaper.pageUrl.ifBlank { wallpaper.fullUrl }
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText("Wallpaper URL", url)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
             )
         }
+
+        // Vertical drag to dismiss
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { _, dragAmount ->
+                            translationY += dragAmount
+                            coroutineScope.launch {
+                                animTranslationY.snapTo(translationY)
+                            }
+                        },
+                        onDragEnd = {
+                            coroutineScope.launch {
+                                if (translationY > 120f) {
+                                    animTranslationY.animateTo(1000f, spring())
+                                    onDismiss()
+                                } else {
+                                    animTranslationY.animateTo(0f, spring())
+                                    translationY = 0f
+                                }
+                            }
+                        }
+                    )
+                }
+        )
 
         // Top stats bar
         Box(
