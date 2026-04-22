@@ -98,8 +98,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     val discoverBatchSize: StateFlow<Int> = prefs.discoverBatchSize
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 20)
-        .map { it.filter { s -> s.enabled } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val sourceHealth = SourceHealthTracker.health
 
