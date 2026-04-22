@@ -221,6 +221,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    val discoverBatchSize: StateFlow<Int> = preferences.discoverBatchSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 20)
+
+    fun setDiscoverBatchSize(size: Int) {
+        viewModelScope.launch { preferences.setDiscoverBatchSize(size) }
+    }
+
     fun clearAll() {
         viewModelScope.launch {
             cancelRotation()

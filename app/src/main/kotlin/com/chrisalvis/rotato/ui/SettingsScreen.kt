@@ -202,6 +202,27 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
+            val discoverBatchSize by viewModel.discoverBatchSize.collectAsStateWithLifecycle()
+            SettingsSection(title = "Discover") {
+                Text("Prefetch batch size", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Images loaded per scroll page. Higher = more data, fewer load pauses.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(10 to "Low", 20 to "Medium", 40 to "High").forEach { (size, label) ->
+                        FilterChip(
+                            selected = discoverBatchSize == size,
+                            onClick = { viewModel.setDiscoverBatchSize(size) },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
             SettingsSection(title = "Schedule") {
                 FilledTonalButton(
                     onClick = onNavigateToSchedule,

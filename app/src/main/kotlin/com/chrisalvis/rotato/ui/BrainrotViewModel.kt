@@ -96,7 +96,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val globalBlacklist: StateFlow<Set<String>> = prefs.globalBlacklist
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    val enabledLocalSources: StateFlow<List<LocalSource>> = localSources.sources
+    val discoverBatchSize: StateFlow<Int> = prefs.discoverBatchSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 20)
         .map { it.filter { s -> s.enabled } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -180,7 +181,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val malTitles: List<String> =
                 if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
             val localEnabled = localSources.sources.first().filter { it.enabled }
-            val target = if (isInitial) 40 else 20
+            val batchSize = prefs.discoverBatchSize.first()
+            val target = if (isInitial) batchSize * 2 else batchSize
 
             // Compute queries once per source so pre-warm and drain use the same cache keys.
             // queriesFor() shuffles MAL titles — calling it twice would produce different keys.

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
+import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,10 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTags(type: SourceType, tags: String) {
         viewModelScope.launch { prefs.update(type, tags = tags) }
+    }
+
+    fun setWallhavenPurity(type: SourceType, purity: String) {
+        viewModelScope.launch { prefs.update(type, wallhavenPurity = purity) }
     }
 
     fun testSource(source: LocalSource) {
@@ -158,6 +163,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onToggle = { vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
                         onSaveTags = { vm.setTags(source.type, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, it) },
                         onTest = { vm.testSource(source) },
                     )
                 }
@@ -184,6 +190,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onToggle = { if (unlocked) vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
                         onSaveTags = { vm.setTags(source.type, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, it) },
                         onTest = { if (unlocked) vm.testSource(source) },
                     )
                 }
@@ -216,12 +223,17 @@ private fun SourceCard(
     onToggle: (Boolean) -> Unit,
     onSaveCredentials: (String, String) -> Unit,
     onSaveTags: (String) -> Unit,
+    onSaveWallhavenPurity: (String) -> Unit = {},
     onTest: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
     var apiUser by remember(source) { mutableStateOf(source.apiUser) }
     var tags by remember(source) { mutableStateOf(source.tags) }
+    // Wallhaven purity bitmask: index 0=SFW, 1=Sketchy, 2=NSFW
+    var puritySfw by remember(source) { mutableStateOf(source.wallhavenPurity.getOrElse(0) { '1' } == '1') }
+    var puritySketchy by remember(source) { mutableStateOf(source.wallhavenPurity.getOrElse(1) { '1' } == '1') }
+    var purityNsfw by remember(source) { mutableStateOf(source.wallhavenPurity.getOrElse(2) { '0' } == '1') }
     var showKey by remember { mutableStateOf(false) }
     var showHealthDetail by remember { mutableStateOf(false) }
 
@@ -379,11 +391,37 @@ private fun SourceCard(
                         }
                     )
                 }
-                // (Purity is fully controlled by the global NSFW toggle)
+                // Wallhaven-specific purity picker
+                if (source.type == SourceType.WALLHAVEN) {
+                    Text("Content purity", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = puritySfw, onCheckedChange = { puritySfw = it })
+                            Text("SFW", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = puritySketchy, onCheckedChange = { puritySketchy = it })
+                            Text("Sketchy", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = purityNsfw, onCheckedChange = { purityNsfw = it })
+                            Text("NSFW", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Text(
+                        "NSFW requires a Wallhaven API key. The global NSFW toggle can override this.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     FilledTonalButton(onClick = {
                         onSaveTags(tags.trim())
                         onSaveCredentials(apiKey, apiUser)
+                        if (source.type == SourceType.WALLHAVEN) {
+                            val p = "${if (puritySfw) '1' else '0'}${if (puritySketchy) '1' else '0'}${if (purityNsfw) '1' else '0'}"
+                            onSaveWallhavenPurity(if (p == "000") "100" else p)
+                        }
                         expanded = false
                     }) {
                         Text("Save")

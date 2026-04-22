@@ -31,6 +31,7 @@ class RotatoPreferences(private val context: Context) {
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
+        val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -122,6 +123,15 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setGlobalBlacklist(tags: Set<String>) {
         context.dataStore.edit { it[GLOBAL_BLACKLIST] = tags.joinToString(",") }
+    }
+
+    /** Number of items to fetch per scroll-load on the Discover screen. Default 20. */
+    val discoverBatchSize: Flow<Int> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[DISCOVER_BATCH_SIZE] ?: 20 }
+
+    suspend fun setDiscoverBatchSize(size: Int) {
+        context.dataStore.edit { it[DISCOVER_BATCH_SIZE] = size }
     }
 
     // null = DataStore hasn't emitted yet (initialValue in collectAsStateWithLifecycle)

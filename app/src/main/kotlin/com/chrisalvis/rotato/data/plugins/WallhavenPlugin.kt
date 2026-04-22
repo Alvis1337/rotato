@@ -18,8 +18,7 @@ object WallhavenPlugin : SourcePlugin() {
     override val safeContent = true
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
-        // Purity is fully controlled by the global NSFW toggle: NSFW on → "001", off → "100"
-        val purity = if (nsfw) "001" else "100"
+        val purity = effectivePurity(source.wallhavenPurity, nsfw)
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
         if (filters.minResolution != MinResolution.ANY)
             urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
@@ -49,7 +48,7 @@ object WallhavenPlugin : SourcePlugin() {
     }
 
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
-        val purity = if (nsfw) "001" else "100"
+        val purity = effectivePurity(source.wallhavenPurity, nsfw)
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
         if (filters.minResolution != MinResolution.ANY)
             urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
@@ -76,5 +75,17 @@ object WallhavenPlugin : SourcePlugin() {
                 tags = tags.take(12)
             )
         }
+    }
+
+    /**
+     * Computes the effective Wallhaven purity string from the source's stored preference,
+     * masking off the NSFW bit when the global NSFW toggle is off.
+     * Format: 3-char "SFW Sketchy NSFW" e.g. "110" = SFW+Sketchy, "001" = NSFW only.
+     * Falls back to "100" (SFW only) if all bits end up zero.
+     */
+    private fun effectivePurity(stored: String, nsfw: Boolean): String {
+        val s = stored.takeIf { it.length == 3 } ?: "110"
+        val effective = if (!nsfw) "${s[0]}${s[1]}0" else s
+        return if (effective == "000") "100" else effective
     }
 }
