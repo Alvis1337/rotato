@@ -30,6 +30,7 @@ class RotatoPreferences(private val context: Context) {
         val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
+        val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -109,6 +110,18 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setAspectRatio(value: AspectRatio) {
         context.dataStore.edit { it[ASPECT_RATIO] = value.name }
+    }
+
+    /** Comma-separated list of globally blacklisted tags. */
+    val globalBlacklist: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val raw = prefs[GLOBAL_BLACKLIST] ?: ""
+            if (raw.isBlank()) emptySet() else raw.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        }
+
+    suspend fun setGlobalBlacklist(tags: Set<String>) {
+        context.dataStore.edit { it[GLOBAL_BLACKLIST] = tags.joinToString(",") }
     }
 
     // null = DataStore hasn't emitted yet (initialValue in collectAsStateWithLifecycle)

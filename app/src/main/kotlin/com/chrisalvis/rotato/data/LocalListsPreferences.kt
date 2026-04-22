@@ -39,6 +39,16 @@ class LocalListsPreferences(private val context: Context) {
         return list
     }
 
+    suspend fun createListWithId(list: LocalList) {
+        context.dataStore.edit { prefs ->
+            val current = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
+            if (current.none { it.id == list.id }) {
+                current.add(list)
+                prefs[LISTS_KEY] = serializeLists(current)
+            }
+        }
+    }
+
     suspend fun deleteList(id: String) {
         context.dataStore.edit { prefs ->
             prefs[LISTS_KEY] = serializeLists(parseLists(prefs[LISTS_KEY] ?: "[]").filter { it.id != id })
@@ -85,8 +95,7 @@ class LocalListsPreferences(private val context: Context) {
         return added
     }
 
-    suspend fun addLocalImage(listId: String, relativePath: String) {
-        val uuid = relativePath.substringAfterLast("/").substringBeforeLast(".")
+    suspend fun addLocalImage(listId: String, relativePath: String) {        val uuid = relativePath.substringAfterLast("/").substringBeforeLast(".")
         context.dataStore.edit { prefs ->
             val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
             if (current.any { it.listId == listId && it.sourceId == uuid }) return@edit
@@ -100,6 +109,14 @@ class LocalListsPreferences(private val context: Context) {
                 pageUrl = "",
                 tags = emptyList()
             )
+            prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
+        }
+    }
+
+    suspend fun addWallpaperEntry(entry: LocalWallpaperEntry) {
+        context.dataStore.edit { prefs ->
+            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
+            if (current.any { it.id == entry.id }) return@edit
             prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
         }
     }

@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Rotato</string>
+    <string name="widget_description">Shows your current wallpaper and a Next button.</string>
 </resources>

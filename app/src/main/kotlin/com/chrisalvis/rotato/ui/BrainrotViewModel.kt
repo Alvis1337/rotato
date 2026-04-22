@@ -93,6 +93,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val brainrotFilters: StateFlow<BrainrotFilters> = prefs.brainrotFilters
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrainrotFilters())
 
+    val globalBlacklist: StateFlow<Set<String>> = prefs.globalBlacklist
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     val enabledLocalSources: StateFlow<List<LocalSource>> = localSources.sources
         .map { it.filter { s -> s.enabled } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -172,6 +175,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>().applicationContext
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
+            val blacklist = prefs.globalBlacklist.first()
             val explicitQuery = _searchQuery.value
             val malTitles: List<String> =
                 if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
@@ -214,6 +218,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val wp = drainOne(sourcesWithQueries) ?: break  // null = all caches empty
                 val key = "${wp.source}:${wp.id}"
                 if (key in displayedKeys) { if (++dupStreak >= 30) break; continue }
+                if (blacklist.isNotEmpty() && wp.tags.any { it.lowercase() in blacklist }) { dupStreak = 0; continue }
                 dupStreak = 0
                 displayedKeys.add(key)
                 val url = wp.sampleUrl.ifBlank { wp.fullUrl }
@@ -345,6 +350,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setAspectRatio(value: AspectRatio) {
         viewModelScope.launch {
             prefs.setAspectRatio(value)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setGlobalBlacklist(tags: Set<String>) {
+        viewModelScope.launch {
+            prefs.setGlobalBlacklist(tags)
             loadMore(reset = true)
         }
     }

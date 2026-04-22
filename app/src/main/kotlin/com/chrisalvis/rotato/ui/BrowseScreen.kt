@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
@@ -57,6 +58,27 @@ fun BrowseScreen() {
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
+
+    // Keep in-rotation badges in sync with actual filesystem state
+    LaunchedEffect(Unit) { vm.refreshInRotation() }
+
+    var showMoveDialog by remember { mutableStateOf(false) }
+    var showSaveRotationDialog by remember { mutableStateOf(false) }
+
+    if (showSaveRotationDialog) {
+        SaveRotationDialog(
+            onConfirm = { name -> vm.importFromRotation(name); showSaveRotationDialog = false },
+            onDismiss = { showSaveRotationDialog = false },
+        )
+    }
+
+    if (showMoveDialog && selectedList != null) {
+        MoveWallpapersDialog(
+            lists = lists.filter { it.id != selectedList!!.id },
+            onConfirm = { vm.moveSelectedToList(it); showMoveDialog = false },
+            onDismiss = { showMoveDialog = false },
+        )
+    }
 
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
@@ -111,6 +133,9 @@ fun BrowseScreen() {
                         IconButton(onClick = { vm.downloadSelected() }) {
                             Icon(Icons.Default.Download, contentDescription = "Download selected to gallery")
                         }
+                        IconButton(onClick = { showMoveDialog = true }) {
+                            Icon(Icons.Default.DriveFileMove, contentDescription = "Move to another collection")
+                        }
                     }
                     if (!selectionMode && selectedList != null) {
                         IconButton(onClick = {
@@ -126,6 +151,9 @@ fun BrowseScreen() {
                         }
                     }
                     if (!selectionMode && selectedList == null) {
+                        IconButton(onClick = { showSaveRotationDialog = true }) {
+                            Icon(Icons.Outlined.Wallpaper, contentDescription = "Save rotation as collection")
+                        }
                         IconButton(onClick = { vm.showCreateDialog() }) {
                             Icon(Icons.Default.Add, contentDescription = "New collection")
                         }
@@ -504,4 +532,60 @@ private fun WallpaperThumbnail(
             }
         }
     }
+}
+
+@Composable
+private fun SaveRotationDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("Rotation ${java.time.LocalDate.now()}") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save Rotation as Collection") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Collection name") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text.trim()) }, enabled = text.isNotBlank()) {
+                Text("Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun MoveWallpapersDialog(
+    lists: List<LocalList>,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (lists.isEmpty()) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Move") },
+            text = { Text("No other collections to move to.") },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        )
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move to collection") },
+        text = {
+            Column {
+                lists.forEach { list ->
+                    TextButton(
+                        onClick = { onConfirm(list.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(list.name) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

@@ -20,6 +20,7 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
@@ -368,6 +369,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val malUsername = malPrefs.username.first()
                 val malStatuses = malPrefs.filterStatuses.first()
                 val malMinScore = malPrefs.filterMinScore.first()
+                val collectionLists = localLists.lists.first()
+                val collectionWallpapers = localLists.allWallpapers.first()
 
                 val sourcesArr = JSONArray().also { arr ->
                     sources.forEach { s ->
@@ -381,8 +384,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         })
                     }
                 }
+                val listsArr = JSONArray().also { arr ->
+                    collectionLists.forEach { l ->
+                        arr.put(JSONObject().apply {
+                            put("id", l.id)
+                            put("name", l.name)
+                            put("createdAt", l.createdAt)
+                            put("useAsRotation", l.useAsRotation)
+                        })
+                    }
+                }
+                val wallpapersArr = JSONArray().also { arr ->
+                    collectionWallpapers.filter { it.source != "device" }.forEach { e ->
+                        arr.put(JSONObject().apply {
+                            put("id", e.id)
+                            put("listId", e.listId)
+                            put("sourceId", e.sourceId)
+                            put("source", e.source)
+                            put("thumbUrl", e.thumbUrl)
+                            put("fullUrl", e.fullUrl)
+                            put("resolution", e.resolution)
+                            put("pageUrl", e.pageUrl)
+                            put("tags", JSONArray(e.tags))
+                            put("addedAt", e.addedAt)
+                        })
+                    }
+                }
                 val json = JSONObject().apply {
-                    put("version", 1)
+                    put("version", 2)
                     put("sources", sourcesArr)
                     put("preferences", JSONObject().apply {
                         put("intervalMinutes", prefs.intervalMinutes)
@@ -397,6 +426,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         put("filterStatuses", JSONArray(malStatuses.toList()))
                         put("filterMinScore", malMinScore)
                     })
+                    put("collections", listsArr)
+                    put("collectionWallpapers", wallpapersArr)
                 }
                 getApplication<Application>().contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(json.toString(2).toByteArray(Charsets.UTF_8))
@@ -459,6 +490,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         malPrefs.setFilterStatuses(statuses)
                     }
                     malPrefs.setFilterMinScore(malObj.optInt("filterMinScore", 0))
+                }
+
+                // Restore collections (v2+)
+                val collectionsArr = json.optJSONArray("collections")
+                if (collectionsArr != null) {
+                    val existingIds = localLists.lists.first().map { it.id }.toSet()
+                    for (i in 0 until collectionsArr.length()) {
+                        val o = collectionsArr.getJSONObject(i)
+                        val id = o.optString("id") ?: continue
+                        if (id !in existingIds) {
+                            val list = LocalList(
+                                id = id,
+                                name = o.optString("name", "Imported"),
+                                createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+                                useAsRotation = o.optBoolean("useAsRotation", false),
+                            )
+                            localLists.createListWithId(list)
+                        }
+                    }
+                }
+                val wallpapersArr = json.optJSONArray("collectionWallpapers")
+                if (wallpapersArr != null) {
+                    val existing = localLists.allWallpapers.first().map { it.id }.toSet()
+                    for (i in 0 until wallpapersArr.length()) {
+                        val o = wallpapersArr.getJSONObject(i)
+                        val id = o.optString("id") ?: continue
+                        if (id in existing) continue
+                        val tagsArr = o.optJSONArray("tags")
+                        val entry = LocalWallpaperEntry(
+                            id = id,
+                            listId = o.optString("listId", ""),
+                            sourceId = o.optString("sourceId", ""),
+                            source = o.optString("source", ""),
+                            thumbUrl = o.optString("thumbUrl", ""),
+                            fullUrl = o.optString("fullUrl", ""),
+                            resolution = o.optString("resolution", ""),
+                            pageUrl = o.optString("pageUrl", ""),
+                            tags = if (tagsArr != null) (0 until tagsArr.length()).map { tagsArr.getString(it) } else emptyList(),
+                            addedAt = o.optLong("addedAt", System.currentTimeMillis()),
+                        )
+                        if (entry.listId.isNotBlank() && entry.sourceId.isNotBlank()) {
+                            localLists.addWallpaperEntry(entry)
+                        }
+                    }
                 }
 
                 _backupState.update { BackupState.SUCCESS }

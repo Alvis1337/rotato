@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:name=".RotatoApp"
@@ -47,8 +48,26 @@
         </receiver>
 
         <receiver
+            android:name=".worker.ScheduleReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".worker.SkipWallpaperReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".worker.RotatoWidgetProvider"
+            android:exported="true"
+            android:label="Rotato Widget">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.chrisalvis.rotato.WIDGET_NEXT" />
+                <action android:name="com.chrisalvis.rotato.WIDGET_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/rotato_widget_info" />
+        </receiver>
 
         <service
             android:name=".worker.RotationTileService"

@@ -87,6 +87,7 @@ fun BrainrotScreen(
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
+    val globalBlacklist by vm.globalBlacklist.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
 
@@ -178,12 +179,14 @@ fun BrainrotScreen(
             DiscoverSettingsSheetContent(
                 nsfwMode = nsfwMode,
                 filters = brainrotFilters,
+                globalBlacklist = globalBlacklist,
                 lists = lists,
                 selectedListId = selectedListId,
                 onSelectList = { vm.setSelectedList(it) },
                 onSetNsfwMode = { vm.setNsfwMode(it) },
                 onSetMinResolution = { vm.setMinResolution(it) },
                 onSetAspectRatio = { vm.setAspectRatio(it) },
+                onSetGlobalBlacklist = { vm.setGlobalBlacklist(it) },
                 onDismiss = { showSettings = false }
             )
         }
@@ -807,16 +810,19 @@ private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss:
 private fun DiscoverSettingsSheetContent(
     nsfwMode: Boolean,
     filters: BrainrotFilters,
+    globalBlacklist: Set<String>,
     lists: List<LocalList>,
     selectedListId: String?,
     onSelectList: (String) -> Unit,
     onSetNsfwMode: (Boolean) -> Unit,
     onSetMinResolution: (MinResolution) -> Unit,
     onSetAspectRatio: (AspectRatio) -> Unit,
+    onSetGlobalBlacklist: (Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var listExpanded by remember { mutableStateOf(false) }
     var resExpanded by remember { mutableStateOf(false) }
+    var blacklistText by remember(globalBlacklist) { mutableStateOf(globalBlacklist.joinToString(", ")) }
 
     Column(
         modifier = Modifier
@@ -898,7 +904,31 @@ private fun DiscoverSettingsSheetContent(
             }
         }
 
-        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Tag blacklist", style = MaterialTheme.typography.labelMedium)
+            OutlinedTextField(
+                value = blacklistText,
+                onValueChange = { blacklistText = it },
+                label = { Text("Comma-separated tags") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+                maxLines = 3,
+            )
+            Text(
+                "Wallpapers containing any of these tags will be hidden.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+
+        TextButton(
+            onClick = {
+                val tags = blacklistText.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+                onSetGlobalBlacklist(tags)
+                onDismiss()
+            },
+            modifier = Modifier.align(Alignment.End),
+        ) {
             Text("Done")
         }
     }

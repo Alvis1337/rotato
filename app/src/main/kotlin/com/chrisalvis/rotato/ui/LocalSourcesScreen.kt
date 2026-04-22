@@ -24,22 +24,33 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
+import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealth
 import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
+import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = LocalSourcesPreferences(app)
+    private val rotaPrefs = RotatoPreferences(app)
 
     val sources: StateFlow<List<LocalSource>> = prefs.sources
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val health = SourceHealthTracker.health
+
+    private val _testingSource = MutableStateFlow<SourceType?>(null)
+    val testingSource: StateFlow<SourceType?> = _testingSource.asStateFlow()
 
     fun setEnabled(type: SourceType, enabled: Boolean) {
         viewModelScope.launch { prefs.update(type, enabled = enabled) }
@@ -53,6 +64,23 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefs.update(type, tags = tags) }
     }
 
+    fun testSource(source: LocalSource) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _testingSource.update { source.type }
+            try {
+                val plugin = SourcePluginRegistry.forType(source.type) ?: error("No plugin")
+                val nsfw = rotaPrefs.nsfwMode.first()
+                val results = plugin.fetch(source, emptyList(), nsfw)
+                if (results.isEmpty()) throw Exception("No results returned")
+                SourceHealthTracker.recordSuccess(source.type)
+            } catch (e: Exception) {
+                SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
+            } finally {
+                _testingSource.update { null }
+            }
+        }
+    }
+
     fun disableAllSources() {
         viewModelScope.launch { prefs.disableAll() }
     }
@@ -64,6 +92,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val vm: LocalSourcesViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val healthMap by vm.health.collectAsStateWithLifecycle()
+    val testingSource by vm.testingSource.collectAsStateWithLifecycle()
 
     var showDisableAllConfirm by remember { mutableStateOf(false) }
     if (showDisableAllConfirm) {
@@ -124,9 +153,11 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     SourceCard(
                         source = source,
                         health = healthMap[source.type],
+                        isTesting = testingSource == source.type,
                         onToggle = { vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
-                        onSaveTags = { vm.setTags(source.type, it) }
+                        onSaveTags = { vm.setTags(source.type, it) },
+                        onTest = { vm.testSource(source) },
                     )
                 }
             }
@@ -148,9 +179,11 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         health = healthMap[source.type],
                         isPremium = true,
                         isLocked = !unlocked,
+                        isTesting = testingSource == source.type,
                         onToggle = { if (unlocked) vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
-                        onSaveTags = { vm.setTags(source.type, it) }
+                        onSaveTags = { vm.setTags(source.type, it) },
+                        onTest = { if (unlocked) vm.testSource(source) },
                     )
                 }
             }
@@ -178,9 +211,11 @@ private fun SourceCard(
     health: SourceHealth? = null,
     isPremium: Boolean = false,
     isLocked: Boolean = false,
+    isTesting: Boolean = false,
     onToggle: (Boolean) -> Unit,
     onSaveCredentials: (String, String) -> Unit,
-    onSaveTags: (String) -> Unit
+    onSaveTags: (String) -> Unit,
+    onTest: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
@@ -285,6 +320,13 @@ private fun SourceCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!isLocked) {
+                        if (source.enabled) {
+                            if (isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                TextButton(onClick = onTest) { Text("Test") }
+                            }
+                        }
                         TextButton(onClick = { expanded = !expanded }) {
                             Text(if (expanded) "Close" else "Configure")
                         }

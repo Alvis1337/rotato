@@ -33,6 +33,7 @@ import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
 import com.chrisalvis.rotato.ui.MalViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
+import com.chrisalvis.rotato.ui.ScheduleScreen
 import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 
@@ -173,11 +174,15 @@ class MainActivity : ComponentActivity() {
                                 viewModel = homeViewModel,
                                 malViewModel = malViewModel,
                                 onNavigateBack = { navController.popBackStack() },
-                                onNavigateToSources = { navController.navigate("sources") }
+                                onNavigateToSources = { navController.navigate("sources") },
+                                onNavigateToSchedule = { navController.navigate("schedule") },
                             )
                         }
                         composable("sources") {
                             LocalSourcesScreen(onNavigateBack = { navController.popBackStack() })
+                        }
+                        composable("schedule") {
+                            ScheduleScreen(onNavigateBack = { navController.popBackStack() })
                         }
                         composable("browse") {
                             BrowseScreen()

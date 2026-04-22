@@ -79,6 +79,9 @@ class WallpaperWorker(
             postWallpaperSetNotification(bitmap)
             bitmap.recycle()
 
+            // Refresh the home screen widget
+            RotatoWidgetProvider.refreshAll(applicationContext)
+
             // Warn if pool is running low
             if (images.size in 1..4) {
                 postLowQueueNotification(images.size)

@@ -12,7 +12,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.workDataOf
 import androidx.work.WorkManager
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.ui.HomeViewModel
+import com.chrisalvis.rotato.worker.ScheduleManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -56,6 +58,10 @@ class BootReceiver : BroadcastReceiver() {
                 wm.cancelUniqueWork(WallpaperWorker.CHAIN_WORK_NAME)
                 wm.enqueueUniquePeriodicWork(HomeViewModel.WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
             }
+
+            // Reschedule any active schedule alarms
+            val schedEntries = SchedulePreferences(context).entries.first()
+            ScheduleManager.scheduleAll(context, schedEntries)
         }
     }
 }

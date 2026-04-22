@@ -234,6 +234,31 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun importFromRotation(listName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = localLists.createList(listName)
+            val files = imageDir.listFiles() ?: return@launch
+            files.sortedBy { it.name }.forEach { file ->
+                val relativePath = "rotato_images/${file.name}"
+                localLists.addWallpaperEntry(
+                    com.chrisalvis.rotato.data.LocalWallpaperEntry(
+                        listId = list.id,
+                        sourceId = file.nameWithoutExtension,
+                        source = "device",
+                        thumbUrl = file.toURI().toString(),
+                        fullUrl = file.toURI().toString(),
+                        resolution = "",
+                        pageUrl = "",
+                        tags = emptyList(),
+                    )
+                )
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(app, "Saved ${files.size} images to \"$listName\"", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     fun addLocalImages(listId: String, uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -289,6 +314,20 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) {
             Log.e("BrowseViewModel", "copyLocalToRotation failed: $fullUrl", e)
             false
+        }
+    }
+
+    fun moveSelectedToList(targetListId: String) {
+        val currentListId = _selectedList.value?.id ?: return
+        if (targetListId == currentListId) { exitSelectionMode(); return }
+        val selectedIds = _selected.value
+        viewModelScope.launch {
+            val all = localLists.allWallpapers.first()
+            all.filter { it.listId == currentListId && it.id in selectedIds }.forEach { entry ->
+                localLists.removeWallpaper(entry.id)
+                localLists.addWallpaperEntry(entry.copy(listId = targetListId))
+            }
+            exitSelectionMode()
         }
     }
 

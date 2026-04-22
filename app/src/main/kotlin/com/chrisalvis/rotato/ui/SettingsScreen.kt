@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,7 +64,8 @@ fun SettingsScreen(
     viewModel: HomeViewModel,
     malViewModel: MalViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToSources: () -> Unit = {}
+    onNavigateToSources: () -> Unit = {},
+    onNavigateToSchedule: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val malLoggedIn by malViewModel.isLoggedIn.collectAsStateWithLifecycle()
@@ -195,6 +197,19 @@ fun SettingsScreen(
                     Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Manage Sources")
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Schedule") {
+                FilledTonalButton(
+                    onClick = onNavigateToSchedule,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Manage Schedule")
                 }
             }
 
