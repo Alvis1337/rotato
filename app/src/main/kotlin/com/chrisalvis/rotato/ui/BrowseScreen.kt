@@ -96,6 +96,20 @@ fun BrowseScreen() {
     BackHandler(enabled = selectionMode) { vm.exitSelectionMode() }
     BackHandler(enabled = !selectionMode && selectedList != null) { vm.clearSelection() }
 
+    var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
+
+    showActionsFor?.let { wp ->
+        WallpaperActionsDialog(
+            wallpaper = wp,
+            isInRotation = vm.isInRotation(wp),
+            isDeviceImage = wp.source == "device",
+            onToggleRotation = { vm.toggleRotation(wp); showActionsFor = null },
+            onSaveToGallery = { vm.saveWallpaper(wp); showActionsFor = null },
+            onShare = { showActionsFor = null },
+            onDismiss = { showActionsFor = null }
+        )
+    }
+
     if (showCreateDialog) {
         CreateListDialog(
             onConfirm = { vm.createList(it) },
@@ -186,8 +200,7 @@ fun BrowseScreen() {
                 selected = selected,
                 onTap = { wp ->
                     if (selectionMode) vm.toggleSelection(wp)
-                    else if (!downloading.contains(wp.sourceId))
-                        vm.toggleRotation(wp)
+                    else showActionsFor = wp
                 },
                 onLongPress = { wp -> vm.enterSelectionMode(wp) },
                 onRemove = { wp -> if (wp.entryId.isNotBlank()) vm.removeWallpaper(wp.entryId) },
@@ -195,6 +208,58 @@ fun BrowseScreen() {
             )
         }
     }
+}
+
+private fun shareWallpaper(context: android.content.Context, wallpaper: BrowseWallpaper) {
+    val text = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(android.content.Intent.createChooser(intent, "Share wallpaper"))
+}
+
+@Composable
+private fun WallpaperActionsDialog(
+    wallpaper: BrowseWallpaper,
+    isInRotation: Boolean,
+    isDeviceImage: Boolean,
+    onToggleRotation: () -> Unit,
+    onSaveToGallery: () -> Unit,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Wallpaper options") },
+        text = {
+            Column {
+                TextButton(
+                    onClick = onToggleRotation,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isInRotation) "Remove from rotation" else "Add to rotation")
+                }
+                if (!isDeviceImage) {
+                    TextButton(
+                        onClick = onSaveToGallery,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Save to gallery")
+                    }
+                }
+                TextButton(
+                    onClick = { shareWallpaper(context, wallpaper); onShare() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Share")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

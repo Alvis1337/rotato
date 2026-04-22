@@ -210,10 +210,12 @@ fun BrainrotScreen(
                     selectedListName = lists.find { it.id == selectedListId }?.name,
                     searchQuery = searchQuery,
                     isDownloading = downloadingIds.contains(wp.id),
+                    isSavingToGallery = downloadingIds.contains("gallery:${wp.id}"),
                     onToggleInfo = { /* handled internally */ },
                     onSkip = { vm.skip(wp) },
                     onAddToList = { onAddToList(wp) },
                     onDownloadToRotation = { vm.downloadToRotation(wp) },
+                    onSaveToGallery = { vm.saveToGallery(wp) },
                     onImageTap = { showZoom = true },
                     onShare = {
                         val url = wp.pageUrl.ifBlank { wp.fullUrl }
@@ -318,6 +320,8 @@ fun BrainrotScreen(
                 } // end PullToRefreshBox
 
                 // Bottom action bar: search + settings FAB row
+                val coroutineScopeGrid = rememberCoroutineScope()
+                val showScrollTop by remember { derivedStateOf { gridState.firstVisibleItemIndex > 5 } }
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -327,6 +331,15 @@ fun BrainrotScreen(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (showScrollTop) {
+                        SmallFloatingActionButton(
+                            onClick = { coroutineScopeGrid.launch { gridState.scrollToItem(0) } },
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
                     if (searchQuery.isNotBlank()) {
                         AssistChip(
                             onClick = { showSearch = true },
@@ -438,10 +451,12 @@ private fun FullScreenSwipeCard(
     selectedListName: String?,
     searchQuery: String,
     isDownloading: Boolean,
+    isSavingToGallery: Boolean = false,
     onToggleInfo: () -> Unit,
     onSkip: () -> Unit,
     onAddToList: () -> Unit,
     onDownloadToRotation: () -> Unit,
+    onSaveToGallery: () -> Unit = {},
     onImageTap: () -> Unit,
     onShare: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -707,6 +722,19 @@ private fun FullScreenSwipeCard(
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                     } else {
                         Icon(Icons.Default.Download, contentDescription = "Add to rotation", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                OutlinedIconButton(
+                    onClick = onSaveToGallery,
+                    enabled = !isSavingToGallery,
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    if (isSavingToGallery) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                    } else {
+                        Icon(Icons.Default.SaveAlt, contentDescription = "Save to gallery", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
 

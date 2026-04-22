@@ -213,13 +213,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
             // Step 2: drain from caches — purely in-memory, no network
             val newItems = mutableListOf<BrainrotWallpaper>()
-            var dupStreak = 0
+            var totalSkipped = 0
             while (newItems.size < target) {
                 val wp = drainOne(sourcesWithQueries) ?: break  // null = all caches empty
                 val key = "${wp.source}:${wp.id}"
-                if (key in displayedKeys) { if (++dupStreak >= 30) break; continue }
-                if (blacklist.isNotEmpty() && wp.tags.any { it.lowercase() in blacklist }) { dupStreak = 0; continue }
-                dupStreak = 0
+                if (key in displayedKeys) { if (++totalSkipped >= 200) break; continue }
+                if (blacklist.isNotEmpty() && wp.tags.any { it.lowercase() in blacklist }) { totalSkipped++; continue }
+                totalSkipped = 0
                 displayedKeys.add(key)
                 val url = wp.sampleUrl.ifBlank { wp.fullUrl }
                 if (url.isNotBlank()) {
@@ -231,8 +231,15 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             if (newItems.isEmpty()) {
-                if (_gridItems.value.isEmpty()) _noResults.update { true }
-                _endReached.update { true }
+                if (_gridItems.value.isEmpty()) {
+                    _noResults.update { true }
+                    _endReached.update { true }
+                } else {
+                    // Grid has content but this page was exhausted — clear cache so next
+                    // scroll fetch pulls a fresh page rather than declaring end of results.
+                    pageCache.clear()
+                    _endReached.update { false }
+                }
             } else {
                 _gridItems.update { it + newItems }  // single batch update → one recomposition
             }
@@ -388,6 +395,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 prefs.setHistoryJson(history.take(50).toJson())
             }
             Toast.makeText(ctx, if (ok) "Added to rotation" else "Download failed", Toast.LENGTH_SHORT).show()
+            _downloadingIds.update { it - key }
+        }
+    }
+
+    fun saveToGallery(wp: BrainrotWallpaper) {
+        val key = "gallery:${wp.id}"
+        if (_downloadingIds.value.contains(key)) return
+        viewModelScope.launch {
+            _downloadingIds.update { it + key }
+            val ctx = getApplication<Application>().applicationContext
+            val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+            val ok = feedRepo.saveToGallery(ctx, sourceId, wp.fullUrl)
+            Toast.makeText(ctx, if (ok) "Saved to Pictures/Rotato" else "Save failed", Toast.LENGTH_SHORT).show()
             _downloadingIds.update { it - key }
         }
     }
