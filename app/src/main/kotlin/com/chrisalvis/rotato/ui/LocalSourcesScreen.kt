@@ -22,6 +22,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
@@ -70,9 +71,9 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val plugin = SourcePluginRegistry.forType(source.type) ?: error("No plugin")
                 val nsfw = rotaPrefs.nsfwMode.first()
-                val results = plugin.fetch(source, emptyList(), nsfw)
-                if (results.isEmpty()) throw Exception("No results returned")
-                SourceHealthTracker.recordSuccess(source.type)
+                val results = plugin.fetch(source, "", emptyList(), nsfw, BrainrotFilters())
+                if (results != null) SourceHealthTracker.recordSuccess(source.type)
+                else throw Exception("No results returned")
             } catch (e: Exception) {
                 SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
             } finally {
