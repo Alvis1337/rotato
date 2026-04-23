@@ -456,7 +456,7 @@ private fun DiscoverGridItem(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(6.dp)
-                .background(dominantColor.copy(alpha = 0.88f), MaterialTheme.shapes.small)
+                .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
             Text(
