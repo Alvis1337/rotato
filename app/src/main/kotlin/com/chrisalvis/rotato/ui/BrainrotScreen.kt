@@ -672,9 +672,10 @@ private fun WallpaperDetailOverlay(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Info button
                 OutlinedIconButton(
                     onClick = { showInfoExpanded = !showInfoExpanded },
                     modifier = Modifier.size(44.dp),
@@ -691,6 +692,18 @@ private fun WallpaperDetailOverlay(
                     )
                 }
 
+                // Main action - Bookmark (expanded)
+                FilledIconButton(
+                    onClick = onAddToList,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .weight(1f),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(28.dp))
+                }
+
+                // Download
                 OutlinedIconButton(
                     onClick = onDownloadToRotation,
                     enabled = !isDownloading,
@@ -700,18 +713,11 @@ private fun WallpaperDetailOverlay(
                     if (isDownloading) {
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     } else {
-                        Icon(Icons.Default.Download, contentDescription = "Add to rotation", tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Download, contentDescription = "Rotation", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
 
-                FilledIconButton(
-                    onClick = onAddToList,
-                    modifier = Modifier.size(68.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(32.dp))
-                }
-
+                // Save to gallery
                 OutlinedIconButton(
                     onClick = onSaveToGallery,
                     enabled = !isSavingToGallery,
@@ -721,24 +727,37 @@ private fun WallpaperDetailOverlay(
                     if (isSavingToGallery) {
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     } else {
-                        Icon(Icons.Default.SaveAlt, contentDescription = "Save to gallery", tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.SaveAlt, contentDescription = "Gallery", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
 
-                OutlinedIconButton(
-                    onClick = onShare,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
-                }
-
-                OutlinedIconButton(
-                    onClick = onReport,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Flag, contentDescription = "Report", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                // Share + Report in overflow menu
+                var showMore by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedIconButton(
+                        onClick = { showMore = !showMore },
+                        modifier = Modifier.size(44.dp),
+                        border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showMore,
+                        onDismissRequest = { showMore = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Share", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = { onShare(); showMore = false },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Report", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = { onReport(); showMore = false },
+                            leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) }
+                        )
+                    }
                 }
             }
 
