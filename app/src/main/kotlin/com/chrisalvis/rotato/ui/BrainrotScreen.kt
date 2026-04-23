@@ -594,6 +594,25 @@ private fun WallpaperDetailOverlay(
                     }
                 )
             }
+            .pointerInput(isDismissing, showZoom) {
+                if (isDismissing || showZoom) return@pointerInput
+                detectTapGestures(
+                    onDoubleTap = { showZoom = true },
+                    onLongPress = {
+                        val url = wallpaper.pageUrl.ifBlank { wallpaper.fullUrl }
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Wallpaper URL", url)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+            .pointerInput(isDismissing, showZoom) {
+                if (isDismissing || showZoom) return@pointerInput
+                detectTransformGestures { _, _, gestureZoom, _ ->
+                    if (gestureZoom > 1.1f) showZoom = true
+                }
+            }
     ) {
         // Black overlay that fades as user swipes (shows discover grid behind)
         Box(
