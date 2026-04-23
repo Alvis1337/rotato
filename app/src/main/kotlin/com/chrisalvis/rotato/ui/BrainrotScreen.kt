@@ -42,7 +42,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.drag
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.widget.Toast
@@ -606,6 +607,86 @@ private fun WallpaperDetailOverlay(
                 translationY = offsetY.value
                 alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
+            .pointerInput(isDismissing, showZoom) {
+                if (isDismissing || showZoom) return@pointerInput
+                // Use PointerEventPass.Initial so the outer Box intercepts drag events
+                // BEFORE children (AsyncImage's detectTapGestures) can consume them.
+                // Initial pass flows parent→child, giving parent priority over gestures.
+                awaitPointerEventScope {
+                    while (true) {
+                        // Wait for a fresh finger-down in the Initial pass
+                        var downChange = awaitPointerEvent(PointerEventPass.Initial)
+                            .changes.firstOrNull { it.changedToDown() }
+                        while (downChange == null) {
+                            downChange = awaitPointerEvent(PointerEventPass.Initial)
+                                .changes.firstOrNull { it.changedToDown() }
+                        }
+                        val startX = downChange.position.x
+                        var totalDy = 0f
+                        var dragConfirmed = false
+
+                        // Track movement: confirm vertical drag before children see it
+                        trackGesture@ while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == downChange.id }
+                            if (change == null || !change.pressed) break
+
+                            totalDy += change.positionChange().y
+                            val totalDx = kotlin.math.abs(change.position.x - startX)
+
+                            if (totalDy > viewConfiguration.touchSlop && totalDy > totalDx) {
+                                // Downward vertical drag confirmed — consume to cancel children
+                                change.consume()
+                                dragConfirmed = true
+                                coroutineScope.launch {
+                                    offsetY.snapTo(totalDy.coerceAtLeast(0f))
+                                }
+                                break@trackGesture
+                            }
+                            // Clearly horizontal or upward — not our gesture
+                            if (totalDx > kotlin.math.abs(totalDy) + viewConfiguration.touchSlop) {
+                                break@trackGesture
+                            }
+                        }
+
+                        if (dragConfirmed) {
+                            drag(downChange.id) { change ->
+                                val dy = change.positionChange().y
+                                if (dy > 0f || offsetY.value > 0f) {
+                                    change.consume()
+                                    coroutineScope.launch {
+                                        offsetY.snapTo((offsetY.value + dy).coerceAtLeast(0f))
+                                    }
+                                }
+                            }
+                            coroutineScope.launch {
+                                if (offsetY.value > 150f) {
+                                    isDismissing = true
+                                    offsetY.animateTo(
+                                        targetValue = 800f,
+                                        animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
+                                    )
+                                    onDismiss()
+                                } else {
+                                    offsetY.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        // Drain remaining events until all pointers are up
+                        while (true) {
+                            val evt = awaitPointerEvent(PointerEventPass.Final)
+                            if (evt.changes.all { !it.pressed }) break
+                        }
+                    }
+                }
+            }
     ) {
         // Black overlay that fades as user swipes (shows discover grid behind)
         Box(
@@ -640,38 +721,6 @@ private fun WallpaperDetailOverlay(
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = { _, _ -> tween(350) }
                     )
-                    .pointerInput(isDismissing, showZoom) {
-                        if (isDismissing || showZoom) return@pointerInput
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { _, dragAmount ->
-                                if (dragAmount > 0f || offsetY.value > 0f) {
-                                    coroutineScope.launch {
-                                        offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
-                                    }
-                                }
-                            },
-                            onDragEnd = {
-                                coroutineScope.launch {
-                                    if (offsetY.value > 150f) {
-                                        isDismissing = true
-                                        offsetY.animateTo(
-                                            targetValue = 800f,
-                                            animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
-                                        )
-                                        onDismiss()
-                                    } else {
-                                        offsetY.animateTo(
-                                            targetValue = 0f,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        )
-                    }
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onDoubleTap = { showZoom = true },
