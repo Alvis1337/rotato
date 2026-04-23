@@ -406,8 +406,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     pageUrl = wp.pageUrl
                 ))
                 prefs.setHistoryJson(history.take(50).toJson())
+                val rotationList = localLists.lists.first().firstOrNull { it.useAsRotation }
+                if (rotationList != null) localLists.addWallpaper(rotationList.id, wp)
+                val msg = if (rotationList != null) "Added to rotation · saved to \"${rotationList.name}\"" else "Added to rotation"
+                Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(ctx, "Download failed", Toast.LENGTH_SHORT).show()
             }
-            Toast.makeText(ctx, if (ok) "Added to rotation" else "Download failed", Toast.LENGTH_SHORT).show()
             _downloadingIds.update { it - key }
         }
     }

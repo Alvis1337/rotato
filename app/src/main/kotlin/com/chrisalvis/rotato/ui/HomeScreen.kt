@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Button
@@ -78,6 +79,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import coil.compose.AsyncImage
+import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoSettings
 import com.dragselectcompose.core.DragSelectState
 import com.dragselectcompose.core.gridDragSelect
@@ -95,6 +97,8 @@ fun HomeScreen(
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val setNowState by viewModel.setNowState.collectAsStateWithLifecycle()
     val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
+    val collections by viewModel.collections.collectAsStateWithLifecycle()
+    val linkedCollection = collections.firstOrNull { it.useAsRotation }
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
@@ -165,6 +169,7 @@ fun HomeScreen(
                     isLoading = isLoading,
                     setNowState = setNowState,
                     lastRotationMs = lastRotationMs,
+                    linkedCollection = linkedCollection,
                     dragSelectState = dragSelectState,
                     inSelectionMode = inSelectionMode,
                     onPhotoPick = {
@@ -187,6 +192,7 @@ private fun LibraryContent(
     isLoading: Boolean,
     setNowState: SetNowState,
     lastRotationMs: Long,
+    linkedCollection: LocalList?,
     dragSelectState: DragSelectState<File>,
     inSelectionMode: Boolean,
     onPhotoPick: () -> Unit
@@ -197,6 +203,7 @@ private fun LibraryContent(
             imageCount = images.size,
             intervalMinutes = settings.intervalMinutes,
             lastRotationMs = lastRotationMs,
+            linkedCollection = linkedCollection,
             onToggle = { viewModel.setRotationEnabled(!settings.isEnabled) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
@@ -299,6 +306,7 @@ private fun RotationStatusCard(
     imageCount: Int,
     intervalMinutes: Int,
     lastRotationMs: Long,
+    linkedCollection: LocalList?,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -339,6 +347,24 @@ private fun RotationStatusCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
+                }
+                if (linkedCollection != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.BookmarkBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Text(
+                            text = "Linked to \"${linkedCollection.name}\"",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             }
             Switch(
