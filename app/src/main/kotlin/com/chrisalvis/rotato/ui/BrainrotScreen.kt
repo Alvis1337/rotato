@@ -387,7 +387,7 @@ fun BrainrotScreen(
                                                 onExpandedChange = { expanded ->
                                                     if (!expanded) showSearch = false
                                                 },
-                                                placeholder = { Text("e.g. anime, landscape, 4k") },
+                                                placeholder = { Text("e.g. anime 1girl landscape") },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                                 trailingIcon = {
                                                     if (searchText.isNotEmpty()) {
@@ -403,7 +403,49 @@ fun BrainrotScreen(
                                             if (!expanded) showSearch = false
                                         },
                                         modifier = Modifier.align(Alignment.TopCenter)
-                                    ) {}
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                "Use spaces to combine tags (e.g. \"anime 1girl\"). Most sources support booru-style tag search.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            val activeTokens = searchQuery.split(" ").filter { it.isNotBlank() }
+                                            if (activeTokens.isNotEmpty()) {
+                                                Text(
+                                                    "Active filters — tap to remove:",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                FlowRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    activeTokens.forEach { token ->
+                                                        InputChip(
+                                                            selected = false,
+                                                            onClick = {
+                                                                val updated = activeTokens.filter { it != token }.joinToString(" ")
+                                                                searchText = updated
+                                                                vm.setSearchQuery(updated)
+                                                            },
+                                                            label = { Text(token, style = MaterialTheme.typography.labelSmall) },
+                                                            trailingIcon = {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    contentDescription = "Remove",
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         } else {
@@ -434,7 +476,9 @@ fun BrainrotScreen(
                                     showReportSheet = true
                                 },
                                 onTagSearch = { tag ->
-                                    vm.setSearchQuery(tag)
+                                    val current = searchQuery
+                                    val newQuery = if (current.isBlank()) tag else "$current $tag"
+                                    vm.setSearchQuery(newQuery)
                                     vm.selectItem(null)
                                 },
                                 onDismiss = { vm.selectItem(null) }
@@ -593,25 +637,6 @@ private fun WallpaperDetailOverlay(
                         }
                     }
                 )
-            }
-            .pointerInput(isDismissing, showZoom) {
-                if (isDismissing || showZoom) return@pointerInput
-                detectTapGestures(
-                    onDoubleTap = { showZoom = true },
-                    onLongPress = {
-                        val url = wallpaper.pageUrl.ifBlank { wallpaper.fullUrl }
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("Wallpaper URL", url)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-            .pointerInput(isDismissing, showZoom) {
-                if (isDismissing || showZoom) return@pointerInput
-                detectTransformGestures { _, _, gestureZoom, _ ->
-                    if (gestureZoom > 1.1f) showZoom = true
-                }
             }
     ) {
         // Black overlay that fades as user swipes (shows discover grid behind)
