@@ -63,19 +63,21 @@ class WallpaperWorker(
                 WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                 WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
             }
-            // Scale to fill the wallpaper canvas (not just screen pixels).
-            // desiredMinimumWidth/Height is what the launcher actually needs — it's often
-            // wider than the screen for parallax scrolling. Scaling to screen size and
-            // passing a screen-sized cropHint still lets Android zoom to fill the canvas.
             val metrics = applicationContext.resources.displayMetrics
-            val canvasW = wallpaperManager.desiredMinimumWidth.takeIf { it > 0 } ?: metrics.widthPixels
-            val canvasH = wallpaperManager.desiredMinimumHeight.takeIf { it > 0 } ?: metrics.heightPixels
+            val screenW = metrics.widthPixels
+            val screenH = metrics.heightPixels
+            // Scale to the wallpaper canvas (desiredMinimum) so Android has no reason to zoom.
+            // Then center the visibleCropHint at screen dimensions so the image is centered
+            // at rest and the launcher pans to the edges for parallax.
+            val canvasW = wallpaperManager.desiredMinimumWidth.takeIf { it > 0 } ?: screenW
+            val canvasH = wallpaperManager.desiredMinimumHeight.takeIf { it > 0 } ?: screenH
             val scale = maxOf(canvasW.toFloat() / bitmap.width, canvasH.toFloat() / bitmap.height)
             val scaledW = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
             val scaledH = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
             val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-            // Full-bitmap crop hint: the canvas is exactly what we gave it, no more zoom.
-            val cropHint = Rect(0, 0, scaledW, scaledH)
+            val cropX = ((scaledW - screenW) / 2).coerceAtLeast(0)
+            val cropY = ((scaledH - screenH) / 2).coerceAtLeast(0)
+            val cropHint = Rect(cropX, cropY, cropX + screenW.coerceAtMost(scaledW), cropY + screenH.coerceAtMost(scaledH))
             wallpaperManager.setBitmap(scaled, cropHint, true, flags)
 
             prefs.recordRotation()
