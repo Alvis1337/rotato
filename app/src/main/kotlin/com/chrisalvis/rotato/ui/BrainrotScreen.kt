@@ -500,17 +500,19 @@ private fun WallpaperDetailOverlay(
     var showZoom by remember { mutableStateOf(false) }
     var showInfoExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    var translationY by remember { mutableFloatStateOf(0f) }
-    val animTranslationY = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
+    
+    // Smooth swipe-to-dismiss with proper animation
+    val offsetY = remember { Animatable(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .graphicsLayer {
-                this.translationY = animTranslationY.value
-                this.alpha = (1f - (animTranslationY.value / 500f).coerceIn(0f, 1f))
+                translationY = offsetY.value
+                alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
     ) {
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
@@ -550,32 +552,35 @@ private fun WallpaperDetailOverlay(
             )
         }
 
-        // Vertical drag to dismiss
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onVerticalDrag = { _, dragAmount ->
-                            translationY += dragAmount
-                            coroutineScope.launch {
-                                animTranslationY.snapTo(translationY)
-                            }
-                        },
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                if (translationY > 120f) {
-                                    animTranslationY.animateTo(1000f, spring())
-                                    onDismiss()
-                                } else {
-                                    animTranslationY.animateTo(0f, spring())
-                                    translationY = 0f
+        // Swipe-down to dismiss
+        if (!isDismissing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { _, dragAmount ->
+                                if (offsetY.value >= 0f || dragAmount > 0f) {
+                                    coroutineScope.launch {
+                                        offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    if (offsetY.value > 150f) {
+                                        isDismissing = true
+                                        offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
+                                        onDismiss()
+                                    } else {
+                                        offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
+                                    }
                                 }
                             }
-                        }
-                    )
-                }
-        )
+                        )
+                    }
+            )
+        }
 
         // Top stats bar
         Box(
