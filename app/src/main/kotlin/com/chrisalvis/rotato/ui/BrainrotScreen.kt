@@ -693,7 +693,7 @@ private fun WallpaperDetailOverlay(
 
                 // Main action - Bookmark with list dropdown
                 var showBookmarkMenu by remember { mutableStateOf(false) }
-                Box {
+                Box(modifier = Modifier.weight(1f)) {
                     FilledIconButton(
                         onClick = { 
                             if (lists.isNotEmpty()) {
@@ -702,9 +702,7 @@ private fun WallpaperDetailOverlay(
                                 onAddToList(null)
                             }
                         },
-                        modifier = Modifier
-                            .size(56.dp)
-                            .weight(1f),
+                        modifier = Modifier.size(56.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(28.dp))
