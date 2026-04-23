@@ -263,7 +263,7 @@ fun BrainrotScreen(
                 else -> {
                     AnimatedContent(
                         targetState = selectedItem,
-                        transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+                        transitionSpec = { fadeIn(tween(0)) togetherWith fadeOut(tween(300)) },
                         label = "discover"
                     ) { selected ->
                         if (selected == null) {
@@ -569,6 +569,7 @@ private fun WallpaperDetailOverlay(
                                         if (offsetY.value > 150f) {
                                             isDismissing = true
                                             offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
+                                            // Call dismiss after animation completes so it transitions smoothly
                                             onDismiss()
                                         } else {
                                             offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
