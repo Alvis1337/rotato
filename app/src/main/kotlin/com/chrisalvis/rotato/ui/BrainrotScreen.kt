@@ -168,12 +168,13 @@ fun BrainrotScreen(
         )
     }
 
-    fun onAddToList(wp: BrainrotWallpaper) {
+    fun onAddToList(wp: BrainrotWallpaper, list: LocalList? = null) {
         when {
             lists.isEmpty() -> {
                 pendingAddWallpaper = wp
                 showCreateListDialog = true
             }
+            list != null -> vm.addToList(list.id, wp)
             else -> vm.addToList(selectedListId ?: lists.first().id, wp)
         }
     }
@@ -372,10 +373,11 @@ fun BrainrotScreen(
                                 sessionSaved = sessionSaved,
                                 sessionSkipped = sessionSkipped,
                                 selectedListName = lists.find { it.id == selectedListId }?.name,
+                                lists = lists,
                                 isDownloading = downloadingIds.contains(selected.id),
                                 isSavingToGallery = downloadingIds.contains("gallery:${selected.id}"),
                                 onSkip = { vm.skip(selected) },
-                                onAddToList = { onAddToList(selected) },
+                                onAddToList = { list -> onAddToList(selected, list) },
                                 onDownloadToRotation = { vm.downloadToRotation(selected) },
                                 onSaveToGallery = { vm.saveToGallery(selected) },
                                 onShare = {
@@ -486,10 +488,11 @@ private fun WallpaperDetailOverlay(
     sessionSaved: Int,
     sessionSkipped: Int,
     selectedListName: String?,
+    lists: List<LocalList>,
     isDownloading: Boolean,
     isSavingToGallery: Boolean,
     onSkip: () -> Unit,
-    onAddToList: () -> Unit,
+    onAddToList: (LocalList?) -> Unit,
     onDownloadToRotation: () -> Unit,
     onSaveToGallery: () -> Unit,
     onShare: () -> Unit,
@@ -538,6 +541,7 @@ private fun WallpaperDetailOverlay(
                         boundsTransform = { _, _ -> tween(350) }
                     )
                     .pointerInput(Unit) {
+                        // Combined handler: tap gestures + vertical drag
                         detectTapGestures(
                             onDoubleTap = { showZoom = true },
                             onLongPress = {
@@ -549,35 +553,30 @@ private fun WallpaperDetailOverlay(
                             }
                         )
                     }
-            )
-        }
-
-        // Swipe-down to dismiss
-        if (!isDismissing) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
                     .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { _, dragAmount ->
-                                if (offsetY.value >= 0f || dragAmount > 0f) {
+                        // Separate vertical drag handler
+                        if (!isDismissing) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { _, dragAmount ->
+                                    if (offsetY.value >= 0f || dragAmount > 0f) {
+                                        coroutineScope.launch {
+                                            offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
                                     coroutineScope.launch {
-                                        offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
+                                        if (offsetY.value > 150f) {
+                                            isDismissing = true
+                                            offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
+                                            onDismiss()
+                                        } else {
+                                            offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
+                                        }
                                     }
                                 }
-                            },
-                            onDragEnd = {
-                                coroutineScope.launch {
-                                    if (offsetY.value > 150f) {
-                                        isDismissing = true
-                                        offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
-                                        onDismiss()
-                                    } else {
-                                        offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
-                                    }
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
             )
         }
@@ -692,15 +691,46 @@ private fun WallpaperDetailOverlay(
                     )
                 }
 
-                // Main action - Bookmark (expanded)
-                FilledIconButton(
-                    onClick = onAddToList,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .weight(1f),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(28.dp))
+                // Main action - Bookmark with list dropdown
+                var showBookmarkMenu by remember { mutableStateOf(false) }
+                Box {
+                    FilledIconButton(
+                        onClick = { 
+                            if (lists.isNotEmpty()) {
+                                showBookmarkMenu = !showBookmarkMenu
+                            } else {
+                                onAddToList(null)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(56.dp)
+                            .weight(1f),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(28.dp))
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showBookmarkMenu,
+                        onDismissRequest = { showBookmarkMenu = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        if (lists.isEmpty()) {
+                            Text("  No lists yet  ", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        } else {
+                            lists.forEach { list ->
+                                DropdownMenuItem(
+                                    text = { Text(list.name, style = MaterialTheme.typography.bodyMedium) },
+                                    onClick = { onAddToList(list); showBookmarkMenu = false },
+                                    leadingIcon = { 
+                                        if (!list.isLocked) {
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // Download
