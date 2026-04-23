@@ -513,12 +513,17 @@ private fun WallpaperDetailOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
             .graphicsLayer {
                 translationY = offsetY.value
                 alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
     ) {
+        // Black overlay that fades as user swipes (shows discover grid behind)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))))
+        )
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
