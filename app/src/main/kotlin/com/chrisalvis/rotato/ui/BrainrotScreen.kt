@@ -44,7 +44,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.drag
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.widget.Toast
@@ -649,7 +648,12 @@ private fun WallpaperDetailOverlay(
                         }
 
                         if (dragConfirmed) {
-                            drag(downChange.id) { change ->
+                            // Stay in Initial pass for the full drag — using drag() would
+                            // switch to Main pass and get cancelled by child gesture consumers.
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == downChange.id }
+                                if (change == null || !change.pressed) break
                                 val dy = (change.position - change.previousPosition).y
                                 if (dy > 0f || offsetY.value > 0f) {
                                     change.consume()
