@@ -519,6 +519,13 @@ private fun WallpaperDetailOverlay(
                 alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
     ) {
+        // Semi-transparent scrim that darkens as user swipes
+        val scrimAlpha = 0.3f + (offsetY.value / 600f).coerceIn(0f, 1f) * 0.2f
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = scrimAlpha))
+        )
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
@@ -536,6 +543,11 @@ private fun WallpaperDetailOverlay(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                        scaleX = scaleFactor
+                        scaleY = scaleFactor
+                    }
                     .sharedElement(
                         sharedContentState = rememberSharedContentState(key = imageKey),
                         animatedVisibilityScope = animatedVisibilityScope,
@@ -565,8 +577,8 @@ private fun WallpaperDetailOverlay(
                         )
                     }
                     .pointerInput(Unit) {
-                        // Separate vertical drag handler
-                        if (!isDismissing) {
+                        // Separate vertical drag handler (disabled while zoomed)
+                        if (!isDismissing && !showZoom) {
                             detectVerticalDragGestures(
                                 onVerticalDrag = { _, dragAmount ->
                                     if (offsetY.value >= 0f || dragAmount > 0f) {
@@ -579,10 +591,8 @@ private fun WallpaperDetailOverlay(
                                     coroutineScope.launch {
                                         if (offsetY.value > 150f) {
                                             isDismissing = true
-                                            // Animate swipe to completion, then dismiss
+                                            // Animate swipe to completion
                                             offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
-                                            // Short delay to let the animation fully settle before switching states
-                                            kotlinx.coroutines.delay(50)
                                             onDismiss()
                                         } else {
                                             offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
