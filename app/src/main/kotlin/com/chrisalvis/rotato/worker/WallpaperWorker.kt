@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
+import kotlin.math.roundToInt
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -61,7 +63,19 @@ class WallpaperWorker(
                 WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                 WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
             }
-            wallpaperManager.setBitmap(bitmap, null, true, flags)
+            // Scale to fill screen and pass an explicit visibleCropHint so
+            // WallpaperManager can't zoom further for parallax scrolling.
+            val metrics = applicationContext.resources.displayMetrics
+            val screenW = metrics.widthPixels
+            val screenH = metrics.heightPixels
+            val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
+            val scaledW = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
+            val scaledH = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+            val cropX = (scaledW - screenW) / 2
+            val cropY = (scaledH - screenH) / 2
+            val cropHint = Rect(cropX, cropY, cropX + screenW, cropY + screenH)
+            wallpaperManager.setBitmap(scaled, cropHint, true, flags)
 
             prefs.recordRotation()
 
@@ -76,8 +90,9 @@ class WallpaperWorker(
             prefs.setHistoryJson(history.take(50).toJson())
 
             // Post "wallpaper changed" notification
-            postWallpaperSetNotification(bitmap)
-            bitmap.recycle()
+            postWallpaperSetNotification(scaled)
+            if (scaled != bitmap) bitmap.recycle()
+            scaled.recycle()
 
             // Refresh the home screen widget
             RotatoWidgetProvider.refreshAll(applicationContext)
