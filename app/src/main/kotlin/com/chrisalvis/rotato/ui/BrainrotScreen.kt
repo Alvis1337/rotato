@@ -264,7 +264,7 @@ fun BrainrotScreen(
                 else -> {
                     AnimatedContent(
                         targetState = selectedItem,
-                        transitionSpec = { fadeIn(tween(0)) togetherWith fadeOut(tween(300)) },
+                        transitionSpec = { fadeIn(tween(0)) togetherWith fadeOut(tween(0)) },
                         label = "discover"
                     ) { selected ->
                         if (selected == null) {
