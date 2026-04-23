@@ -16,6 +16,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -421,6 +423,10 @@ fun BrainrotScreen(
                                     reportingWallpaper = selected
                                     showReportSheet = true
                                 },
+                                onTagSearch = { tag ->
+                                    vm.setSearchQuery(tag)
+                                    vm.selectItem(null)
+                                },
                                 onDismiss = { vm.selectItem(null) }
                             )
                         }
@@ -526,6 +532,7 @@ private fun WallpaperDetailOverlay(
     onSaveToGallery: () -> Unit,
     onShare: () -> Unit,
     onReport: () -> Unit,
+    onTagSearch: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
@@ -715,14 +722,36 @@ private fun WallpaperDetailOverlay(
                 )
             }
 
-            if (showInfoExpanded && wallpaper.tags.size > 3) {
-                Text(
-                    wallpaper.tags.drop(3).take(8).joinToString("  ·  ") { it.replace('_', ' ') },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.65f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+            if (showInfoExpanded && wallpaper.tags.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 140.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    wallpaper.tags.forEach { tag ->
+                        SuggestionChip(
+                            onClick = { onTagSearch(tag) },
+                            label = {
+                                Text(
+                                    tag.replace('_', ' '),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = Color.White.copy(alpha = 0.12f),
+                                labelColor = Color.White
+                            ),
+                            border = SuggestionChipDefaults.suggestionChipBorder(
+                                enabled = true,
+                                borderColor = Color.White.copy(alpha = 0.25f),
+                                disabledBorderColor = Color.White.copy(alpha = 0.1f)
+                            )
+                        )
+                    }
+                }
             }
 
             Row(
