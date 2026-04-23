@@ -15,6 +15,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -550,6 +551,16 @@ private fun WallpaperDetailOverlay(
                                 val clip = ClipData.newPlainText("Wallpaper URL", url)
                                 clipboard.setPrimaryClip(clip)
                                 Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        // Pinch-to-zoom: detect when scale > 1.1 and open zoom mode
+                        detectTransformGestures(
+                            onGesture = { _, _, gestureZoom, _ ->
+                                if (gestureZoom > 1.1f && !isDismissing) {
+                                    showZoom = true
+                                }
                             }
                         )
                     }
