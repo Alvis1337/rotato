@@ -48,7 +48,7 @@ object DanbooruPlugin : SourcePlugin() {
     }
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
-        val normalized = normalizeBooruQuery(query)
+        val normalized = normalizeUserQuery(query)
         val auth = authHeader(source)
 
         // Determine if user has Gold/Platinum (allows more than 2 search tags)
@@ -105,7 +105,7 @@ object DanbooruPlugin : SourcePlugin() {
     }
 
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
-        val normalized = normalizeBooruQuery(query)
+        val normalized = normalizeUserQuery(query)
         val auth = authHeader(source)
         val isPremiumAccount = auth != null && accountLevel(source, auth) >= GOLD_LEVEL
         val tagQuery = buildString {

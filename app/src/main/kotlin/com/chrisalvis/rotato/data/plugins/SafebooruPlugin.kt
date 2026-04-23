@@ -17,7 +17,7 @@ object SafebooruPlugin : SourcePlugin() {
     override val safeContent = true
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
-        val tagQuery = normalizeBooruQuery(query)
+        val tagQuery = normalizeUserQuery(query)
         val pid = (0..200).random()
         val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=20&pid=$pid&tags=${tagQuery.urlEncode()}"
         val arr = getJsonArray(url) ?: return@onIO null
@@ -41,7 +41,7 @@ object SafebooruPlugin : SourcePlugin() {
     }
 
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
-        val tagQuery = normalizeBooruQuery(query)
+        val tagQuery = normalizeUserQuery(query)
         val pid = (0..200).random()
         val url = "https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=$limit&pid=$pid&tags=${tagQuery.urlEncode()}"
         val arr = getJsonArray(url) ?: return@onIO emptyList()

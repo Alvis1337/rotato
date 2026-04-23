@@ -44,10 +44,11 @@ internal fun getJsonArray(url: String, vararg headers: Pair<String, String>): JS
 } catch (e: Exception) { Log.e(PLUGIN_TAG, "getJsonArray failed: $url", e); null }
 
 /**
- * Normalises a free-text anime title (or arbitrary query) into a booru-compatible tag string:
- * lowercase, strip non-alnum/underscore/hyphen chars, convert spaces to underscores.
+ * Normalises a free-text anime title into a single booru compound tag.
+ * Converts spaces to underscores so a multi-word title maps to one tag.
  *   "Re:ZERO - Starting Life in Another World" → "re_zero_-_starting_life_in_another_world"
  *   "Steins;Gate" → "steinsgate"
+ * Use this only for MAL-derived titles; for user search queries use [normalizeUserQuery].
  */
 internal fun normalizeBooruQuery(q: String): String =
     q.trim()
@@ -58,6 +59,25 @@ internal fun normalizeBooruQuery(q: String): String =
         .replace(Regex("-+"), "-")
         .replace(Regex("_+"), "_")
         .trim('_', '-')
+
+/**
+ * Normalises an explicit user search query for booru APIs.
+ * Each space-separated token is individually cleaned (special chars stripped, lowercased)
+ * and tokens are re-joined with spaces so the booru API treats them as separate AND tags.
+ *   "anime 1girl" → "anime 1girl"   (two tags, ANDed)
+ *   "Steins;Gate" → "steinsgate"    (one tag, special char stripped)
+ *   "attack_on_titan" → "attack_on_titan"  (pre-normalised MAL titles pass through unchanged)
+ */
+internal fun normalizeUserQuery(q: String): String =
+    q.trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { token ->
+            token.lowercase()
+                .replace(Regex("[^a-z0-9_-]"), "")
+                .trim('_', '-')
+        }
+        .trim()
 
 internal fun pickRandom(arr: JSONArray, exclude: List<String> = emptyList()): JSONObject? {
     if (arr.length() == 0) return null

@@ -20,6 +20,7 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.fetchPageFromSource
+import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import com.chrisalvis.rotato.data.toJson
@@ -258,7 +259,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>): List<String> = when {
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
         source.tags.isNotBlank() -> listOf(source.tags)
-        malTitles.isNotEmpty() -> malTitles.shuffled().take(3)
+        // Pre-normalise MAL titles into compound booru tags (spaces → underscores) so
+        // the plugins can apply per-token normalisation without breaking title lookups.
+        malTitles.isNotEmpty() -> malTitles.shuffled().take(3).map { normalizeBooruQuery(it) }
         else -> listOf("")
     }
 

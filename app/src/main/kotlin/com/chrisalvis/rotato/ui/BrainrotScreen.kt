@@ -409,7 +409,7 @@ fun BrainrotScreen(
                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Text(
-                                                "Use spaces to combine tags (e.g. \"anime 1girl\"). Most sources support booru-style tag search.",
+                                                "Use spaces to combine tags — e.g. \"anime 1girl\" searches for posts tagged with both. Wallhaven supports keyword search too.",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )

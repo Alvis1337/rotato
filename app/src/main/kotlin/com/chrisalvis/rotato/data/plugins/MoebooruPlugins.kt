@@ -50,7 +50,7 @@ private suspend fun fetchMoebooru(
     filters: BrainrotFilters,
 ): BrainrotWallpaper? = onIO {
     val tagQuery = buildString {
-        val normalized = normalizeBooruQuery(query)
+        val normalized = normalizeUserQuery(query)
         if (normalized.isNotBlank()) append("$normalized ")
         if (!nsfw) append("rating:safe ")
         append("order:random")
@@ -94,7 +94,7 @@ private suspend fun fetchMoebooruPage(
     limit: Int,
 ): List<BrainrotWallpaper> = onIO {
     val tagQuery = buildString {
-        val normalized = normalizeBooruQuery(query)
+        val normalized = normalizeUserQuery(query)
         if (normalized.isNotBlank()) append("$normalized ")
         if (!nsfw) append("rating:safe ")
         append("order:random")

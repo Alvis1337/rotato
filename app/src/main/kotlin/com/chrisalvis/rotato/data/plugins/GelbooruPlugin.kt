@@ -17,7 +17,7 @@ object GelbooruPlugin : SourcePlugin() {
     override val requiresCredentials = true
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
-        val normalized = normalizeBooruQuery(query)
+        val normalized = normalizeUserQuery(query)
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
@@ -60,7 +60,7 @@ object GelbooruPlugin : SourcePlugin() {
     }
 
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
-        val normalized = normalizeBooruQuery(query)
+        val normalized = normalizeUserQuery(query)
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
