@@ -347,6 +347,16 @@ fun BrainrotScreen(
                                                     Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
                                                 }
                                             },
+                                            colors = AssistChipDefaults.assistChipColors(
+                                                containerColor = Color.Black.copy(alpha = 0.65f),
+                                                labelColor = Color.White,
+                                                leadingIconContentColor = Color.White,
+                                                trailingIconContentColor = Color.White
+                                            ),
+                                            border = AssistChipDefaults.assistChipBorder(
+                                                enabled = true,
+                                                borderColor = Color.White.copy(alpha = 0.25f)
+                                            ),
                                             modifier = Modifier.weight(1f)
                                         )
                                         Spacer(Modifier.width(8.dp))
