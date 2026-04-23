@@ -606,38 +606,6 @@ private fun WallpaperDetailOverlay(
                 translationY = offsetY.value
                 alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
-            .pointerInput(isDismissing, showZoom) {
-                if (isDismissing || showZoom) return@pointerInput
-                detectVerticalDragGestures(
-                    onVerticalDrag = { _, dragAmount ->
-                        if (dragAmount > 0f || offsetY.value > 0f) {
-                            coroutineScope.launch {
-                                offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        coroutineScope.launch {
-                            if (offsetY.value > 150f) {
-                                isDismissing = true
-                                offsetY.animateTo(
-                                    targetValue = 800f,
-                                    animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
-                                )
-                                onDismiss()
-                            } else {
-                                offsetY.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                )
-                            }
-                        }
-                    }
-                )
-            }
     ) {
         // Black overlay that fades as user swipes (shows discover grid behind)
         Box(
@@ -672,8 +640,39 @@ private fun WallpaperDetailOverlay(
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = { _, _ -> tween(350) }
                     )
+                    .pointerInput(isDismissing, showZoom) {
+                        if (isDismissing || showZoom) return@pointerInput
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { _, dragAmount ->
+                                if (dragAmount > 0f || offsetY.value > 0f) {
+                                    coroutineScope.launch {
+                                        offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    if (offsetY.value > 150f) {
+                                        isDismissing = true
+                                        offsetY.animateTo(
+                                            targetValue = 800f,
+                                            animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
+                                        )
+                                        onDismiss()
+                                    } else {
+                                        offsetY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                    }
                     .pointerInput(Unit) {
-                        // Combined handler: tap gestures + vertical drag
                         detectTapGestures(
                             onDoubleTap = { showZoom = true },
                             onLongPress = {
@@ -686,7 +685,6 @@ private fun WallpaperDetailOverlay(
                         )
                     }
                     .pointerInput(Unit) {
-                        // Pinch-to-zoom: detect when scale > 1.1 and open zoom mode
                         detectTransformGestures(
                             onGesture = { _, _, gestureZoom, _ ->
                                 if (gestureZoom > 1.1f && !isDismissing) {
