@@ -702,6 +702,7 @@ private fun WallpaperDetailOverlay(
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
 
         with(sharedTransitionScope) {
+            val sharedContentState = rememberSharedContentState(key = imageKey)
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(fullImageUrl)
@@ -719,10 +720,14 @@ private fun WallpaperDetailOverlay(
                         scaleX = scaleFactor
                         scaleY = scaleFactor
                     }
-                    .sharedElement(
-                        sharedContentState = rememberSharedContentState(key = imageKey),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { _, _ -> tween(350) }
+                    .then(
+                        // Skip shared element transition when swipe-dismissing so the image
+                        // doesn't snap back to the grid thumbnail after the swipe animation.
+                        if (!isDismissing) Modifier.sharedElement(
+                            sharedContentState = sharedContentState,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = { _, _ -> tween(350) }
+                        ) else Modifier
                     )
                     .pointerInput(Unit) {
                         detectTapGestures(
