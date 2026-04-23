@@ -16,13 +16,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -723,15 +723,11 @@ private fun WallpaperDetailOverlay(
             }
 
             if (showInfoExpanded && wallpaper.tags.isNotEmpty()) {
-                FlowRow(
+                LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 140.dp)
-                        .verticalScroll(rememberScrollState())
+                    contentPadding = PaddingValues(horizontal = 2.dp)
                 ) {
-                    wallpaper.tags.forEach { tag ->
+                    items(wallpaper.tags) { tag ->
                         SuggestionChip(
                             onClick = { onTagSearch(tag) },
                             label = {
