@@ -568,8 +568,10 @@ private fun WallpaperDetailOverlay(
                                     coroutineScope.launch {
                                         if (offsetY.value > 150f) {
                                             isDismissing = true
+                                            // Animate swipe to completion, then dismiss
                                             offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
-                                            // Call dismiss after animation completes so it transitions smoothly
+                                            // Short delay to let the animation fully settle before switching states
+                                            kotlinx.coroutines.delay(50)
                                             onDismiss()
                                         } else {
                                             offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
