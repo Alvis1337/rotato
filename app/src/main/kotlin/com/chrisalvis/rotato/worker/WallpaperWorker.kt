@@ -66,19 +66,27 @@ class WallpaperWorker(
             val metrics = applicationContext.resources.displayMetrics
             val screenW = metrics.widthPixels
             val screenH = metrics.heightPixels
-            // Scale to the wallpaper canvas (desiredMinimum) so Android has no reason to zoom.
-            // Then center the visibleCropHint at screen dimensions so the image is centered
-            // at rest and the launcher pans to the edges for parallax.
             val canvasW = wallpaperManager.desiredMinimumWidth.takeIf { it > 0 } ?: screenW
             val canvasH = wallpaperManager.desiredMinimumHeight.takeIf { it > 0 } ?: screenH
+
+            // 1. Scale to fill the canvas (at least canvasW wide AND canvasH tall)
             val scale = maxOf(canvasW.toFloat() / bitmap.width, canvasH.toFloat() / bitmap.height)
-            val scaledW = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
-            val scaledH = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+            val scaledW = (bitmap.width * scale).roundToInt()
+            val scaledH = (bitmap.height * scale).roundToInt()
             val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-            val cropX = ((scaledW - screenW) / 2).coerceAtLeast(0)
-            val cropY = ((scaledH - screenH) / 2).coerceAtLeast(0)
-            val cropHint = Rect(cropX, cropY, cropX + screenW.coerceAtMost(scaledW), cropY + screenH.coerceAtMost(scaledH))
-            wallpaperManager.setBitmap(scaled, cropHint, true, flags)
+
+            // 2. Crop to EXACTLY canvas dimensions, centered — gives Android nothing to zoom
+            val srcX = ((scaledW - canvasW) / 2).coerceAtLeast(0)
+            val srcY = ((scaledH - canvasH) / 2).coerceAtLeast(0)
+            val canvasBitmap = Bitmap.createBitmap(scaled, srcX, srcY, canvasW, canvasH)
+            if (scaled != bitmap) scaled.recycle()
+
+            // 3. Crop hint: screen-sized rect centered inside the canvas bitmap
+            //    Tells the launcher where to focus at rest; edges available for parallax
+            val hintX = ((canvasW - screenW) / 2).coerceAtLeast(0)
+            val hintY = ((canvasH - screenH) / 2).coerceAtLeast(0)
+            val cropHint = Rect(hintX, hintY, (hintX + screenW).coerceAtMost(canvasW), (hintY + screenH).coerceAtMost(canvasH))
+            wallpaperManager.setBitmap(canvasBitmap, cropHint, true, flags)
 
             prefs.recordRotation()
 
@@ -93,9 +101,9 @@ class WallpaperWorker(
             prefs.setHistoryJson(history.take(50).toJson())
 
             // Post "wallpaper changed" notification
-            postWallpaperSetNotification(scaled)
-            if (scaled != bitmap) bitmap.recycle()
-            scaled.recycle()
+            postWallpaperSetNotification(canvasBitmap)
+            bitmap.recycle()
+            canvasBitmap.recycle()
 
             // Refresh the home screen widget
             RotatoWidgetProvider.refreshAll(applicationContext)
