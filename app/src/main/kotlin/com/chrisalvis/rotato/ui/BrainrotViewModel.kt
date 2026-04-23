@@ -256,8 +256,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private fun cacheKey(source: LocalSource, query: String) = "${source.type.name}:$query"
 
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>): List<String> = when {
-        source.tags.isNotBlank() -> listOf(source.tags)
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
+        source.tags.isNotBlank() -> listOf(source.tags)
         malTitles.isNotEmpty() -> malTitles.shuffled().take(3)
         else -> listOf("")
     }

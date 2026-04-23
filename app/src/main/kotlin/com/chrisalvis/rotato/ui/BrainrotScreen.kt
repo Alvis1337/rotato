@@ -7,6 +7,8 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -134,6 +136,8 @@ fun BrainrotScreen(
 
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    LaunchedEffect(showSearch) { if (showSearch) searchText = searchQuery.ifBlank { "" } }
     var showCreateListDialog by remember { mutableStateOf(false) }
     var pendingAddWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
 
@@ -187,14 +191,6 @@ fun BrainrotScreen(
             vm.addToList(selectedListId!!, pending)
             pendingAddWallpaper = null
         }
-    }
-
-    if (showSearch) {
-        SearchDialog(
-            current = searchQuery,
-            onSearch = { vm.setSearchQuery(it); showSearch = false },
-            onDismiss = { showSearch = false }
-        )
     }
 
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -365,6 +361,38 @@ fun BrainrotScreen(
                                         Icon(Icons.Default.Tune, contentDescription = "Discover settings")
                                     }
                                 }
+                                if (showSearch) {
+                                    SearchBar(
+                                        inputField = {
+                                            SearchBarDefaults.InputField(
+                                                query = searchText,
+                                                onQueryChange = { searchText = it },
+                                                onSearch = {
+                                                    vm.setSearchQuery(it.trim())
+                                                    showSearch = false
+                                                },
+                                                expanded = true,
+                                                onExpandedChange = { expanded ->
+                                                    if (!expanded) showSearch = false
+                                                },
+                                                placeholder = { Text("e.g. anime, landscape, 4k") },
+                                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                                trailingIcon = {
+                                                    if (searchText.isNotEmpty()) {
+                                                        IconButton(onClick = { searchText = "" }) {
+                                                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        },
+                                        expanded = true,
+                                        onExpandedChange = { expanded ->
+                                            if (!expanded) showSearch = false
+                                        },
+                                        modifier = Modifier.align(Alignment.TopCenter)
+                                    ) {}
+                                }
                             }
                         } else {
                             WallpaperDetailOverlay(
@@ -517,6 +545,38 @@ private fun WallpaperDetailOverlay(
                 translationY = offsetY.value
                 alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
+            .pointerInput(isDismissing, showZoom) {
+                if (isDismissing || showZoom) return@pointerInput
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dragAmount ->
+                        if (dragAmount > 0f || offsetY.value > 0f) {
+                            coroutineScope.launch {
+                                offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        coroutineScope.launch {
+                            if (offsetY.value > 150f) {
+                                isDismissing = true
+                                offsetY.animateTo(
+                                    targetValue = 800f,
+                                    animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
+                                )
+                                onDismiss()
+                            } else {
+                                offsetY.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                )
+                            }
+                        }
+                    }
+                )
+            }
     ) {
         // Black overlay that fades as user swipes (shows discover grid behind)
         Box(
@@ -573,32 +633,6 @@ private fun WallpaperDetailOverlay(
                                 }
                             }
                         )
-                    }
-                    .pointerInput(Unit) {
-                        // Separate vertical drag handler (disabled while zoomed)
-                        if (!isDismissing && !showZoom) {
-                            detectVerticalDragGestures(
-                                onVerticalDrag = { _, dragAmount ->
-                                    if (offsetY.value >= 0f || dragAmount > 0f) {
-                                        coroutineScope.launch {
-                                            offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
-                                        }
-                                    }
-                                },
-                                onDragEnd = {
-                                    coroutineScope.launch {
-                                        if (offsetY.value > 150f) {
-                                            isDismissing = true
-                                            // Animate swipe to completion
-                                            offsetY.animateTo(800f, spring(dampingRatio = 0.8f))
-                                            onDismiss()
-                                        } else {
-                                            offsetY.animateTo(0f, spring(dampingRatio = 0.9f))
-                                        }
-                                    }
-                                }
-                            )
-                        }
                     }
             )
         }
@@ -845,34 +879,6 @@ private fun sourceColor(source: String): Color = when (source.lowercase()) {
     "konachan"  -> Color(0xFF6A1B9A)
     "danbooru"  -> Color(0xFF2E7D32)
     else        -> Color(0xFF37474F)
-}
-
-@Composable
-private fun SearchDialog(current: String, onSearch: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(current.ifBlank { "" }) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Search Discover") },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Tags / keywords") },
-                placeholder = { Text("e.g. anime, landscape, 4k") },
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onSearch(text.trim()) }) { Text("Search") }
-        },
-        dismissButton = {
-            if (current.isNotBlank()) {
-                TextButton(onClick = { onSearch("") }) { Text("Clear") }
-            } else {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

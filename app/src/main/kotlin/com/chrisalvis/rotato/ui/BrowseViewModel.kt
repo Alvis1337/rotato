@@ -339,7 +339,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun addLocalImages(listId: String, uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val list = lists.value.find { it.id == listId } ?: return@launch
+            val list = localLists.lists.first().find { it.id == listId } ?: return@launch
             val listImagesDir = File(app.filesDir, "list_images/$listId").also { it.mkdirs() }
             var added = 0
             uris.forEach { uri ->
