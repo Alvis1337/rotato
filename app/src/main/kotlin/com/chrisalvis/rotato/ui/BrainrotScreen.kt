@@ -519,13 +519,6 @@ private fun WallpaperDetailOverlay(
                 alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
             }
     ) {
-        // Semi-transparent scrim that darkens as user swipes
-        val scrimAlpha = 0.3f + (offsetY.value / 600f).coerceIn(0f, 1f) * 0.2f
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = scrimAlpha))
-        )
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
