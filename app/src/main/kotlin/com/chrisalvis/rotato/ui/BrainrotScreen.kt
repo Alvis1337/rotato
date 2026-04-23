@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import android.content.ClipboardManager
 import android.content.ClipData
@@ -615,12 +616,10 @@ private fun WallpaperDetailOverlay(
                 awaitPointerEventScope {
                     while (true) {
                         // Wait for a fresh finger-down in the Initial pass
-                        var downChange = awaitPointerEvent(PointerEventPass.Initial)
-                            .changes.firstOrNull { it.changedToDown() }
-                        while (downChange == null) {
-                            downChange = awaitPointerEvent(PointerEventPass.Initial)
-                                .changes.firstOrNull { it.changedToDown() }
-                        }
+                        val downChange = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial
+                        )
                         val startX = downChange.position.x
                         var totalDy = 0f
                         var dragConfirmed = false
@@ -631,7 +630,7 @@ private fun WallpaperDetailOverlay(
                             val change = event.changes.firstOrNull { it.id == downChange.id }
                             if (change == null || !change.pressed) break
 
-                            totalDy += change.positionChange().y
+                            totalDy += (change.position - change.previousPosition).y
                             val totalDx = kotlin.math.abs(change.position.x - startX)
 
                             if (totalDy > viewConfiguration.touchSlop && totalDy > totalDx) {
@@ -651,7 +650,7 @@ private fun WallpaperDetailOverlay(
 
                         if (dragConfirmed) {
                             drag(downChange.id) { change ->
-                                val dy = change.positionChange().y
+                                val dy = (change.position - change.previousPosition).y
                                 if (dy > 0f || offsetY.value > 0f) {
                                     change.consume()
                                     coroutineScope.launch {
