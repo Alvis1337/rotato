@@ -35,9 +35,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import android.graphics.drawable.Drawable
-import android.graphics.Canvas
-import android.graphics.Bitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -64,7 +61,6 @@ import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
-import androidx.palette.graphics.Palette
 import kotlinx.coroutines.launch
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
@@ -79,16 +75,6 @@ private fun parseAspectRatio(resolution: String): Float {
 }
 
 private fun Int.toComposeColor(): Color = Color((this and 0xFFFFFF) or 0xFF000000.toInt())
-
-private fun Drawable.toBitmap(): Bitmap? = try {
-    val bitmap = Bitmap.createBitmap(intrinsicWidth, intrinsicHeight, Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bitmap)
-    setBounds(0, 0, canvas.width, canvas.height)
-    draw(canvas)
-    bitmap
-} catch (e: Exception) {
-    null
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -433,7 +419,6 @@ private fun DiscoverGridItem(
         .coerceIn(0.25f, 4f)
         .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
     val context = LocalContext.current
-    var dominantColor by remember { mutableStateOf(sourceColor(wallpaper.source)) }
     
     Box(
         modifier = Modifier
@@ -462,20 +447,11 @@ private fun DiscoverGridItem(
                     )
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { onClick() })
-                    },
-                onState = { state ->
-                    if (state is AsyncImagePainter.State.Success) {
-                        state.drawable.toBitmap()?.let { bitmap ->
-                            Palette.from(bitmap).generate { palette ->
-                                dominantColor = palette?.dominantSwatch?.rgb?.toComposeColor() ?: sourceColor(wallpaper.source)
-                            }
-                        }
                     }
-                }
             )
         }
 
-        // Source color badge — bottom-left, tinted with dominant color
+        // Source color badge — bottom-left
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)

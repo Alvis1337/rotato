@@ -18,7 +18,6 @@ okhttp = "4.12.0"
 dragSelectCompose = "3.3.0"
 ossLicensesPlugin = "0.11.0"
 playServicesOssLicenses = "17.0.1"
-palette = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -47,7 +46,6 @@ androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 drag-select-compose = { group = "com.dragselectcompose", name = "dragselect", version.ref = "dragSelectCompose" }
 play-services-oss-licenses = { group = "com.google.android.gms", name = "play-services-oss-licenses", version.ref = "playServicesOssLicenses" }
-androidx-palette = { group = "androidx.palette", name = "palette", version.ref = "palette" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
