@@ -36,6 +36,7 @@ data class BrainrotFilters(
     val phoneHeightParts: Int = 0,
     val phoneScreenWidth: Int = 0,
     val phoneScreenHeight: Int = 0,
+    val useMalFilter: Boolean = true,
 )
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */

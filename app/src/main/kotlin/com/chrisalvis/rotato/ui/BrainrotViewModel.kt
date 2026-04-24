@@ -184,7 +184,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
             val malTitles: List<String> =
-                if (explicitQuery.isBlank()) malPrefs.animeList.first() else emptyList()
+                if (explicitQuery.isBlank() && filters.useMalFilter) malPrefs.animeList.first() else emptyList()
             val localEnabled = localSources.sources.first().filter { it.enabled }
             val batchSize = prefs.discoverBatchSize.first()
             val target = if (isInitial) batchSize * 2 else batchSize
@@ -389,6 +389,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 prefs.setPhoneScreen(shortSide, longSide)
             }
             prefs.setAspectRatio(value)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setUseMalFilter(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setUseMalFilter(enabled)
             loadMore(reset = true)
         }
     }

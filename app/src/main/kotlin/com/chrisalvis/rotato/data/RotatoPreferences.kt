@@ -34,6 +34,7 @@ class RotatoPreferences(private val context: Context) {
         val PHONE_HEIGHT_PARTS = intPreferencesKey("phone_height_parts")
         val PHONE_SCREEN_WIDTH = intPreferencesKey("phone_screen_width")
         val PHONE_SCREEN_HEIGHT = intPreferencesKey("phone_screen_height")
+        val USE_MAL_FILTER = booleanPreferencesKey("use_mal_filter")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
         val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
@@ -111,6 +112,7 @@ class RotatoPreferences(private val context: Context) {
                 phoneHeightParts = prefs[PHONE_HEIGHT_PARTS] ?: 0,
                 phoneScreenWidth = prefs[PHONE_SCREEN_WIDTH] ?: 0,
                 phoneScreenHeight = prefs[PHONE_SCREEN_HEIGHT] ?: 0,
+                useMalFilter = prefs[USE_MAL_FILTER] ?: true,
             )
         }
 
@@ -134,6 +136,10 @@ class RotatoPreferences(private val context: Context) {
             it[PHONE_SCREEN_WIDTH] = width
             it[PHONE_SCREEN_HEIGHT] = height
         }
+    }
+
+    suspend fun setUseMalFilter(enabled: Boolean) {
+        context.dataStore.edit { it[USE_MAL_FILTER] = enabled }
     }
 
     /** Comma-separated list of globally blacklisted tags. */

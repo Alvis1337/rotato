@@ -212,6 +212,7 @@ fun BrainrotScreen(
                 onSetNsfwMode = { vm.setNsfwMode(it) },
                 onSetMinResolution = { vm.setMinResolution(it) },
                 onSetAspectRatio = { vm.setAspectRatio(it) },
+                onSetUseMalFilter = { vm.setUseMalFilter(it) },
                 onSetGlobalBlacklist = { vm.setGlobalBlacklist(it) },
                 onDismiss = { showSettings = false }
             )
@@ -1027,6 +1028,7 @@ private fun DiscoverSettingsSheetContent(
     onSetNsfwMode: (Boolean) -> Unit,
     onSetMinResolution: (MinResolution) -> Unit,
     onSetAspectRatio: (AspectRatio) -> Unit,
+    onSetUseMalFilter: (Boolean) -> Unit,
     onSetGlobalBlacklist: (Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1077,6 +1079,18 @@ private fun DiscoverSettingsSheetContent(
                 Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
             Switch(checked = nsfwMode, onCheckedChange = onSetNsfwMode)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("MAL filter", style = MaterialTheme.typography.bodyMedium)
+                Text("Limit results to your anime list", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+            Switch(checked = filters.useMalFilter, onCheckedChange = onSetUseMalFilter)
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
