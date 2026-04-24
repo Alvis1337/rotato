@@ -83,6 +83,9 @@ object GelbooruPlugin : SourcePlugin() {
             val post = arr.optJSONObject(i) ?: return@mapNotNull null
             val id = post.optInt("id", 0).toString()
             if (exclude.contains(id)) return@mapNotNull null
+            val w = post.optInt("width")
+            val h = post.optInt("height")
+            if (!filters.matches(w, h)) return@mapNotNull null
             val fullUrl = post.optString("file_url").ifBlank { return@mapNotNull null }
             if (videoExtensions.any { fullUrl.endsWith(it, ignoreCase = true) }) return@mapNotNull null
             val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
