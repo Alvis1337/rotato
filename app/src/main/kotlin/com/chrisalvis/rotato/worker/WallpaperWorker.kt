@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Rect
 import android.util.Log
 import kotlin.math.roundToInt
 import androidx.core.app.NotificationCompat
@@ -67,30 +66,23 @@ class WallpaperWorker(
             val metrics = applicationContext.resources.displayMetrics
             val screenW = metrics.widthPixels
             val screenH = metrics.heightPixels
-            val canvasW = wallpaperManager.desiredMinimumWidth.takeIf { it > 0 } ?: screenW
-            val canvasH = wallpaperManager.desiredMinimumHeight.takeIf { it > 0 } ?: screenH
 
-            Log.d("WallpaperWorker", "bitmap=${bitmap.width}x${bitmap.height} screen=${screenW}x${screenH} canvas=${canvasW}x${canvasH}")
+            Log.d("WallpaperWorker", "bitmap=${bitmap.width}x${bitmap.height} screen=${screenW}x${screenH}")
 
-            // 1. Scale to fill the canvas (at least canvasW wide AND canvasH tall)
-            val scale = maxOf(canvasW.toFloat() / bitmap.width, canvasH.toFloat() / bitmap.height)
+            // Scale to fill exactly the screen (center crop), pass null crop hint.
+            // Giving Android a bitmap that IS the screen size leaves nothing to zoom or scroll.
+            val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
             val scaledW = (bitmap.width * scale).roundToInt()
             val scaledH = (bitmap.height * scale).roundToInt()
             val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-
-            // 2. Crop to EXACTLY canvas dimensions, centered — gives Android nothing to zoom
-            val srcX = ((scaledW - canvasW) / 2).coerceAtLeast(0)
-            val srcY = ((scaledH - canvasH) / 2).coerceAtLeast(0)
-            val canvasBitmap = Bitmap.createBitmap(scaled, srcX, srcY, canvasW, canvasH)
+            val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
+            val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
+            val screenBitmap = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
             if (scaled != bitmap) scaled.recycle()
 
-            // 3. Crop hint: screen-sized rect centered inside the canvas bitmap
-            val hintX = ((canvasW - screenW) / 2).coerceAtLeast(0)
-            val hintY = ((canvasH - screenH) / 2).coerceAtLeast(0)
-            val cropHint = Rect(hintX, hintY, (hintX + screenW).coerceAtMost(canvasW), (hintY + screenH).coerceAtMost(canvasH))
-
-            Log.d("WallpaperWorker", "canvasBitmap=${canvasBitmap.width}x${canvasBitmap.height} cropHint=$cropHint")
-            wallpaperManager.setBitmap(canvasBitmap, cropHint, true, flags)
+            Log.d("WallpaperWorker", "screenBitmap=${screenBitmap.width}x${screenBitmap.height}")
+            wallpaperManager.setBitmap(screenBitmap, null, true, flags)
+            screenBitmap.recycle()
 
             prefs.recordRotation()
 
