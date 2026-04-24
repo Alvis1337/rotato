@@ -2,7 +2,9 @@ package com.chrisalvis.rotato.ui
 
 import android.app.Application
 import android.app.WallpaperManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import kotlin.math.roundToInt
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -298,7 +300,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     com.chrisalvis.rotato.data.WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                     com.chrisalvis.rotato.data.WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
                 }
-                wallpaperManager.setBitmap(bitmap, null, true, flags)
+                val metrics = app.resources.displayMetrics
+                val screenW = metrics.widthPixels
+                val screenH = metrics.heightPixels
+                val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
+                val scaledW = (bitmap.width * scale).roundToInt()
+                val scaledH = (bitmap.height * scale).roundToInt()
+                val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
+                val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
+                val screenBitmap = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
+                if (scaled != bitmap) scaled.recycle()
+                wallpaperManager.setBitmap(screenBitmap, null, true, flags)
+                screenBitmap.recycle()
                 bitmap.recycle()
                 _setNowState.update { SetNowState.DONE }
                 kotlinx.coroutines.delay(2_000)
