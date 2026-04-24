@@ -2,6 +2,7 @@ package com.chrisalvis.rotato.ui
 
 import android.app.Application
 import android.widget.Toast
+import kotlin.math.roundToInt
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import coil.imageLoader
@@ -372,6 +373,15 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAspectRatio(value: AspectRatio) {
         viewModelScope.launch {
+            if (value == AspectRatio.MY_PHONE) {
+                val metrics = getApplication<Application>().resources.displayMetrics
+                val shortSide = minOf(metrics.widthPixels, metrics.heightPixels)
+                val longSide = maxOf(metrics.widthPixels, metrics.heightPixels)
+                // Normalize to base-9 so Wallhaven gets a clean ratio (e.g. 9x20 for a Pixel)
+                val normalizedH = (9.0 * longSide / shortSide).roundToInt()
+                prefs.setPhoneRatio(9, normalizedH)
+                prefs.setMinResolution(MinResolution.HD)
+            }
             prefs.setAspectRatio(value)
             loadMore(reset = true)
         }

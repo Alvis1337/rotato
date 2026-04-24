@@ -30,6 +30,8 @@ class RotatoPreferences(private val context: Context) {
         val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
+        val PHONE_WIDTH_PARTS = intPreferencesKey("phone_width_parts")
+        val PHONE_HEIGHT_PARTS = intPreferencesKey("phone_height_parts")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
         val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
@@ -103,6 +105,8 @@ class RotatoPreferences(private val context: Context) {
                 aspectRatio = prefs[ASPECT_RATIO]?.let {
                     runCatching { AspectRatio.valueOf(it) }.getOrNull()
                 } ?: AspectRatio.ANY,
+                phoneWidthParts = prefs[PHONE_WIDTH_PARTS] ?: 0,
+                phoneHeightParts = prefs[PHONE_HEIGHT_PARTS] ?: 0,
             )
         }
 
@@ -112,6 +116,13 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setAspectRatio(value: AspectRatio) {
         context.dataStore.edit { it[ASPECT_RATIO] = value.name }
+    }
+
+    suspend fun setPhoneRatio(widthParts: Int, heightParts: Int) {
+        context.dataStore.edit {
+            it[PHONE_WIDTH_PARTS] = widthParts
+            it[PHONE_HEIGHT_PARTS] = heightParts
+        }
     }
 
     /** Comma-separated list of globally blacklisted tags. */

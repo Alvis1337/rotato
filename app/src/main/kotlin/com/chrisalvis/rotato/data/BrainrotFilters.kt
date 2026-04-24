@@ -23,11 +23,15 @@ enum class AspectRatio(
     WIDE_10("Wide (16:10)", "16x10", 16, 10),
     STANDARD("Standard (4:3)", "4x3", 4, 3),
     PORTRAIT("Portrait (9:16)", "9x16", 9, 16),
+    // Dynamic — ratio stored in BrainrotFilters.phoneWidthParts/phoneHeightParts
+    MY_PHONE("My Phone", "", -1, -1),
 }
 
 data class BrainrotFilters(
     val minResolution: MinResolution = MinResolution.ANY,
     val aspectRatio: AspectRatio = AspectRatio.ANY,
+    val phoneWidthParts: Int = 0,
+    val phoneHeightParts: Int = 0,
 )
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */
@@ -36,10 +40,20 @@ fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
     if (minResolution != MinResolution.ANY) {
         if (width < minResolution.width || height < minResolution.height) return false
     }
-    if (aspectRatio != AspectRatio.ANY) {
-        val expected = aspectRatio.widthParts.toDouble() / aspectRatio.heightParts
-        val actual = width.toDouble() / height
-        if (abs(actual - expected) / expected > 0.05) return false
+    when (aspectRatio) {
+        AspectRatio.ANY -> Unit
+        AspectRatio.MY_PHONE -> {
+            if (phoneWidthParts > 0 && phoneHeightParts > 0) {
+                val expected = phoneWidthParts.toDouble() / phoneHeightParts
+                val actual = width.toDouble() / height
+                if (abs(actual - expected) / expected > 0.05) return false
+            }
+        }
+        else -> {
+            val expected = aspectRatio.widthParts.toDouble() / aspectRatio.heightParts
+            val actual = width.toDouble() / height
+            if (abs(actual - expected) / expected > 0.05) return false
+        }
     }
     return true
 }

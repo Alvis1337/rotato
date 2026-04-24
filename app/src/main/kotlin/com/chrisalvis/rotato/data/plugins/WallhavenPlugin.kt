@@ -22,8 +22,13 @@ object WallhavenPlugin : SourcePlugin() {
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
         if (filters.minResolution != MinResolution.ANY)
             urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
-        if (filters.aspectRatio != AspectRatio.ANY)
-            urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
+        when (filters.aspectRatio) {
+            AspectRatio.ANY -> Unit
+            AspectRatio.MY_PHONE ->
+                if (filters.phoneWidthParts > 0 && filters.phoneHeightParts > 0)
+                    urlBase += "&ratios=${filters.phoneWidthParts}x${filters.phoneHeightParts}"
+            else -> urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
+        }
         val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.urlEncode()}" else urlBase
         val json = getJson(url) ?: return@onIO null
         val data = json.optJSONArray("data") ?: return@onIO null
@@ -52,8 +57,13 @@ object WallhavenPlugin : SourcePlugin() {
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
         if (filters.minResolution != MinResolution.ANY)
             urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
-        if (filters.aspectRatio != AspectRatio.ANY)
-            urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
+        when (filters.aspectRatio) {
+            AspectRatio.ANY -> Unit
+            AspectRatio.MY_PHONE ->
+                if (filters.phoneWidthParts > 0 && filters.phoneHeightParts > 0)
+                    urlBase += "&ratios=${filters.phoneWidthParts}x${filters.phoneHeightParts}"
+            else -> urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
+        }
         val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.urlEncode()}" else urlBase
         val json = getJson(url) ?: return@onIO emptyList()
         val data = json.optJSONArray("data") ?: return@onIO emptyList()
