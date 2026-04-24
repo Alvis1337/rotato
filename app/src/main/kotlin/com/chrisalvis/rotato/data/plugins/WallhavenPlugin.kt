@@ -30,8 +30,7 @@ object WallhavenPlugin : SourcePlugin() {
         when (filters.aspectRatio) {
             AspectRatio.ANY -> Unit
             AspectRatio.MY_PHONE ->
-                if (filters.phoneWidthParts > 0 && filters.phoneHeightParts > 0)
-                    urlBase += "&ratios=${filters.phoneWidthParts}x${filters.phoneHeightParts}"
+                urlBase += "&ratios=9x16"
             else -> urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
         }
         val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.urlEncode()}" else urlBase
@@ -70,8 +69,7 @@ object WallhavenPlugin : SourcePlugin() {
         when (filters.aspectRatio) {
             AspectRatio.ANY -> Unit
             AspectRatio.MY_PHONE ->
-                if (filters.phoneWidthParts > 0 && filters.phoneHeightParts > 0)
-                    urlBase += "&ratios=${filters.phoneWidthParts}x${filters.phoneHeightParts}"
+                urlBase += "&ratios=9x16"
             else -> urlBase += "&ratios=${filters.aspectRatio.wallhavenKey}"
         }
         val url = if (source.apiKey.isNotBlank()) "$urlBase&apikey=${source.apiKey.urlEncode()}" else urlBase

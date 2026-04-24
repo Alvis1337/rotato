@@ -381,7 +381,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val normalizedH = (9.0 * longSide / shortSide).roundToInt()
                 prefs.setPhoneRatio(9, normalizedH)
                 prefs.setPhoneScreen(shortSide, longSide)
-                prefs.setMinResolution(MinResolution.MY_PHONE)
             }
             prefs.setAspectRatio(value)
             loadMore(reset = true)
