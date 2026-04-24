@@ -1091,7 +1091,7 @@ private fun DiscoverSettingsSheetContent(
                     singleLine = true
                 )
                 ExposedDropdownMenu(expanded = resExpanded, onDismissRequest = { resExpanded = false }) {
-                    MinResolution.entries.forEach { res ->
+                    MinResolution.entries.filter { it != MinResolution.MY_PHONE }.forEach { res ->
                         DropdownMenuItem(
                             text = { Text(res.label) },
                             onClick = { onSetMinResolution(res); resExpanded = false }

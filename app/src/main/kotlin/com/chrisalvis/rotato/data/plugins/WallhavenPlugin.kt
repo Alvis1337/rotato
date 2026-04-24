@@ -20,8 +20,13 @@ object WallhavenPlugin : SourcePlugin() {
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
-        if (filters.minResolution != MinResolution.ANY)
-            urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
+        when (filters.minResolution) {
+            MinResolution.ANY -> Unit
+            MinResolution.MY_PHONE ->
+                if (filters.phoneScreenWidth > 0 && filters.phoneScreenHeight > 0)
+                    urlBase += "&atleast=${filters.phoneScreenWidth}x${filters.phoneScreenHeight}"
+            else -> urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
+        }
         when (filters.aspectRatio) {
             AspectRatio.ANY -> Unit
             AspectRatio.MY_PHONE ->
@@ -55,8 +60,13 @@ object WallhavenPlugin : SourcePlugin() {
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
         var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
-        if (filters.minResolution != MinResolution.ANY)
-            urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
+        when (filters.minResolution) {
+            MinResolution.ANY -> Unit
+            MinResolution.MY_PHONE ->
+                if (filters.phoneScreenWidth > 0 && filters.phoneScreenHeight > 0)
+                    urlBase += "&atleast=${filters.phoneScreenWidth}x${filters.phoneScreenHeight}"
+            else -> urlBase += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
+        }
         when (filters.aspectRatio) {
             AspectRatio.ANY -> Unit
             AspectRatio.MY_PHONE ->

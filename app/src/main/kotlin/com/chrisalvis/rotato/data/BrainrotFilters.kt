@@ -8,6 +8,8 @@ enum class MinResolution(val label: String, val width: Int, val height: Int) {
     FHD("FHD (1920×1080)", 1920, 1080),
     QHD("QHD (2560×1440)", 2560, 1440),
     UHD("4K  (3840×2160)", 3840, 2160),
+    // Dynamic — actual screen pixels stored in BrainrotFilters.phoneScreenWidth/phoneScreenHeight
+    MY_PHONE("My Phone", -1, -1),
 }
 
 enum class AspectRatio(
@@ -32,13 +34,21 @@ data class BrainrotFilters(
     val aspectRatio: AspectRatio = AspectRatio.ANY,
     val phoneWidthParts: Int = 0,
     val phoneHeightParts: Int = 0,
+    val phoneScreenWidth: Int = 0,
+    val phoneScreenHeight: Int = 0,
 )
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */
 fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
     if (width <= 0 || height <= 0) return true // unknown dimensions — let it through
-    if (minResolution != MinResolution.ANY) {
-        if (width < minResolution.width || height < minResolution.height) return false
+    when (minResolution) {
+        MinResolution.ANY -> Unit
+        MinResolution.MY_PHONE -> {
+            if (phoneScreenWidth > 0 && phoneScreenHeight > 0) {
+                if (width < phoneScreenWidth || height < phoneScreenHeight) return false
+            }
+        }
+        else -> if (width < minResolution.width || height < minResolution.height) return false
     }
     when (aspectRatio) {
         AspectRatio.ANY -> Unit

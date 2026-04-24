@@ -32,6 +32,8 @@ class RotatoPreferences(private val context: Context) {
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val PHONE_WIDTH_PARTS = intPreferencesKey("phone_width_parts")
         val PHONE_HEIGHT_PARTS = intPreferencesKey("phone_height_parts")
+        val PHONE_SCREEN_WIDTH = intPreferencesKey("phone_screen_width")
+        val PHONE_SCREEN_HEIGHT = intPreferencesKey("phone_screen_height")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
         val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
@@ -107,6 +109,8 @@ class RotatoPreferences(private val context: Context) {
                 } ?: AspectRatio.ANY,
                 phoneWidthParts = prefs[PHONE_WIDTH_PARTS] ?: 0,
                 phoneHeightParts = prefs[PHONE_HEIGHT_PARTS] ?: 0,
+                phoneScreenWidth = prefs[PHONE_SCREEN_WIDTH] ?: 0,
+                phoneScreenHeight = prefs[PHONE_SCREEN_HEIGHT] ?: 0,
             )
         }
 
@@ -122,6 +126,13 @@ class RotatoPreferences(private val context: Context) {
         context.dataStore.edit {
             it[PHONE_WIDTH_PARTS] = widthParts
             it[PHONE_HEIGHT_PARTS] = heightParts
+        }
+    }
+
+    suspend fun setPhoneScreen(width: Int, height: Int) {
+        context.dataStore.edit {
+            it[PHONE_SCREEN_WIDTH] = width
+            it[PHONE_SCREEN_HEIGHT] = height
         }
     }
 

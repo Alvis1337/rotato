@@ -380,7 +380,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 // Normalize to base-9 so Wallhaven gets a clean ratio (e.g. 9x20 for a Pixel)
                 val normalizedH = (9.0 * longSide / shortSide).roundToInt()
                 prefs.setPhoneRatio(9, normalizedH)
-                prefs.setMinResolution(MinResolution.HD)
+                prefs.setPhoneScreen(shortSide, longSide)
+                prefs.setMinResolution(MinResolution.MY_PHONE)
             }
             prefs.setAspectRatio(value)
             loadMore(reset = true)
