@@ -108,6 +108,7 @@ fun BrainrotScreen(
     val globalBlacklist by vm.globalBlacklist.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
+    val handsFreeInterval by vm.handsFreeInterval.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
     val coroutineScope = rememberCoroutineScope()
@@ -138,6 +139,7 @@ fun BrainrotScreen(
     }
 
     var showSettings by remember { mutableStateOf(false) }
+    var showHandsFree by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     LaunchedEffect(showSearch) { if (showSearch) searchText = searchQuery.ifBlank { "" } }
@@ -371,6 +373,12 @@ fun BrainrotScreen(
                                         )
                                     }
                                     Spacer(Modifier.width(8.dp))
+                                    SmallFloatingActionButton(
+                                        onClick = { if (gridItems.isNotEmpty()) showHandsFree = true }
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Hands-free slideshow")
+                                    }
+                                    Spacer(Modifier.width(8.dp))
                                     FloatingActionButton(onClick = { showSettings = true }) {
                                         Icon(Icons.Default.Tune, contentDescription = "Discover settings")
                                     }
@@ -488,6 +496,16 @@ fun BrainrotScreen(
                         }
                     }
                 }
+            }
+
+            if (showHandsFree) {
+                HandsFreeOverlay(
+                    items = gridItems,
+                    intervalSecs = handsFreeInterval,
+                    onIntervalChange = { vm.setHandsFreeInterval(it) },
+                    onLoadMore = { vm.loadMore() },
+                    onDismiss = { showHandsFree = false }
+                )
             }
 
             SnackbarHost(

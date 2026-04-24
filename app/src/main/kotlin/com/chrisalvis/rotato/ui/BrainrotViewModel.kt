@@ -103,6 +103,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val discoverBatchSize: StateFlow<Int> = prefs.discoverBatchSize
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 20)
 
+    val handsFreeInterval: StateFlow<Int> = prefs.handsFreeInterval
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 5)
+
     val sourceHealth = SourceHealthTracker.health
 
     private val _searchQuery = MutableStateFlow("")
@@ -391,6 +394,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             prefs.setAspectRatio(value)
             loadMore(reset = true)
         }
+    }
+
+    fun setHandsFreeInterval(secs: Int) {
+        viewModelScope.launch { prefs.setHandsFreeInterval(secs) }
     }
 
     fun setUseMalFilter(enabled: Boolean) {

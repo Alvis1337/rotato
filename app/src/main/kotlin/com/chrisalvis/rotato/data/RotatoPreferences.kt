@@ -35,6 +35,7 @@ class RotatoPreferences(private val context: Context) {
         val PHONE_SCREEN_WIDTH = intPreferencesKey("phone_screen_width")
         val PHONE_SCREEN_HEIGHT = intPreferencesKey("phone_screen_height")
         val USE_MAL_FILTER = booleanPreferencesKey("use_mal_filter")
+        val HANDS_FREE_INTERVAL = intPreferencesKey("hands_free_interval")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
         val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
@@ -190,5 +191,13 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setSetupDone(done: Boolean = true) {
         context.dataStore.edit { it[SETUP_DONE] = done }
+    }
+
+    val handsFreeInterval: Flow<Int> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[HANDS_FREE_INTERVAL] ?: 5 }
+
+    suspend fun setHandsFreeInterval(secs: Int) {
+        context.dataStore.edit { it[HANDS_FREE_INTERVAL] = secs }
     }
 }
