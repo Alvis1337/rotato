@@ -56,7 +56,7 @@ object GelbooruPlugin : SourcePlugin() {
             fullUrl = fullUrl,
             resolution = "${post.optInt("width")}x${post.optInt("height")}",
             pageUrl = "https://gelbooru.com/index.php?page=post&s=view&id=$id",
-            tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+            tags = post.optString("tags").split(" ").filter { it.isNotBlank() }
         )
     }
 
@@ -97,7 +97,7 @@ object GelbooruPlugin : SourcePlugin() {
                 sampleUrl = sampleUrl, fullUrl = fullUrl,
                 resolution = "${post.optInt("width")}x${post.optInt("height")}",
                 pageUrl = "https://gelbooru.com/index.php?page=post&s=view&id=$id",
-                tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+                tags = post.optString("tags").split(" ").filter { it.isNotBlank() }
             )
         }
     }

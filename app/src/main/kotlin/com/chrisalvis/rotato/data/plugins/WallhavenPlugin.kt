@@ -52,7 +52,7 @@ object WallhavenPlugin : SourcePlugin() {
             thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
             resolution = post.optString("resolution").ifBlank { "" },
             pageUrl = "https://wallhaven.cc/w/$id",
-            tags = tags.take(12)
+            tags = tags
         )
     }
 
@@ -90,7 +90,7 @@ object WallhavenPlugin : SourcePlugin() {
                 thumbUrl = thumbUrl, sampleUrl = fullUrl, fullUrl = fullUrl,
                 resolution = post.optString("resolution").ifBlank { "" },
                 pageUrl = "https://wallhaven.cc/w/$id",
-                tags = tags.take(12)
+                tags = tags
             )
         }
     }

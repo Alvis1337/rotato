@@ -80,7 +80,7 @@ private suspend fun fetchMoebooru(
         fullUrl = fullUrl,
         resolution = "${post.optInt("width")}x${post.optInt("height")}",
         pageUrl = "https://$host/post/show/$id",
-        tags = post.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+        tags = post.optString("tags").split(" ").filter { it.isNotBlank() }
     )
 }
 
@@ -115,7 +115,7 @@ private suspend fun fetchMoebooruPage(
             sampleUrl = sampleUrl, fullUrl = fullUrl,
             resolution = "${w}x${h}",
             pageUrl = "https://$host/post/show/$id",
-            tags = obj.optString("tags").split(" ").filter { it.isNotBlank() }.take(12)
+            tags = obj.optString("tags").split(" ").filter { it.isNotBlank() }
         )
     }
 }

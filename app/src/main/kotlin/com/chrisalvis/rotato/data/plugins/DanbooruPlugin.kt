@@ -100,7 +100,7 @@ object DanbooruPlugin : SourcePlugin() {
             resolution = "${post.optInt("image_width")}x${post.optInt("image_height")}",
             pageUrl = "https://danbooru.donmai.us/posts/$id",
             tags = (post.optString("tag_string_general") + " " + post.optString("tag_string_character"))
-                .trim().split(" ").filter { it.isNotBlank() }.take(12)
+                .trim().split(" ").filter { it.isNotBlank() }
         )
     }
 
@@ -141,7 +141,7 @@ object DanbooruPlugin : SourcePlugin() {
                 resolution = "${w}x${h}",
                 pageUrl = "https://danbooru.donmai.us/posts/$id",
                 tags = (obj.optString("tag_string_general") + " " + obj.optString("tag_string_character"))
-                    .trim().split(" ").filter { it.isNotBlank() }.take(12)
+                    .trim().split(" ").filter { it.isNotBlank() }
             )
         }
     }
