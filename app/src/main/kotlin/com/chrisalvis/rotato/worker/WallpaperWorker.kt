@@ -82,7 +82,6 @@ class WallpaperWorker(
 
             Log.d("WallpaperWorker", "screenBitmap=${screenBitmap.width}x${screenBitmap.height}")
             wallpaperManager.setBitmap(screenBitmap, null, true, flags)
-            screenBitmap.recycle()
 
             prefs.recordRotation()
 
@@ -97,9 +96,9 @@ class WallpaperWorker(
             prefs.setHistoryJson(history.take(50).toJson())
 
             // Post "wallpaper changed" notification
-            postWallpaperSetNotification(canvasBitmap)
+            postWallpaperSetNotification(screenBitmap)
             bitmap.recycle()
-            canvasBitmap.recycle()
+            screenBitmap.recycle()
 
             // Refresh the home screen widget
             RotatoWidgetProvider.refreshAll(applicationContext)
