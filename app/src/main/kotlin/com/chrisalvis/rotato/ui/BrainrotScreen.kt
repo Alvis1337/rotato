@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
@@ -530,21 +531,25 @@ private fun DiscoverGridItem(
         .coerceIn(0.25f, 4f)
         .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
     val context = LocalContext.current
-    
+
+    // Fall back to fullUrl if sampleUrl fails (e.g. 404 on Danbooru restricted posts)
+    var useFullUrl by remember(wallpaper.id) { mutableStateOf(false) }
+    val imageUrl = (if (useFullUrl || wallpaper.sampleUrl.isBlank()) wallpaper.fullUrl else wallpaper.sampleUrl)
+        .ifBlank { null }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
     ) {
-        val imageUrl = wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl }
         val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         with(sharedTransitionScope) {
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(imageUrl.ifBlank { null })
-                    .memoryCacheKey(imageUrl.ifBlank { null })
-                    .diskCacheKey(imageUrl.ifBlank { null })
+                    .data(imageUrl)
+                    .memoryCacheKey(imageUrl)
+                    .diskCacheKey(imageUrl)
                     .crossfade(true)
                     .build(),
                 contentDescription = null,
@@ -558,7 +563,16 @@ private fun DiscoverGridItem(
                     )
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { onClick() })
+                    },
+                loading = {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+                },
+                error = {
+                    if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
+                        LaunchedEffect(Unit) { useFullUrl = true }
                     }
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+                }
             )
         }
 
