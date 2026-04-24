@@ -52,7 +52,13 @@ fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
     }
     when (aspectRatio) {
         AspectRatio.ANY -> Unit
-        AspectRatio.MY_PHONE -> if (width >= height) return false
+        AspectRatio.MY_PHONE -> {
+            if (phoneWidthParts > 0 && phoneHeightParts > 0) {
+                val expected = phoneWidthParts.toDouble() / phoneHeightParts
+                val actual = width.toDouble() / height
+                if (abs(actual - expected) / expected > 0.05) return false
+            }
+        }
         else -> {
             val expected = aspectRatio.widthParts.toDouble() / aspectRatio.heightParts
             val actual = width.toDouble() / height

@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.util.Log
 import android.widget.Toast
 import kotlin.math.roundToInt
 import androidx.lifecycle.AndroidViewModel
@@ -211,7 +212,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                             .map { it.removePrefix("$sourceKey:") }
                         val page = try {
                             fetchPageFromSource(source, q, excludes, nsfw, filters)
-                        } catch (e: Exception) { emptyList() }
+                        } catch (e: Exception) {
+                            Log.e("DiscoverFetch", "${source.type.name} q=$q exception: ${e.message}", e)
+                            emptyList()
+                        }
+                        Log.d("DiscoverFetch", "${source.type.name} q=$q → ${page.size} items after filter")
                         if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
                     }
                 }
@@ -237,6 +242,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 newItems += wp
             }
 
+            Log.d("DiscoverFetch", "drain complete — ${newItems.size} new items, ${displayedKeys.size} total seen")
             if (newItems.isEmpty()) {
                 if (_gridItems.value.isEmpty()) {
                     _noResults.update { true }
