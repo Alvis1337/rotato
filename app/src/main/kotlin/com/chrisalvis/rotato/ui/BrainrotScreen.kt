@@ -1105,11 +1105,25 @@ private fun DiscoverSettingsSheetContent(
             Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AspectRatio.entries.forEach { ratio ->
-                    FilterChip(
-                        selected = filters.aspectRatio == ratio,
-                        onClick = { onSetAspectRatio(ratio) },
-                        label = { Text(ratio.label) }
-                    )
+                    if (ratio == AspectRatio.MY_PHONE) {
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                            tooltip = { PlainTooltip { Text("Shows only portrait images. Your phone crops them to fit at set time.") } },
+                            state = rememberTooltipState()
+                        ) {
+                            FilterChip(
+                                selected = filters.aspectRatio == ratio,
+                                onClick = { onSetAspectRatio(ratio) },
+                                label = { Text(ratio.label) }
+                            )
+                        }
+                    } else {
+                        FilterChip(
+                            selected = filters.aspectRatio == ratio,
+                            onClick = { onSetAspectRatio(ratio) },
+                            label = { Text(ratio.label) }
+                        )
+                    }
                 }
             }
         }
