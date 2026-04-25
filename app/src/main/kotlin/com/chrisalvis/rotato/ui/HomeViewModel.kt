@@ -412,6 +412,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             put("name", l.name)
                             put("createdAt", l.createdAt)
                             put("useAsRotation", l.useAsRotation)
+                            put("isLocked", l.isLocked)
                         })
                     }
                 }
@@ -526,6 +527,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 name = o.optString("name", "Imported"),
                                 createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                                 useAsRotation = o.optBoolean("useAsRotation", false),
+                                isLocked = o.optBoolean("isLocked", false),
                             )
                             localLists.createListWithId(list)
                         }
