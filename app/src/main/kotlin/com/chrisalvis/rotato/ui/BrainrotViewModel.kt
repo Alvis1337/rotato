@@ -1,6 +1,9 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.app.WallpaperManager
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.widget.Toast
 import kotlin.math.roundToInt
@@ -8,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
@@ -21,6 +25,7 @@ import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
+import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.fetchPageFromSource
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.data.historyFromJson
@@ -78,6 +83,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _sessionSaved = MutableStateFlow(0)
     val sessionSaved: StateFlow<Int> = _sessionSaved.asStateFlow()
+
+    val savedSourceIds: StateFlow<Set<String>> = localLists.allWallpapers
+        .map { entries -> entries.map { "${it.source}:${it.sourceId}" }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     private val _sessionSkipped = MutableStateFlow(0)
     val sessionSkipped: StateFlow<Int> = _sessionSkipped.asStateFlow()
@@ -341,6 +350,49 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _sessionSkipped.update { (it - 1).coerceAtLeast(0) }
         displayedKeys.remove("${wp.source}:${wp.id}")
         _gridItems.update { listOf(wp) + it }
+    }
+
+    fun setWallpaperDirectly(wp: BrainrotWallpaper) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val request = ImageRequest.Builder(app)
+                .data(wp.fullUrl.ifBlank { wp.thumbUrl })
+                .allowHardware(false)
+                .build()
+            val result = app.imageLoader.execute(request)
+            val bitmap = (result as? SuccessResult)?.drawable?.let {
+                (it as? BitmapDrawable)?.bitmap
+            }
+            if (bitmap == null) {
+                Toast.makeText(app, "Failed to load image", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            try {
+                val settings = prefs.settings.first()
+                val wm = WallpaperManager.getInstance(app)
+                val flags = when (settings.wallpaperTarget) {
+                    WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
+                    WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
+                    WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                }
+                val metrics = app.resources.displayMetrics
+                val screenW = metrics.widthPixels
+                val screenH = metrics.heightPixels
+                val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
+                val scaledW = (bitmap.width * scale).roundToInt()
+                val scaledH = (bitmap.height * scale).roundToInt()
+                val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
+                val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
+                val cropped = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
+                wm.setBitmap(cropped, null, true, flags)
+                if (cropped != scaled) cropped.recycle()
+                if (scaled != bitmap) scaled.recycle()
+                Toast.makeText(app, "Wallpaper set!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(app, "Failed to set wallpaper", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     fun addToList(listId: String, wp: BrainrotWallpaper) {

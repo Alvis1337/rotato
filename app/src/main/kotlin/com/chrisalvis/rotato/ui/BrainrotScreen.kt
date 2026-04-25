@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableFloatStateOf
@@ -105,6 +106,7 @@ fun BrainrotScreen(
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
     val handsFreeInterval by vm.handsFreeInterval.collectAsStateWithLifecycle()
+    val savedSourceIds by vm.savedSourceIds.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
     val coroutineScope = rememberCoroutineScope()
@@ -292,6 +294,7 @@ fun BrainrotScreen(
                                             DiscoverGridItem(
                                                 wallpaper = wp,
                                                 isDownloading = downloadingIds.contains(wp.id),
+                                                isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
                                                 onClick = { vm.selectItem(wp) }
                                             )
                                         }
@@ -463,6 +466,7 @@ fun BrainrotScreen(
                             onAddToList = { w, list -> onAddToList(w, list) },
                             onDownloadToRotation = { w -> vm.downloadToRotation(w) },
                             onSaveToGallery = { w -> vm.saveToGallery(w) },
+                            onSetWallpaper = { w -> vm.setWallpaperDirectly(w) },
                             onShare = { w ->
                                 val url = w.pageUrl.ifBlank { w.fullUrl }
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -508,6 +512,7 @@ fun BrainrotScreen(
 private fun DiscoverGridItem(
     wallpaper: BrainrotWallpaper,
     isDownloading: Boolean,
+    isSaved: Boolean,
     onClick: () -> Unit
 ) {
     val ratio = parseAspectRatio(wallpaper.resolution)
@@ -567,6 +572,18 @@ private fun DiscoverGridItem(
             )
         }
 
+        if (isSaved) {
+            Icon(
+                Icons.Default.Bookmark,
+                contentDescription = "Saved",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(20.dp)
+            )
+        }
+
         if (isDownloading) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
@@ -593,6 +610,7 @@ private fun WallpaperDetailOverlay(
     onAddToList: (BrainrotWallpaper, LocalList?) -> Unit,
     onDownloadToRotation: (BrainrotWallpaper) -> Unit,
     onSaveToGallery: (BrainrotWallpaper) -> Unit,
+    onSetWallpaper: (BrainrotWallpaper) -> Unit,
     onShare: (BrainrotWallpaper) -> Unit,
     onReport: (BrainrotWallpaper) -> Unit,
     onTagSearch: (String) -> Unit,
@@ -719,6 +737,7 @@ private fun WallpaperDetailOverlay(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
+            beyondBoundsPageCount = 1,
         ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
             val placeholderKey = item.sampleUrl.ifBlank { item.thumbUrl }
@@ -972,6 +991,11 @@ private fun WallpaperDetailOverlay(
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                         )
                         DropdownMenuItem(
+                            text = { Text("Set as wallpaper", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = { onSetWallpaper(wallpaper); showMore = false },
+                            leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Report", style = MaterialTheme.typography.bodyMedium) },
                             onClick = { onReport(wallpaper); showMore = false },
                             leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) }
@@ -1177,19 +1201,73 @@ private fun NoSourcesState(onNavigateToSources: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.padding(32.dp)
         ) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
-            Text("No sources enabled", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text(
-                "Enable image sources in Settings → Manage Sources to start discovering wallpapers",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
-                textAlign = TextAlign.Center
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = null,
+                modifier = Modifier.size(72.dp),
+                tint = MaterialTheme.colorScheme.primary
             )
-            Button(onClick = onNavigateToSources) { Text("Manage Sources") }
+            Text(
+                "Welcome to Rotato!",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "Get started in 3 steps:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OnboardingStep("1", "Go to Sources and enable one or more image sources")
+                OnboardingStep("2", "Tap any image to open it, zoom in, or save to a collection")
+                OnboardingStep("3", "Use Collections to manage your saved wallpapers and set them as your wallpaper")
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onNavigateToSources,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Get Started — Manage Sources")
+            }
         }
+    }
+}
+
+@Composable
+private fun OnboardingStep(number: String, description: String) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.small),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                number,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+        Text(
+            description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

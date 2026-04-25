@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +63,7 @@ fun BrowseScreen() {
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
+    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
 
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
@@ -215,20 +217,36 @@ fun BrowseScreen() {
                 modifier = Modifier.padding(padding)
             )
         } else {
-            WallpaperGridContent(
-                wallpapers = wallpapers,
-                isInRotation = { vm.isInRotation(it) },
-                downloading = downloading,
-                selectionMode = selectionMode,
-                selected = selected,
-                onTap = { wp ->
-                    if (selectionMode) vm.toggleSelection(wp)
-                    else showActionsFor = wp
-                },
-                onLongPress = { wp -> vm.enterSelectionMode(wp) },
-                onRemove = { wp -> if (wp.entryId.isNotBlank()) vm.removeWallpaper(wp.entryId) },
-                modifier = Modifier.padding(padding)
-            )
+            Column(modifier = Modifier.padding(padding)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { vm.setSearchQuery(it) },
+                    label = { Text("Search tags…") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        { IconButton(onClick = { vm.setSearchQuery("") }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
+                    } else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+                WallpaperGridContent(
+                    wallpapers = wallpapers,
+                    isInRotation = { vm.isInRotation(it) },
+                    downloading = downloading,
+                    selectionMode = selectionMode,
+                    selected = selected,
+                    onTap = { wp ->
+                        if (selectionMode) vm.toggleSelection(wp)
+                        else showActionsFor = wp
+                    },
+                    onLongPress = { wp -> vm.enterSelectionMode(wp) },
+                    onRemove = { wp -> if (wp.entryId.isNotBlank()) vm.removeWallpaper(wp.entryId) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }

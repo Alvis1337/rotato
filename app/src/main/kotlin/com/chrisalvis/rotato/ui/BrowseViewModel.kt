@@ -73,14 +73,24 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     // Store selected list by ID so it auto-clears when a list becomes hidden (locked)
     private val _selectedListId = MutableStateFlow<String?>(null)
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun setSearchQuery(q: String) { _searchQuery.update { q } }
+
     val selectedList: StateFlow<LocalList?> = combine(lists, _selectedListId) { visible, id ->
         visible.find { it.id == id }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val wallpapers: StateFlow<List<BrowseWallpaper>> =
-        combine(localLists.allWallpapers, _selectedListId, lists) { all, id, visible ->
+        combine(localLists.allWallpapers, _selectedListId, lists, _searchQuery) { all, id, visible, query ->
             if (id == null || visible.none { it.id == id }) return@combine emptyList()
-            all.filter { it.listId == id }.map { it.toBrowseWallpaper(app.filesDir) }.reversed()
+            val listEntries = all.filter { it.listId == id }
+            val matched = if (query.isBlank()) listEntries else listEntries.filter { entry ->
+                entry.tags.any { it.contains(query, ignoreCase = true) } ||
+                entry.source.contains(query, ignoreCase = true)
+            }
+            matched.map { it.toBrowseWallpaper(app.filesDir) }.reversed()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _inRotation = MutableStateFlow<Set<String>>(emptySet())
@@ -111,6 +121,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectList(list: LocalList) {
         _selectedListId.update { list.id }
+        _searchQuery.update { "" }
         exitSelectionMode()
     }
 
