@@ -2,18 +2,11 @@ package com.chrisalvis.rotato.ui
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -250,7 +243,6 @@ fun BrainrotScreen(
         }
     }
 
-    SharedTransitionLayout {
         Box(modifier = Modifier.fillMaxSize()) {
             when {
                 noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
@@ -265,13 +257,7 @@ fun BrainrotScreen(
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 }
                 else -> {
-                    AnimatedContent(
-                        targetState = selectedItem,
-                        transitionSpec = { fadeIn(tween(0)) togetherWith fadeOut(tween(0)) },
-                        label = "discover"
-                    ) { selected ->
-                        if (selected == null) {
-                            val pullRefreshState = rememberPullToRefreshState()
+                    val pullRefreshState = rememberPullToRefreshState()
                             Box(modifier = Modifier.fillMaxSize()) {
                                 PullToRefreshBox(
                                     isRefreshing = loading,
@@ -304,8 +290,6 @@ fun BrainrotScreen(
                                             DiscoverGridItem(
                                                 wallpaper = wp,
                                                 isDownloading = downloadingIds.contains(wp.id),
-                                                sharedTransitionScope = this@SharedTransitionLayout,
-                                                animatedVisibilityScope = this@AnimatedContent,
                                                 onClick = { vm.selectItem(wp) }
                                             )
                                         }
@@ -459,42 +443,40 @@ fun BrainrotScreen(
                                     }
                                 }
                             }
-                        } else {
-                            WallpaperDetailOverlay(
-                                wallpaper = selected,
-                                sharedTransitionScope = this@SharedTransitionLayout,
-                                animatedVisibilityScope = this@AnimatedContent,
-                                sessionSaved = sessionSaved,
-                                sessionSkipped = sessionSkipped,
-                                selectedListName = lists.find { it.id == selectedListId }?.name,
-                                lists = lists,
-                                isDownloading = downloadingIds.contains(selected.id),
-                                isSavingToGallery = downloadingIds.contains("gallery:${selected.id}"),
-                                onSkip = { vm.skip(selected) },
-                                onAddToList = { list -> onAddToList(selected, list) },
-                                onDownloadToRotation = { vm.downloadToRotation(selected) },
-                                onSaveToGallery = { vm.saveToGallery(selected) },
-                                onShare = {
-                                    val url = selected.pageUrl.ifBlank { selected.fullUrl }
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, url)
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
-                                },
-                                onReport = {
-                                    reportingWallpaper = selected
-                                    showReportSheet = true
-                                },
-                                onTagSearch = { tag ->
-                                    val current = searchQuery
-                                    val newQuery = if (current.isBlank()) tag else "$current $tag"
-                                    vm.setSearchQuery(newQuery)
-                                    vm.selectItem(null)
-                                },
-                                onDismiss = { vm.selectItem(null) }
-                            )
-                        }
+                        } // closes grid Box
+                    selectedItem?.let { selected ->
+                        WallpaperDetailOverlay(
+                            wallpaper = selected,
+                            sessionSaved = sessionSaved,
+                            sessionSkipped = sessionSkipped,
+                            selectedListName = lists.find { it.id == selectedListId }?.name,
+                            lists = lists,
+                            isDownloading = downloadingIds.contains(selected.id),
+                            isSavingToGallery = downloadingIds.contains("gallery:${selected.id}"),
+                            onSkip = { vm.skip(selected) },
+                            onAddToList = { list -> onAddToList(selected, list) },
+                            onDownloadToRotation = { vm.downloadToRotation(selected) },
+                            onSaveToGallery = { vm.saveToGallery(selected) },
+                            onShare = {
+                                val url = selected.pageUrl.ifBlank { selected.fullUrl }
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, url)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
+                            },
+                            onReport = {
+                                reportingWallpaper = selected
+                                showReportSheet = true
+                            },
+                            onTagSearch = { tag ->
+                                val current = searchQuery
+                                val newQuery = if (current.isBlank()) tag else "$current $tag"
+                                vm.setSearchQuery(newQuery)
+                                vm.selectItem(null)
+                            },
+                            onDismiss = { vm.selectItem(null) }
+                        )
                     }
                 }
             }
@@ -516,15 +498,12 @@ fun BrainrotScreen(
                     .padding(bottom = 80.dp)
             )
         }
-    }
 }
 
 @Composable
 private fun DiscoverGridItem(
     wallpaper: BrainrotWallpaper,
     isDownloading: Boolean,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onClick: () -> Unit
 ) {
     val ratio = parseAspectRatio(wallpaper.resolution)
@@ -543,38 +522,30 @@ private fun DiscoverGridItem(
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
     ) {
-        val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
-        with(sharedTransitionScope) {
-            SubcomposeAsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(imageUrl)
-                    .memoryCacheKey(imageUrl)
-                    .diskCacheKey(imageUrl)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .sharedElement(
-                        sharedContentState = rememberSharedContentState(key = imageKey),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { _, _ -> tween(350) }
-                    )
-                    .pointerInput(Unit) {
-                        detectTapGestures(onTap = { onClick() })
-                    },
-                loading = {
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+        SubcomposeAsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(imageUrl)
+                .memoryCacheKey(imageUrl)
+                .diskCacheKey(imageUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClick() })
                 },
-                error = {
-                    if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
-                        LaunchedEffect(Unit) { useFullUrl = true }
-                    }
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+            loading = {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+            },
+            error = {
+                if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
+                    LaunchedEffect(Unit) { useFullUrl = true }
                 }
-            )
-        }
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+            }
+        )
 
         // Source color badge — bottom-left
         Box(
@@ -606,8 +577,6 @@ private fun DiscoverGridItem(
 @Composable
 private fun WallpaperDetailOverlay(
     wallpaper: BrainrotWallpaper,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     sessionSaved: Int,
     sessionSkipped: Int,
     selectedListName: String?,
@@ -730,61 +699,48 @@ private fun WallpaperDetailOverlay(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))))
         )
-        val imageKey = "wp-image-${wallpaper.source}:${wallpaper.id}"
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
 
-        with(sharedTransitionScope) {
-            val sharedContentState = rememberSharedContentState(key = imageKey)
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(fullImageUrl)
-                    .memoryCacheKey(fullImageUrl)
-                    .diskCacheKey(fullImageUrl)
-                    .placeholderMemoryCacheKey(placeholderKey)
-                    .crossfade(false)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
-                        scaleX = scaleFactor
-                        scaleY = scaleFactor
-                    }
-                    .then(
-                        // Skip shared element transition when swipe-dismissing so the image
-                        // doesn't snap back to the grid thumbnail after the swipe animation.
-                        if (!isDismissing) Modifier.sharedElement(
-                            sharedContentState = sharedContentState,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            boundsTransform = { _, _ -> tween(350) }
-                        ) else Modifier
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(fullImageUrl)
+                .memoryCacheKey(fullImageUrl)
+                .diskCacheKey(fullImageUrl)
+                .placeholderMemoryCacheKey(placeholderKey)
+                .crossfade(false)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                    scaleX = scaleFactor
+                    scaleY = scaleFactor
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = { showZoom = true },
+                        onLongPress = {
+                            val url = wallpaper.pageUrl.ifBlank { wallpaper.fullUrl }
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("Wallpaper URL", url)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                        }
                     )
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onDoubleTap = { showZoom = true },
-                            onLongPress = {
-                                val url = wallpaper.pageUrl.ifBlank { wallpaper.fullUrl }
-                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("Wallpaper URL", url)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures(
+                        onGesture = { _, _, gestureZoom, _ ->
+                            if (gestureZoom > 1.1f && !isDismissing) {
+                                showZoom = true
                             }
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        detectTransformGestures(
-                            onGesture = { _, _, gestureZoom, _ ->
-                                if (gestureZoom > 1.1f && !isDismissing) {
-                                    showZoom = true
-                                }
-                            }
-                        )
-                    }
-            )
-        }
+                        }
+                    )
+                }
+        )
 
         // Top stats bar
         Box(
