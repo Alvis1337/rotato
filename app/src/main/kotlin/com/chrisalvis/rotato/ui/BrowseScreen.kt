@@ -243,6 +243,7 @@ private fun shareWallpaper(context: android.content.Context, wallpaper: BrowseWa
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun WallpaperActionsDialog(
     wallpaper: BrowseWallpaper,
     isInRotation: Boolean,
