@@ -737,7 +737,7 @@ private fun WallpaperDetailOverlay(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            beyondBoundsPageCount = 1,
+            beyondViewportPageCount = 1,
         ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
             val placeholderKey = item.sampleUrl.ifBlank { item.thumbUrl }
