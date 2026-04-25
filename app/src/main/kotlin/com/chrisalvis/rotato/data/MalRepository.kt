@@ -11,6 +11,7 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.IOException
 import java.security.SecureRandom
 
 class MalRepository(private val context: Context) {
@@ -67,7 +68,7 @@ class MalRepository(private val context: Context) {
             http.newCall(req).execute().use { resp ->
                 val body = resp.body?.string()
                 check(resp.isSuccessful) { "Token exchange failed: ${resp.code} $body" }
-                val json = JSONObject(body!!)
+                val json = JSONObject(body ?: throw IOException("Empty token response"))
                 prefs.setTokens(
                     json.getString("access_token"),
                     json.getString("refresh_token")
@@ -87,7 +88,8 @@ class MalRepository(private val context: Context) {
             .build()
         http.newCall(req).execute().use { resp ->
             check(resp.isSuccessful) { "Failed to fetch user: ${resp.code}" }
-            return JSONObject(resp.body!!.string()).getString("name")
+            val body = resp.body?.string() ?: throw IOException("Empty user response")
+            return JSONObject(body).getString("name")
         }
     }
 
@@ -111,7 +113,7 @@ class MalRepository(private val context: Context) {
 
             http.newCall(req).execute().use { resp ->
                 check(resp.isSuccessful) { "Refresh failed: ${resp.code}" }
-                val json = JSONObject(resp.body!!.string())
+                val json = JSONObject(resp.body?.string() ?: throw IOException("Empty refresh response"))
                 val newAccess = json.getString("access_token")
                 val newRefresh = json.getString("refresh_token")
                 prefs.setTokens(newAccess, newRefresh)
@@ -150,7 +152,7 @@ class MalRepository(private val context: Context) {
                 http.newCall(req).execute().use { resp ->
                     if (resp.code == 401) throw Exception("TOKEN_EXPIRED")
                     check(resp.isSuccessful) { "Anime list fetch failed: ${resp.code}" }
-                    val json = JSONObject(resp.body!!.string())
+                    val json = JSONObject(resp.body?.string() ?: throw IOException("Empty anime list response"))
                     val data = json.getJSONArray("data")
                     for (i in 0 until data.length()) {
                         val item = data.getJSONObject(i)

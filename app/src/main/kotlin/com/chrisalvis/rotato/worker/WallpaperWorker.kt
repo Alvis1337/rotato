@@ -76,24 +76,27 @@ class WallpaperWorker(
             val screenBitmap = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
             if (scaled != bitmap) scaled.recycle()
 
-            wallpaperManager.setBitmap(screenBitmap, null, true, flags)
+            try {
+                wallpaperManager.setBitmap(screenBitmap, null, true, flags)
 
-            prefs.recordRotation()
+                prefs.recordRotation()
 
-            // Record in history (keep last 20)
-            val history = historyFromJson(prefs.historyJson.first()).toMutableList()
-            history.add(0, WallpaperHistoryItem(
-                thumbUrl = targetFile.absolutePath,
-                fullUrl = targetFile.absolutePath,
-                source = "local",
-                timestamp = System.currentTimeMillis()
-            ))
-            prefs.setHistoryJson(history.take(50).toJson())
+                // Record in history (keep last 20)
+                val history = historyFromJson(prefs.historyJson.first()).toMutableList()
+                history.add(0, WallpaperHistoryItem(
+                    thumbUrl = targetFile.absolutePath,
+                    fullUrl = targetFile.absolutePath,
+                    source = "local",
+                    timestamp = System.currentTimeMillis()
+                ))
+                prefs.setHistoryJson(history.take(50).toJson())
 
-            // Post "wallpaper changed" notification
-            postWallpaperSetNotification(screenBitmap)
-            bitmap.recycle()
-            screenBitmap.recycle()
+                // Post "wallpaper changed" notification
+                postWallpaperSetNotification(screenBitmap)
+            } finally {
+                bitmap.recycle()
+                screenBitmap.recycle()
+            }
 
             // Refresh the home screen widget
             RotatoWidgetProvider.refreshAll(applicationContext)

@@ -1,6 +1,5 @@
 package com.chrisalvis.rotato.data.plugins
 
-import android.util.Log
 import com.chrisalvis.rotato.data.matches
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,7 +10,6 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-internal const val PLUGIN_TAG = "SourcePlugin"
 internal val BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 internal val http = OkHttpClient.Builder()
@@ -27,10 +25,10 @@ internal fun getJson(url: String, vararg headers: Pair<String, String>): JSONObj
         .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
         .build()
     http.newCall(req).execute().use { resp ->
-        if (!resp.isSuccessful) { Log.w(PLUGIN_TAG, "HTTP ${resp.code} for $url"); null }
+        if (!resp.isSuccessful) null
         else JSONObject(resp.body?.string() ?: return@use null)
     }
-} catch (e: Exception) { Log.e(PLUGIN_TAG, "getJson failed: $url", e); null }
+} catch (e: Exception) { null }
 
 internal fun getJsonArray(url: String, vararg headers: Pair<String, String>): JSONArray? = try {
     val req = Request.Builder().url(url)
@@ -38,10 +36,10 @@ internal fun getJsonArray(url: String, vararg headers: Pair<String, String>): JS
         .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
         .build()
     http.newCall(req).execute().use { resp ->
-        if (!resp.isSuccessful) { Log.w(PLUGIN_TAG, "HTTP ${resp.code} for $url"); null }
+        if (!resp.isSuccessful) null
         else JSONArray(resp.body?.string() ?: return@use null)
     }
-} catch (e: Exception) { Log.e(PLUGIN_TAG, "getJsonArray failed: $url", e); null }
+} catch (e: Exception) { null }
 
 /**
  * Normalises a free-text anime title into a single booru compound tag.

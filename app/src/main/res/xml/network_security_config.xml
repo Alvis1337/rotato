@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <!--
-        Rotato talks to a self-hosted animebacks server that may be on http://.
-        Cleartext is intentionally permitted — this app has no cloud backend.
+        Rotato's default config enforces TLS for all public traffic.
+        Cleartext (http://) is permitted only for the special-case loopback addresses
+        that a self-hosted animebacks server might run on during local development.
+        For production self-hosted installs, users are encouraged to use HTTPS.
     -->
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
 </network-security-config>

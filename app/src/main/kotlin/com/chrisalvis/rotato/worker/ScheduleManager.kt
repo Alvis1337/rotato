@@ -52,8 +52,15 @@ object ScheduleManager {
         val intent = Intent(context, ScheduleReceiver::class.java).apply {
             putExtra(ScheduleReceiver.EXTRA_ENTRY_ID, entryId)
         }
+        // Derive a stable positive int from the UUID string. Using leastSignificantBits of the
+        // parsed UUID gives better distribution than String.hashCode() and avoids sign issues.
+        val requestCode = try {
+            java.util.UUID.fromString(entryId).leastSignificantBits.toInt() and Int.MAX_VALUE
+        } catch (_: IllegalArgumentException) {
+            entryId.hashCode() and Int.MAX_VALUE
+        }
         return PendingIntent.getBroadcast(
-            context, entryId.hashCode(), intent,
+            context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
