@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -664,6 +663,12 @@ private fun WallpaperDetailOverlay(
                             val changeI = eventI.changes.firstOrNull { it.id == downChange.id }
                             if (changeI == null || !changeI.pressed) break
 
+                            // Two-finger pinch → open zoom immediately
+                            if (eventI.changes.count { it.pressed } >= 2) {
+                                coroutineScope.launch { showZoom = true }
+                                break@trackGesture
+                            }
+
                             totalDy += (changeI.position - changeI.previousPosition).y
                             horizDelta += (changeI.position - changeI.previousPosition).x
                             val totalDxAbs = kotlin.math.abs(horizDelta)
@@ -803,15 +808,6 @@ private fun WallpaperDetailOverlay(
                             val clip = ClipData.newPlainText("Wallpaper URL", url)
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectTransformGestures(
-                        onGesture = { _, _, gestureZoom, _ ->
-                            if (gestureZoom > 1.1f && !isDismissing) {
-                                showZoom = true
-                            }
                         }
                     )
                 }

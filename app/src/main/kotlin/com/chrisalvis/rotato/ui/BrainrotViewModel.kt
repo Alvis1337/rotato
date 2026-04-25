@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -81,9 +82,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _sessionSkipped = MutableStateFlow(0)
     val sessionSkipped: StateFlow<Int> = _sessionSkipped.asStateFlow()
 
-    val lists: StateFlow<List<LocalList>> = localLists.lists
-        .map { all -> all.filter { !it.isLocked } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val lists: StateFlow<List<LocalList>> = combine(
+        localLists.lists,
+        (app as com.chrisalvis.rotato.RotatoApp).unlockedListIds
+    ) { all, unlocked ->
+        all.filter { !it.isLocked || it.id in unlocked }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _selectedListId = MutableStateFlow<String?>(null)
     val selectedListId: StateFlow<String?> = _selectedListId.asStateFlow()

@@ -41,8 +41,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val _allLists: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // IDs of locked lists unlocked for this session (cleared when app is backgrounded)
-    private val _unlockedListIds = MutableStateFlow<Set<String>>(emptySet())
+    // IDs of locked lists unlocked for this session (shared app-level, cleared when app is backgrounded)
+    private val _unlockedListIds = getApplication<com.chrisalvis.rotato.RotatoApp>().unlockedListIds
     val unlockedListIds: StateFlow<Set<String>> = _unlockedListIds.asStateFlow()
 
     // Lists visible to the user: unlocked + not locked

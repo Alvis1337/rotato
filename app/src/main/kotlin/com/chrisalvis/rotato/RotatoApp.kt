@@ -5,10 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 
 class RotatoApp : Application(), ImageLoaderFactory {
+
+    /** Session-level unlocked list IDs — shared across all ViewModels. */
+    val unlockedListIds = MutableStateFlow<Set<String>>(emptySet())
 
     override fun onCreate() {
         super.onCreate()
