@@ -347,7 +347,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _selectedListId.update { listId }
         _sessionSaved.update { it + 1 }
         removeFromGrid(wp)
-        _selectedItem.update { null }
         viewModelScope.launch {
             val ok = localLists.addWallpaper(listId, wp)
             val ctx = getApplication<Application>().applicationContext

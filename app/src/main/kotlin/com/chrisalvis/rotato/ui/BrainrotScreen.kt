@@ -915,12 +915,7 @@ private fun WallpaperDetailOverlay(
                             lists.forEach { list ->
                                 DropdownMenuItem(
                                     text = { Text(list.name, style = MaterialTheme.typography.bodyMedium) },
-                                    onClick = { onAddToList(wallpaper, list); showBookmarkMenu = false },
-                                    leadingIcon = { 
-                                        if (!list.isLocked) {
-                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                                        }
-                                    }
+                                    onClick = { onAddToList(wallpaper, list); showBookmarkMenu = false }
                                 )
                             }
                         }
