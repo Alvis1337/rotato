@@ -203,7 +203,7 @@ private fun HistoryCard(
                     modifier = Modifier
                         .size(width = 100.dp, height = 72.dp)
                         .clip(MaterialTheme.shapes.medium)
-                        .then(if (onOpenPage != null) Modifier.clickable(onClick = onOpenPage) else Modifier)
+                        .then(if (onOpenPage != null) Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onOpenPage) else Modifier)
                 )
             }
             Column(

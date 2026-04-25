@@ -37,7 +37,6 @@ import com.chrisalvis.rotato.ui.ScheduleScreen
 import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 import com.chrisalvis.rotato.worker.ScheduleReceiver
-import android.util.Log
 
 class MainActivity : AppCompatActivity() {
 
@@ -45,11 +44,9 @@ class MainActivity : AppCompatActivity() {
     private val _pendingNavigate = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        Log.d("RotatoDebug", "MainActivity.onCreate start")
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         _pendingNavigate.value = intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)
-        Log.d("RotatoDebug", "MainActivity calling setContent")
         setContent {
             RotatoTheme {
                 val rotatoPrefs = remember { RotatoPreferences(applicationContext) }
@@ -65,11 +62,8 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val homeViewModel: HomeViewModel = viewModel()
-                Log.d("RotatoDebug", "homeViewModel created")
                 val brainrotViewModel: BrainrotViewModel = viewModel()
-                Log.d("RotatoDebug", "brainrotViewModel created")
                 val malViewModel: MalViewModel = viewModel()
-                Log.d("RotatoDebug", "malViewModel created")
                 malViewModelRef = malViewModel
                 val navController = rememberNavController()
 

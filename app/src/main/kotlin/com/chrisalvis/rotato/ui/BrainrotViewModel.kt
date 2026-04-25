@@ -128,7 +128,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private var fetchJob: Job? = null
 
     init {
-        android.util.Log.d("RotatoDebug", "BrainrotViewModel.init start")
         viewModelScope.launch { init() }
         viewModelScope.launch {
             localSources.sources.collect { sources ->
@@ -139,7 +138,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        android.util.Log.d("RotatoDebug", "BrainrotViewModel.init done")
     }
 
     private suspend fun init() {

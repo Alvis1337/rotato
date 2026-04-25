@@ -937,7 +937,7 @@ private fun WallpaperDetailOverlay(
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
                         if (lists.isEmpty()) {
-                            Text("  No lists yet  ", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            Text("  No lists yet  ", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
                             lists.forEach { list ->
                                 DropdownMenuItem(

@@ -1,5 +1,9 @@
 package com.chrisalvis.rotato.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +22,10 @@ fun SetupScreen(
     onSetupComplete: () -> Unit,
     vm: SetupViewModel = viewModel()
 ) {
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted or denied — proceed either way */ onSetupComplete() }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -56,7 +64,11 @@ fun SetupScreen(
             Button(
                 onClick = {
                     vm.complete()
-                    onSetupComplete()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        onSetupComplete()
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()

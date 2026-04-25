@@ -3,50 +3,16 @@ package com.chrisalvis.rotato
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import okhttp3.Interceptor
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 class RotatoApp : Application(), ImageLoaderFactory {
 
-    private val crashClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .build()
-
     override fun onCreate() {
         super.onCreate()
-        setupCrashReporting()
         createNotificationChannels()
-    }
-
-    private fun setupCrashReporting() {
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                val trace = Log.getStackTraceString(throwable)
-                val body = "Thread: ${thread.name}\n\n$trace"
-                    .toRequestBody("text/plain".toMediaType())
-                val req = Request.Builder()
-                    .url("https://ntfy.sh/$CRASH_TOPIC")
-                    .post(body)
-                    .addHeader("Title", "Rotato Crash")
-                    .addHeader("Priority", "high")
-                    .addHeader("Tags", "rotating_light")
-                    .build()
-                val t = Thread { runCatching { crashClient.newCall(req).execute().close() } }
-                t.start()
-                t.join(6_000)
-            } catch (_: Exception) {}
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
     }
 
     override fun newImageLoader(): ImageLoader {
@@ -103,7 +69,6 @@ class RotatoApp : Application(), ImageLoaderFactory {
         const val CHANNEL_LOW_QUEUE = "rotato_low_queue"
         const val CHANNEL_WORKER = "rotato_worker"
         const val CHANNEL_LOCKED_LIST = "rotato_locked_list"
-        const val CRASH_TOPIC = "rotato-crash-x7p2q9k4"
     }
 }
 

@@ -8,13 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
 import kotlin.math.roundToInt
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
-import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -67,8 +65,6 @@ class WallpaperWorker(
             val screenW = metrics.widthPixels
             val screenH = metrics.heightPixels
 
-            Log.d("WallpaperWorker", "bitmap=${bitmap.width}x${bitmap.height} screen=${screenW}x${screenH}")
-
             // Scale to fill exactly the screen (center crop), pass null crop hint.
             // Giving Android a bitmap that IS the screen size leaves nothing to zoom or scroll.
             val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
@@ -80,7 +76,6 @@ class WallpaperWorker(
             val screenBitmap = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
             if (scaled != bitmap) scaled.recycle()
 
-            Log.d("WallpaperWorker", "screenBitmap=${screenBitmap.width}x${screenBitmap.height}")
             wallpaperManager.setBitmap(screenBitmap, null, true, flags)
 
             prefs.recordRotation()
@@ -119,15 +114,6 @@ class WallpaperWorker(
         } catch (e: Exception) {
             Result.retry()
         }
-    }
-
-    override suspend fun getForegroundInfo(): ForegroundInfo {
-        val notification = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WORKER)
-            .setContentTitle("Changing wallpaper…")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .build()
-        return ForegroundInfo(NOTIF_ID_WORKER, notification)
     }
 
     private fun postWallpaperSetNotification(bitmap: Bitmap) {
@@ -224,7 +210,6 @@ class WallpaperWorker(
     companion object {
         const val KEY_INTERVAL_MINUTES = "interval_minutes"
         const val CHAIN_WORK_NAME = "rotato_chain"
-        private const val NOTIF_ID_WORKER = 1000
         private const val NOTIF_ID_WALLPAPER_SET = 1001
         private const val NOTIF_ID_LOW_QUEUE = 1002
     }

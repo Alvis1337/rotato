@@ -391,7 +391,7 @@ private fun ImageThumbnail(
                 if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 else Modifier
             )
-            .then(if (!inSelectionMode) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (!inSelectionMode) Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick) else Modifier)
     ) {
         AsyncImage(
             model = file,
