@@ -595,7 +595,11 @@ private fun WallpaperGridContent(
         return
     }
 
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(wallpapers) { gridState.animateScrollToItem(0) }
+
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(2),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
