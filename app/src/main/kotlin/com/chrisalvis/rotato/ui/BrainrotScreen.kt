@@ -93,6 +93,8 @@ fun BrainrotScreen(
     val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
+    // -1 = slide from left (prev), 0 = no slide (first open), +1 = slide from right (next)
+    var navDirection by remember { mutableIntStateOf(0) }
     val noSources by vm.noSources.collectAsStateWithLifecycle()
     val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
     val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
@@ -450,6 +452,7 @@ fun BrainrotScreen(
                         key("${selected.source}:${selected.id}") {
                         WallpaperDetailOverlay(
                             wallpaper = selected,
+                            slideInFrom = navDirection,
                             sessionSaved = sessionSaved,
                             sessionSkipped = sessionSkipped,
                             selectedListName = lists.find { it.id == selectedListId }?.name,
@@ -481,14 +484,20 @@ fun BrainrotScreen(
                             onNavigateNext = run {
                                 val items = gridItems
                                 val idx = items.indexOfFirst { it.id == selected.id && it.source == selected.source }
-                                if (idx + 1 < items.size) ({ vm.selectNext() }) else null
+                                if (idx + 1 < items.size) ({
+                                    navDirection = 1
+                                    vm.selectNext()
+                                }) else null
                             },
                             onNavigatePrev = run {
                                 val items = gridItems
                                 val idx = items.indexOfFirst { it.id == selected.id && it.source == selected.source }
-                                if (idx > 0) ({ vm.selectPrev() }) else null
+                                if (idx > 0) ({
+                                    navDirection = -1
+                                    vm.selectPrev()
+                                }) else null
                             },
-                            onDismiss = { vm.selectItem(null) }
+                            onDismiss = { navDirection = 0; vm.selectItem(null) }
                         )
                         }
                     }
@@ -589,6 +598,7 @@ private fun DiscoverGridItem(
 @Composable
 private fun WallpaperDetailOverlay(
     wallpaper: BrainrotWallpaper,
+    slideInFrom: Int = 0,
     sessionSaved: Int,
     sessionSkipped: Int,
     selectedListName: String?,
@@ -614,11 +624,17 @@ private fun WallpaperDetailOverlay(
     val density = LocalDensity.current
     val swipeThresholdPx = remember(density) { with(density) { 72.dp.toPx() } }
 
-    // Smooth swipe-to-dismiss with proper animation
     val offsetY = remember { Animatable(0f) }
-    val offsetX = remember { Animatable(0f) }
+    // Start off-screen if navigating, then animate to center
+    val offsetX = remember { Animatable(if (slideInFrom > 0) 1000f else if (slideInFrom < 0) -1000f else 0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var isNavigating by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (slideInFrom != 0) {
+            offsetX.animateTo(0f, tween(220, easing = FastOutLinearInEasing))
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -626,9 +642,8 @@ private fun WallpaperDetailOverlay(
             .graphicsLayer {
                 translationY = offsetY.value
                 translationX = offsetX.value
-                val dismissFade = (offsetY.value / 600f).coerceIn(0f, 1f)
-                val navFade = (kotlin.math.abs(offsetX.value) / 600f).coerceIn(0f, 1f)
-                alpha = 1f - maxOf(dismissFade, navFade)
+                // Only fade alpha for dismiss (vertical swipe); horizontal stays fully opaque
+                alpha = 1f - (offsetY.value / 600f).coerceIn(0f, 1f)
             }
             .pointerInput(isDismissing, isNavigating, showZoom) {
                 if (isDismissing || isNavigating || showZoom) return@pointerInput
@@ -742,19 +757,11 @@ private fun WallpaperDetailOverlay(
                 }
             }
     ) {
-        // Black overlay that fades as user swipes (shows discover grid behind)
+        // Black overlay that fades only when dismissing downward (horizontal nav stays opaque)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Color.Black.copy(
-                        alpha = run {
-                            val dismissFade = (offsetY.value / 600f).coerceIn(0f, 1f)
-                            val navFade = (kotlin.math.abs(offsetX.value) / 600f).coerceIn(0f, 1f)
-                            1f - maxOf(dismissFade, navFade)
-                        }
-                    )
-                )
+                .background(Color.Black.copy(alpha = 1f - (offsetY.value / 600f).coerceIn(0f, 1f)))
         )
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
