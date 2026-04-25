@@ -730,6 +730,7 @@ private fun SaveRotationDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MoveWallpapersDialog(
     lists: List<LocalList>,
@@ -745,20 +746,26 @@ private fun MoveWallpapersDialog(
         )
         return
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Move to collection") },
-        text = {
-            Column {
-                lists.forEach { list ->
-                    TextButton(
-                        onClick = { onConfirm(list.id) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(list.name) }
-                }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                "Move to collection",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+            )
+            HorizontalDivider()
+            lists.forEach { list ->
+                ListItem(
+                    headlineContent = { Text(list.name) },
+                    modifier = Modifier.clickable { onConfirm(list.id) }
+                )
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+        }
+    }
 }
