@@ -301,6 +301,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _selectedItem.update { wp }
     }
 
+    fun selectNext() {
+        val current = _selectedItem.value ?: return
+        val items = _gridItems.value
+        val idx = items.indexOfFirst { it.id == current.id && it.source == current.source }
+        if (idx + 1 < items.size) _selectedItem.update { items[idx + 1] }
+    }
+
+    fun selectPrev() {
+        val current = _selectedItem.value ?: return
+        val items = _gridItems.value
+        val idx = items.indexOfFirst { it.id == current.id && it.source == current.source }
+        if (idx > 0) _selectedItem.update { items[idx - 1] }
+    }
+
     fun skip(wp: BrainrotWallpaper) {
         _sessionSkipped.update { it + 1 }
         if (undoStack.size >= 3) undoStack.removeFirst()

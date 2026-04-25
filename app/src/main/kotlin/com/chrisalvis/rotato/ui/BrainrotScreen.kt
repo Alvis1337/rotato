@@ -42,6 +42,7 @@ import android.content.ClipData
 import android.widget.Toast
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -446,6 +447,7 @@ fun BrainrotScreen(
                         } // closes grid Box
             } // closes when
             selectedItem?.let { selected ->
+                        key("${selected.source}:${selected.id}") {
                         WallpaperDetailOverlay(
                             wallpaper = selected,
                             sessionSaved = sessionSaved,
@@ -476,8 +478,19 @@ fun BrainrotScreen(
                                 vm.setSearchQuery(newQuery)
                                 vm.selectItem(null)
                             },
+                            onNavigateNext = run {
+                                val items = gridItems
+                                val idx = items.indexOfFirst { it.id == selected.id && it.source == selected.source }
+                                if (idx + 1 < items.size) ({ vm.selectNext() }) else null
+                            },
+                            onNavigatePrev = run {
+                                val items = gridItems
+                                val idx = items.indexOfFirst { it.id == selected.id && it.source == selected.source }
+                                if (idx > 0) ({ vm.selectPrev() }) else null
+                            },
                             onDismiss = { vm.selectItem(null) }
                         )
+                        }
                     }
 
             if (showHandsFree) {
@@ -589,6 +602,8 @@ private fun WallpaperDetailOverlay(
     onShare: () -> Unit,
     onReport: () -> Unit,
     onTagSearch: (String) -> Unit,
+    onNavigateNext: (() -> Unit)?,
+    onNavigatePrev: (() -> Unit)?,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
@@ -596,45 +611,49 @@ private fun WallpaperDetailOverlay(
     var showInfoExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    
+    val density = LocalDensity.current
+    val swipeThresholdPx = remember(density) { with(density) { 72.dp.toPx() } }
+
     // Smooth swipe-to-dismiss with proper animation
     val offsetY = remember { Animatable(0f) }
+    val offsetX = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
+    var isNavigating by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
                 translationY = offsetY.value
-                alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))
+                translationX = offsetX.value
+                val dismissFade = (offsetY.value / 600f).coerceIn(0f, 1f)
+                val navFade = (kotlin.math.abs(offsetX.value) / 600f).coerceIn(0f, 1f)
+                alpha = 1f - maxOf(dismissFade, navFade)
             }
-            .pointerInput(isDismissing, showZoom) {
-                if (isDismissing || showZoom) return@pointerInput
-                // Use PointerEventPass.Initial so the outer Box intercepts drag events
-                // BEFORE children (AsyncImage's detectTapGestures) can consume them.
-                // Initial pass flows parent→child, giving parent priority over gestures.
+            .pointerInput(isDismissing, isNavigating, showZoom) {
+                if (isDismissing || isNavigating || showZoom) return@pointerInput
                 awaitPointerEventScope {
                     while (true) {
-                        // Wait for a fresh finger-down in the Initial pass
                         val downChange = awaitFirstDown(
                             requireUnconsumed = false,
                             pass = PointerEventPass.Initial
                         )
-                        val startX = downChange.position.x
                         var totalDy = 0f
+                        var horizDelta = 0f
                         var dragConfirmed = false
+                        var horizConfirmed = false
 
-                        // Track movement: confirm vertical drag before children see it
                         trackGesture@ while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.id == downChange.id }
                             if (change == null || !change.pressed) break
 
                             totalDy += (change.position - change.previousPosition).y
-                            val totalDx = kotlin.math.abs(change.position.x - startX)
+                            horizDelta += (change.position - change.previousPosition).x
+                            val totalDxAbs = kotlin.math.abs(horizDelta)
 
-                            if (totalDy > viewConfiguration.touchSlop && totalDy > totalDx) {
-                                // Downward vertical drag confirmed — consume to cancel children
+                            if (totalDy > viewConfiguration.touchSlop && totalDy > totalDxAbs) {
+                                // Downward vertical drag confirmed
                                 change.consume()
                                 dragConfirmed = true
                                 coroutineScope.launch {
@@ -642,15 +661,16 @@ private fun WallpaperDetailOverlay(
                                 }
                                 break@trackGesture
                             }
-                            // Clearly horizontal or upward — not our gesture
-                            if (totalDx > kotlin.math.abs(totalDy) + viewConfiguration.touchSlop) {
+                            if (totalDxAbs > viewConfiguration.touchSlop && totalDxAbs > kotlin.math.abs(totalDy)) {
+                                // Horizontal drag confirmed
+                                change.consume()
+                                horizConfirmed = true
+                                coroutineScope.launch { offsetX.snapTo(horizDelta) }
                                 break@trackGesture
                             }
                         }
 
                         if (dragConfirmed) {
-                            // Stay in Initial pass for the full drag — using drag() would
-                            // switch to Main pass and get cancelled by child gesture consumers.
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == downChange.id }
@@ -683,6 +703,36 @@ private fun WallpaperDetailOverlay(
                             }
                         }
 
+                        if (horizConfirmed) {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == downChange.id }
+                                if (change == null || !change.pressed) break
+                                val dx = (change.position - change.previousPosition).x
+                                horizDelta += dx
+                                change.consume()
+                                coroutineScope.launch { offsetX.snapTo(offsetX.value + dx) }
+                            }
+                            coroutineScope.launch {
+                                when {
+                                    horizDelta < -swipeThresholdPx && onNavigateNext != null -> {
+                                        isNavigating = true
+                                        offsetX.animateTo(-1000f, tween(200, easing = FastOutLinearInEasing))
+                                        onNavigateNext()
+                                    }
+                                    horizDelta > swipeThresholdPx && onNavigatePrev != null -> {
+                                        isNavigating = true
+                                        offsetX.animateTo(1000f, tween(200, easing = FastOutLinearInEasing))
+                                        onNavigatePrev()
+                                    }
+                                    else -> offsetX.animateTo(
+                                        0f,
+                                        spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
+                                    )
+                                }
+                            }
+                        }
+
                         // Drain remaining events until all pointers are up
                         while (true) {
                             val evt = awaitPointerEvent(PointerEventPass.Final)
@@ -696,7 +746,15 @@ private fun WallpaperDetailOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = (1f - (offsetY.value / 600f).coerceIn(0f, 1f))))
+                .background(
+                    Color.Black.copy(
+                        alpha = run {
+                            val dismissFade = (offsetY.value / 600f).coerceIn(0f, 1f)
+                            val navFade = (kotlin.math.abs(offsetX.value) / 600f).coerceIn(0f, 1f)
+                            1f - maxOf(dismissFade, navFade)
+                        }
+                    )
+                )
         )
         val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
         val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
