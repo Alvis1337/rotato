@@ -54,6 +54,8 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
@@ -92,8 +94,6 @@ fun BrainrotScreen(
     val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
-    // -1 = slide from left (prev), 0 = no slide (first open), +1 = slide from right (next)
-    var navDirection by remember { mutableIntStateOf(0) }
     val noSources by vm.noSources.collectAsStateWithLifecycle()
     val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
     val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
@@ -448,29 +448,31 @@ fun BrainrotScreen(
                         } // closes grid Box
             } // closes when
             selectedItem?.let { selected ->
+                        val startIndex = gridItems.indexOfFirst { it.id == selected.id && it.source == selected.source }.coerceAtLeast(0)
                         WallpaperDetailOverlay(
-                            wallpaper = selected,
-                            slideInFrom = navDirection,
+                            items = gridItems,
+                            startIndex = startIndex,
+                            onPageChanged = { vm.selectItem(it) },
                             sessionSaved = sessionSaved,
                             sessionSkipped = sessionSkipped,
                             selectedListName = lists.find { it.id == selectedListId }?.name,
                             lists = lists,
-                            isDownloading = downloadingIds.contains(selected.id),
-                            isSavingToGallery = downloadingIds.contains("gallery:${selected.id}"),
-                            onSkip = { vm.skip(selected) },
-                            onAddToList = { list -> onAddToList(selected, list) },
-                            onDownloadToRotation = { vm.downloadToRotation(selected) },
-                            onSaveToGallery = { vm.saveToGallery(selected) },
-                            onShare = {
-                                val url = selected.pageUrl.ifBlank { selected.fullUrl }
+                            isDownloadingFn = { downloadingIds.contains(it.id) },
+                            isSavingToGalleryFn = { downloadingIds.contains("gallery:${it.id}") },
+                            onSkip = { w -> vm.skip(w) },
+                            onAddToList = { w, list -> onAddToList(w, list) },
+                            onDownloadToRotation = { w -> vm.downloadToRotation(w) },
+                            onSaveToGallery = { w -> vm.saveToGallery(w) },
+                            onShare = { w ->
+                                val url = w.pageUrl.ifBlank { w.fullUrl }
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, url)
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
                             },
-                            onReport = {
-                                reportingWallpaper = selected
+                            onReport = { w ->
+                                reportingWallpaper = w
                                 showReportSheet = true
                             },
                             onTagSearch = { tag ->
@@ -479,23 +481,7 @@ fun BrainrotScreen(
                                 vm.setSearchQuery(newQuery)
                                 vm.selectItem(null)
                             },
-                            onNavigateNext = run {
-                                val items = gridItems
-                                val idx = items.indexOfFirst { it.id == selected.id && it.source == selected.source }
-                                if (idx + 1 < items.size) ({
-                                    navDirection = 1
-                                    vm.selectNext()
-                                }) else null
-                            },
-                            onNavigatePrev = run {
-                                val items = gridItems
-                                val idx = items.indexOfFirst { it.id == selected.id && it.source == selected.source }
-                                if (idx > 0) ({
-                                    navDirection = -1
-                                    vm.selectPrev()
-                                }) else null
-                            },
-                            onDismiss = { navDirection = 0; vm.selectItem(null) }
+                            onDismiss = { vm.selectItem(null) }
                         )
                     }
 
@@ -594,23 +580,22 @@ private fun DiscoverGridItem(
 
 @Composable
 private fun WallpaperDetailOverlay(
-    wallpaper: BrainrotWallpaper,
-    slideInFrom: Int = 0,
+    items: List<BrainrotWallpaper>,
+    startIndex: Int,
+    onPageChanged: (BrainrotWallpaper) -> Unit,
     sessionSaved: Int,
     sessionSkipped: Int,
     selectedListName: String?,
     lists: List<LocalList>,
-    isDownloading: Boolean,
-    isSavingToGallery: Boolean,
-    onSkip: () -> Unit,
-    onAddToList: (LocalList?) -> Unit,
-    onDownloadToRotation: () -> Unit,
-    onSaveToGallery: () -> Unit,
-    onShare: () -> Unit,
-    onReport: () -> Unit,
+    isDownloadingFn: (BrainrotWallpaper) -> Boolean,
+    isSavingToGalleryFn: (BrainrotWallpaper) -> Boolean,
+    onSkip: (BrainrotWallpaper) -> Unit,
+    onAddToList: (BrainrotWallpaper, LocalList?) -> Unit,
+    onDownloadToRotation: (BrainrotWallpaper) -> Unit,
+    onSaveToGallery: (BrainrotWallpaper) -> Unit,
+    onShare: (BrainrotWallpaper) -> Unit,
+    onReport: (BrainrotWallpaper) -> Unit,
     onTagSearch: (String) -> Unit,
-    onNavigateNext: (() -> Unit)?,
-    onNavigatePrev: (() -> Unit)?,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
@@ -619,39 +604,30 @@ private fun WallpaperDetailOverlay(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val swipeThresholdPx = remember(density) { with(density) { 72.dp.toPx() } }
+    val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
 
-    val offsetY = remember { Animatable(0f) }
-    val offsetX = remember { Animatable(0f) }
-    var isDismissing by remember { mutableStateOf(false) }
-    var isNavigating by remember { mutableStateOf(false) }
+    val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
+    val wallpaper by remember { derivedStateOf { items.getOrNull(pagerState.currentPage) ?: items[startIndex] } }
 
-    // Reset all transient state and slide in whenever the wallpaper changes (navigation)
-    LaunchedEffect(wallpaper.source, wallpaper.id) {
-        isDismissing = false
-        isNavigating = false
+    // Sync page change back to parent so action callbacks reference the right item
+    LaunchedEffect(pagerState.currentPage) {
         showZoom = false
         showInfoExpanded = false
-        offsetY.snapTo(0f)
-        if (slideInFrom != 0) {
-            offsetX.snapTo(if (slideInFrom > 0) 1000f else -1000f)
-            offsetX.animateTo(0f, tween(220, easing = FastOutLinearInEasing))
-        } else {
-            offsetX.snapTo(0f)
-        }
+        onPageChanged(items[pagerState.currentPage])
     }
+
+    val offsetY = remember { Animatable(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
                 translationY = offsetY.value
-                translationX = offsetX.value
-                // Only fade alpha for dismiss (vertical swipe); horizontal stays fully opaque
                 alpha = 1f - (offsetY.value / 600f).coerceIn(0f, 1f)
             }
-            .pointerInput(isDismissing, isNavigating, showZoom) {
-                if (isDismissing || isNavigating || showZoom) return@pointerInput
+            .pointerInput(isDismissing, showZoom) {
+                if (isDismissing || showZoom) return@pointerInput
                 awaitPointerEventScope {
                     while (true) {
                         val downChange = awaitFirstDown(
@@ -659,12 +635,10 @@ private fun WallpaperDetailOverlay(
                             pass = PointerEventPass.Initial
                         )
                         var totalDy = 0f
-                        var horizDelta = 0f
+                        var totalDx = 0f
                         var dragConfirmed = false
-                        var horizConfirmed = false
 
                         trackGesture@ while (true) {
-                            // Read Initial pass first so we can intercept vertical before children
                             val eventI = awaitPointerEvent(PointerEventPass.Initial)
                             val changeI = eventI.changes.firstOrNull { it.id == downChange.id }
                             if (changeI == null || !changeI.pressed) break
@@ -676,33 +650,19 @@ private fun WallpaperDetailOverlay(
                             }
 
                             totalDy += (changeI.position - changeI.previousPosition).y
-                            horizDelta += (changeI.position - changeI.previousPosition).x
-                            val totalDxAbs = kotlin.math.abs(horizDelta)
+                            totalDx += (changeI.position - changeI.previousPosition).x
+                            val totalDxAbs = kotlin.math.abs(totalDx)
 
                             if (totalDy > viewConfiguration.touchSlop && totalDy > totalDxAbs) {
                                 // Downward vertical drag confirmed — consume before children see it
                                 changeI.consume()
                                 dragConfirmed = true
-                                coroutineScope.launch {
-                                    offsetY.snapTo(totalDy.coerceAtLeast(0f))
-                                }
+                                coroutineScope.launch { offsetY.snapTo(totalDy.coerceAtLeast(0f)) }
                                 break@trackGesture
                             }
 
-                            // For horizontal: read Main pass so children (tag LazyRow) get first dibs.
-                            // If a child consumed the event it's a tag scroll — don't navigate.
-                            val eventM = awaitPointerEvent(PointerEventPass.Main)
-                            val changeM = eventM.changes.firstOrNull { it.id == downChange.id }
-
+                            // Horizontal movement — let the pager handle it, don't intercept
                             if (totalDxAbs > viewConfiguration.touchSlop && totalDxAbs > kotlin.math.abs(totalDy)) {
-                                if (changeM != null && changeM.isConsumed) {
-                                    // Child scrollable (tags) consumed it — let it scroll
-                                    break@trackGesture
-                                }
-                                // Nothing consumed it — claim horizontal navigation
-                                changeM?.consume()
-                                horizConfirmed = true
-                                coroutineScope.launch { offsetX.snapTo(horizDelta) }
                                 break@trackGesture
                             }
                         }
@@ -721,7 +681,7 @@ private fun WallpaperDetailOverlay(
                                 }
                             }
                             coroutineScope.launch {
-                                if (offsetY.value > 150f) {
+                                if (offsetY.value > swipeThresholdPx) {
                                     isDismissing = true
                                     offsetY.animateTo(
                                         targetValue = 800f,
@@ -740,36 +700,6 @@ private fun WallpaperDetailOverlay(
                             }
                         }
 
-                        if (horizConfirmed) {
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
-                                val change = event.changes.firstOrNull { it.id == downChange.id }
-                                if (change == null || !change.pressed) break
-                                val dx = (change.position - change.previousPosition).x
-                                horizDelta += dx
-                                change.consume()
-                                coroutineScope.launch { offsetX.snapTo(offsetX.value + dx) }
-                            }
-                            coroutineScope.launch {
-                                when {
-                                    horizDelta < -swipeThresholdPx && onNavigateNext != null -> {
-                                        isNavigating = true
-                                        offsetX.animateTo(-1000f, tween(200, easing = FastOutLinearInEasing))
-                                        onNavigateNext()
-                                    }
-                                    horizDelta > swipeThresholdPx && onNavigatePrev != null -> {
-                                        isNavigating = true
-                                        offsetX.animateTo(1000f, tween(200, easing = FastOutLinearInEasing))
-                                        onNavigatePrev()
-                                    }
-                                    else -> offsetX.animateTo(
-                                        0f,
-                                        spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
-                                    )
-                                }
-                            }
-                        }
-
                         // Drain remaining events until all pointers are up
                         while (true) {
                             val evt = awaitPointerEvent(PointerEventPass.Final)
@@ -779,45 +709,52 @@ private fun WallpaperDetailOverlay(
                 }
             }
     ) {
-        // Black overlay that fades only when dismissing downward (horizontal nav stays opaque)
+        // Black scrim that fades only when dismissing downward
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 1f - (offsetY.value / 600f).coerceIn(0f, 1f)))
         )
-        val placeholderKey = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }
-        val fullImageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
 
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(fullImageUrl)
-                .memoryCacheKey(fullImageUrl)
-                .diskCacheKey(fullImageUrl)
-                .placeholderMemoryCacheKey(placeholderKey)
-                .crossfade(false)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
-                    scaleX = scaleFactor
-                    scaleY = scaleFactor
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = { showZoom = true },
-                        onLongPress = {
-                            val url = wallpaper.pageUrl.ifBlank { wallpaper.fullUrl }
-                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("Wallpaper URL", url)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                }
-        )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
+            val item = items.getOrNull(page) ?: return@HorizontalPager
+            val placeholderKey = item.sampleUrl.ifBlank { item.thumbUrl }
+            val fullImageUrl = item.fullUrl.ifBlank { item.thumbUrl }
+
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(fullImageUrl)
+                    .memoryCacheKey(fullImageUrl)
+                    .diskCacheKey(fullImageUrl)
+                    .placeholderMemoryCacheKey(placeholderKey)
+                    .crossfade(false)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                        scaleX = scaleFactor
+                        scaleY = scaleFactor
+                    }
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = { showZoom = true },
+                            onLongPress = {
+                                val url = item.pageUrl.ifBlank { item.fullUrl }
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText("Wallpaper URL", url)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+            )
+        } // end HorizontalPager
 
         // Top stats bar
         Box(
@@ -925,6 +862,9 @@ private fun WallpaperDetailOverlay(
                 }
             }
 
+            val isDownloading = isDownloadingFn(wallpaper)
+            val isSavingToGallery = isSavingToGalleryFn(wallpaper)
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -955,7 +895,7 @@ private fun WallpaperDetailOverlay(
                             if (lists.isNotEmpty()) {
                                 showBookmarkMenu = !showBookmarkMenu
                             } else {
-                                onAddToList(null)
+                                onAddToList(wallpaper, null)
                             }
                         },
                         modifier = Modifier.size(56.dp),
@@ -975,7 +915,7 @@ private fun WallpaperDetailOverlay(
                             lists.forEach { list ->
                                 DropdownMenuItem(
                                     text = { Text(list.name, style = MaterialTheme.typography.bodyMedium) },
-                                    onClick = { onAddToList(list); showBookmarkMenu = false },
+                                    onClick = { onAddToList(wallpaper, list); showBookmarkMenu = false },
                                     leadingIcon = { 
                                         if (!list.isLocked) {
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -989,7 +929,7 @@ private fun WallpaperDetailOverlay(
 
                 // Download
                 OutlinedIconButton(
-                    onClick = onDownloadToRotation,
+                    onClick = { onDownloadToRotation(wallpaper) },
                     enabled = !isDownloading,
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
@@ -1003,7 +943,7 @@ private fun WallpaperDetailOverlay(
 
                 // Save to gallery
                 OutlinedIconButton(
-                    onClick = onSaveToGallery,
+                    onClick = { onSaveToGallery(wallpaper) },
                     enabled = !isSavingToGallery,
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
@@ -1033,12 +973,12 @@ private fun WallpaperDetailOverlay(
                     ) {
                         DropdownMenuItem(
                             text = { Text("Share", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { onShare(); showMore = false },
+                            onClick = { onShare(wallpaper); showMore = false },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                         )
                         DropdownMenuItem(
                             text = { Text("Report", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { onReport(); showMore = false },
+                            onClick = { onReport(wallpaper); showMore = false },
                             leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) }
                         )
                     }
@@ -1046,7 +986,7 @@ private fun WallpaperDetailOverlay(
             }
 
             OutlinedButton(
-                onClick = { onSkip(); onDismiss() },
+                onClick = { onSkip(wallpaper); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
             ) {
