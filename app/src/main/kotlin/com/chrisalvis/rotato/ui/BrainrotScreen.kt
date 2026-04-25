@@ -444,7 +444,8 @@ fun BrainrotScreen(
                                 }
                             }
                         } // closes grid Box
-                    selectedItem?.let { selected ->
+            } // closes when
+            selectedItem?.let { selected ->
                         WallpaperDetailOverlay(
                             wallpaper = selected,
                             sessionSaved = sessionSaved,
@@ -478,8 +479,6 @@ fun BrainrotScreen(
                             onDismiss = { vm.selectItem(null) }
                         )
                     }
-                }
-            }
 
             if (showHandsFree) {
                 HandsFreeOverlay(
