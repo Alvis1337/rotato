@@ -659,26 +659,37 @@ private fun WallpaperDetailOverlay(
                         var horizConfirmed = false
 
                         trackGesture@ while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == downChange.id }
-                            if (change == null || !change.pressed) break
+                            // Read Initial pass first so we can intercept vertical before children
+                            val eventI = awaitPointerEvent(PointerEventPass.Initial)
+                            val changeI = eventI.changes.firstOrNull { it.id == downChange.id }
+                            if (changeI == null || !changeI.pressed) break
 
-                            totalDy += (change.position - change.previousPosition).y
-                            horizDelta += (change.position - change.previousPosition).x
+                            totalDy += (changeI.position - changeI.previousPosition).y
+                            horizDelta += (changeI.position - changeI.previousPosition).x
                             val totalDxAbs = kotlin.math.abs(horizDelta)
 
                             if (totalDy > viewConfiguration.touchSlop && totalDy > totalDxAbs) {
-                                // Downward vertical drag confirmed
-                                change.consume()
+                                // Downward vertical drag confirmed — consume before children see it
+                                changeI.consume()
                                 dragConfirmed = true
                                 coroutineScope.launch {
                                     offsetY.snapTo(totalDy.coerceAtLeast(0f))
                                 }
                                 break@trackGesture
                             }
+
+                            // For horizontal: read Main pass so children (tag LazyRow) get first dibs.
+                            // If a child consumed the event it's a tag scroll — don't navigate.
+                            val eventM = awaitPointerEvent(PointerEventPass.Main)
+                            val changeM = eventM.changes.firstOrNull { it.id == downChange.id }
+
                             if (totalDxAbs > viewConfiguration.touchSlop && totalDxAbs > kotlin.math.abs(totalDy)) {
-                                // Horizontal drag confirmed
-                                change.consume()
+                                if (changeM != null && changeM.isConsumed) {
+                                    // Child scrollable (tags) consumed it — let it scroll
+                                    break@trackGesture
+                                }
+                                // Nothing consumed it — claim horizontal navigation
+                                changeM?.consume()
                                 horizConfirmed = true
                                 coroutineScope.launch { offsetX.snapTo(horizDelta) }
                                 break@trackGesture
@@ -720,7 +731,7 @@ private fun WallpaperDetailOverlay(
 
                         if (horizConfirmed) {
                             while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val event = awaitPointerEvent(PointerEventPass.Main)
                                 val change = event.changes.firstOrNull { it.id == downChange.id }
                                 if (change == null || !change.pressed) break
                                 val dx = (change.position - change.previousPosition).x
