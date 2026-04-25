@@ -448,7 +448,6 @@ fun BrainrotScreen(
                         } // closes grid Box
             } // closes when
             selectedItem?.let { selected ->
-                        key("${selected.source}:${selected.id}") {
                         WallpaperDetailOverlay(
                             wallpaper = selected,
                             slideInFrom = navDirection,
@@ -498,7 +497,6 @@ fun BrainrotScreen(
                             },
                             onDismiss = { navDirection = 0; vm.selectItem(null) }
                         )
-                        }
                     }
 
             if (showHandsFree) {
@@ -624,14 +622,22 @@ private fun WallpaperDetailOverlay(
     val swipeThresholdPx = remember(density) { with(density) { 72.dp.toPx() } }
 
     val offsetY = remember { Animatable(0f) }
-    // Start off-screen if navigating, then animate to center
-    val offsetX = remember { Animatable(if (slideInFrom > 0) 1000f else if (slideInFrom < 0) -1000f else 0f) }
+    val offsetX = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var isNavigating by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    // Reset all transient state and slide in whenever the wallpaper changes (navigation)
+    LaunchedEffect(wallpaper.source, wallpaper.id) {
+        isDismissing = false
+        isNavigating = false
+        showZoom = false
+        showInfoExpanded = false
+        offsetY.snapTo(0f)
         if (slideInFrom != 0) {
+            offsetX.snapTo(if (slideInFrom > 0) 1000f else -1000f)
             offsetX.animateTo(0f, tween(220, easing = FastOutLinearInEasing))
+        } else {
+            offsetX.snapTo(0f)
         }
     }
 
