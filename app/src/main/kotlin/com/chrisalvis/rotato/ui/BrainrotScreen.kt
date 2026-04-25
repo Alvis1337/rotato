@@ -353,14 +353,14 @@ fun BrainrotScreen(
                                                 }
                                             },
                                             colors = AssistChipDefaults.assistChipColors(
-                                                containerColor = Color.Black.copy(alpha = 0.65f),
-                                                labelColor = Color.White,
-                                                leadingIconContentColor = Color.White,
-                                                trailingIconContentColor = Color.White
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
                                             border = AssistChipDefaults.assistChipBorder(
                                                 enabled = true,
-                                                borderColor = Color.White.copy(alpha = 0.25f)
+                                                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
                                             ),
                                             modifier = Modifier.weight(1f)
                                         )

@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.DropdownMenu
@@ -252,11 +253,20 @@ fun SettingsScreen(
                         )
                     }
                     if (malError != null) {
-                        Text(
-                            malError!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                malError!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
 
                     MalStatusFilter(
@@ -288,11 +298,20 @@ fun SettingsScreen(
                     }
                 } else {
                     if (malError != null) {
-                        Text(
-                            malError!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                malError!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                     Text(
                         "Connect your MAL account to use your anime watch list as discover queries.",

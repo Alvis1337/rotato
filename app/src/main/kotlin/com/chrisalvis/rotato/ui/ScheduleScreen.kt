@@ -3,6 +3,8 @@ package com.chrisalvis.rotato.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -133,11 +135,18 @@ private fun ScheduleEntryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DAY_ORDER.forEach { (dayConst, label) ->
                     val active = dayConst in entry.days
-                    FilterChip(
-                        selected = active,
+                    AssistChip(
                         onClick = {},
                         label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                         modifier = Modifier.height(28.dp),
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                            labelColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        border = AssistChipDefaults.assistChipBorder(
+                            enabled = true,
+                            borderColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                        )
                     )
                 }
                 Spacer(Modifier.weight(1f))
@@ -188,7 +197,10 @@ private fun ScheduleEditDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (entry.listId.isBlank()) "New Schedule" else "Edit Schedule") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 // Day chips
                 Text("Days", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

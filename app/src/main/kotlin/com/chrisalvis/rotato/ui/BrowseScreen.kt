@@ -253,36 +253,34 @@ private fun WallpaperActionsDialog(
     onDismiss: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Wallpaper options") },
-        text = {
-            Column {
-                TextButton(
-                    onClick = onToggleRotation,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (isInRotation) "Remove from rotation" else "Add to rotation")
-                }
-                if (!isDeviceImage) {
-                    TextButton(
-                        onClick = onSaveToGallery,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Save to gallery")
-                    }
-                }
-                TextButton(
-                    onClick = { shareWallpaper(context, wallpaper); onShare() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Share")
-                }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                "Wallpaper options",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            HorizontalDivider()
+            ListItem(
+                headlineContent = { Text(if (isInRotation) "Remove from rotation" else "Add to rotation") },
+                modifier = Modifier.clickable(onClick = onToggleRotation)
+            )
+            if (!isDeviceImage) {
+                ListItem(
+                    headlineContent = { Text("Save to gallery") },
+                    modifier = Modifier.clickable(onClick = onSaveToGallery)
+                )
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+            ListItem(
+                headlineContent = { Text("Share") },
+                modifier = Modifier.clickable(onClick = { shareWallpaper(context, wallpaper); onShare() })
+            )
+        }
+    }
 }
 
 @Composable

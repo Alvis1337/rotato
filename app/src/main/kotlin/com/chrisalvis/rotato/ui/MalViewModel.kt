@@ -78,6 +78,10 @@ class MalViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefs.clearAuth() }
     }
 
+    fun clearError() {
+        _error.update { null }
+    }
+
     fun refresh() {
         fetchAnimeList()
     }

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -139,7 +140,29 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
 
     if (history.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No rotation history yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "No rotation history yet",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Wallpapers will appear here after rotation starts",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
         }
         return
     }
@@ -228,18 +251,20 @@ private fun HistoryCard(
             Row {
                 if (imageError) {
                     IconButton(onClick = onRemove) {
-                        Icon(Icons.Default.Delete, contentDescription = "Remove", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Delete, contentDescription = "Remove")
                     }
                 } else if (isDownloading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp).padding(4.dp), strokeWidth = 2.dp)
+                    Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
                 } else {
                     IconButton(onClick = onDownload) {
-                        Icon(Icons.Default.Download, contentDescription = "Save to gallery", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Download, contentDescription = "Save to gallery")
                     }
                 }
                 if (onOpenPage != null && !imageError) {
                     IconButton(onClick = onOpenPage) {
-                        Icon(Icons.Default.OpenInBrowser, contentDescription = "Open", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = "Open")
                     }
                 }
             }

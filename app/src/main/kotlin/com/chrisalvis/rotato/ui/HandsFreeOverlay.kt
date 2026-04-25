@@ -80,7 +80,7 @@ fun HandsFreeOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.5f))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -90,7 +90,7 @@ fun HandsFreeOverlay(
                 progress = { progress.value },
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.White.copy(alpha = 0.2f)
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

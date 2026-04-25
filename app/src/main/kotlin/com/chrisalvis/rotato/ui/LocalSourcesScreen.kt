@@ -15,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -268,10 +270,16 @@ private fun SourceCard(
                     ) {
                         // Health dot — only shown for enabled sources
                         if (source.enabled && !isLocked) {
+                            val healthDesc = when {
+                                health == null || !health.hasData -> "Status: untested"
+                                health.isHealthy -> "Status: healthy"
+                                else -> "Status: error"
+                            }
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .background(healthDotColor, CircleShape)
+                                    .semantics { contentDescription = healthDesc }
                             )
                         }
                         Text(source.type.displayName, fontWeight = FontWeight.Medium)
