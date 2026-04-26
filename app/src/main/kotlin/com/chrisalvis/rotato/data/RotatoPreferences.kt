@@ -39,6 +39,11 @@ class RotatoPreferences(private val context: Context) {
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
         val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
+        val AUTO_PAUSE_NIGHT = booleanPreferencesKey("auto_pause_night")
+        val AUTO_PAUSE_START = intPreferencesKey("auto_pause_start_hour")
+        val AUTO_PAUSE_END = intPreferencesKey("auto_pause_end_hour")
+        val AUTO_PAUSE_CHARGING = booleanPreferencesKey("auto_pause_charging")
+        val TOTAL_ROTATIONS = longPreferencesKey("total_rotations")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -199,5 +204,41 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setHandsFreeInterval(secs: Int) {
         context.dataStore.edit { it[HANDS_FREE_INTERVAL] = secs }
+    }
+
+    val autoPauseSettings: Flow<AutoPauseSettings> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            AutoPauseSettings(
+                nightEnabled = prefs[AUTO_PAUSE_NIGHT] ?: false,
+                nightStartHour = prefs[AUTO_PAUSE_START] ?: 22,
+                nightEndHour = prefs[AUTO_PAUSE_END] ?: 7,
+                chargingEnabled = prefs[AUTO_PAUSE_CHARGING] ?: false
+            )
+        }
+
+    suspend fun setAutoPauseNight(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_PAUSE_NIGHT] = enabled }
+    }
+
+    suspend fun setAutoPauseNightHours(start: Int, end: Int) {
+        context.dataStore.edit {
+            it[AUTO_PAUSE_START] = start
+            it[AUTO_PAUSE_END] = end
+        }
+    }
+
+    suspend fun setAutoPauseCharging(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_PAUSE_CHARGING] = enabled }
+    }
+
+    val totalRotations: Flow<Long> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[TOTAL_ROTATIONS] ?: 0L }
+
+    suspend fun incrementTotalRotations() {
+        context.dataStore.edit { prefs ->
+            prefs[TOTAL_ROTATIONS] = (prefs[TOTAL_ROTATIONS] ?: 0L) + 1L
+        }
     }
 }

@@ -1,12 +1,14 @@
 package com.chrisalvis.rotato
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -42,11 +44,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var malViewModelRef: MalViewModel
     private val _pendingNavigate = mutableStateOf<String?>(null)
+    private val _pendingSharedImages = mutableStateOf<List<Uri>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         _pendingNavigate.value = intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)
+        _pendingSharedImages.value = extractSharedImages(intent)
         setContent {
             RotatoTheme {
                 val rotatoPrefs = remember { RotatoPreferences(applicationContext) }
@@ -66,6 +70,18 @@ class MainActivity : AppCompatActivity() {
                 val malViewModel: MalViewModel = viewModel()
                 malViewModelRef = malViewModel
                 val navController = rememberNavController()
+
+                val pendingShared = _pendingSharedImages.value
+                if (pendingShared.isNotEmpty() && setupDone == true) {
+                    SharedImageDialog(
+                        count = pendingShared.size,
+                        onAddToLibrary = {
+                            homeViewModel.addImages(pendingShared)
+                            _pendingSharedImages.value = emptyList()
+                        },
+                        onDismiss = { _pendingSharedImages.value = emptyList() }
+                    )
+                }
 
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
@@ -221,10 +237,52 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
-        // Handle navigation extras from notifications
         intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)?.let {
             _pendingNavigate.value = it
         }
+        val shared = extractSharedImages(intent)
+        if (shared.isNotEmpty()) {
+            _pendingSharedImages.value = shared
+        }
     }
+
+    private fun extractSharedImages(intent: Intent): List<Uri> {
+        return when (intent.action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                listOfNotNull(uri)
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
+            }
+            else -> emptyList()
+        }
+    }
+}
+
+@Composable
+private fun SharedImageDialog(
+    count: Int,
+    onAddToLibrary: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Rotato") },
+        text = {
+            Text(
+                if (count == 1) "Add this image to your rotation library?"
+                else "Add $count images to your rotation library?"
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onAddToLibrary) { Text("Add to Library") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 

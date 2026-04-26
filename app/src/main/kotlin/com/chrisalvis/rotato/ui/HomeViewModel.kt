@@ -18,6 +18,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import androidx.work.workDataOf
+import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.LocalList
@@ -31,6 +32,7 @@ import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.MinResolution
+import com.chrisalvis.rotato.data.historyFromJson
 import kotlinx.coroutines.flow.combine
 import com.chrisalvis.rotato.worker.WallpaperWorker
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.CHAIN_WORK_NAME
@@ -52,6 +54,13 @@ import java.util.concurrent.TimeUnit
 
 enum class SetNowState { IDLE, SETTING, DONE, ERROR }
 enum class BackupState { IDLE, BUSY, SUCCESS, ERROR }
+
+data class RotationStats(
+    val totalRotations: Long = 0L,
+    val recentCount: Int = 0,
+    val topSources: List<Pair<String, Int>> = emptyList(),
+    val topTags: List<Pair<String, Int>> = emptyList()
+)
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -82,6 +91,32 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val lastRotationMs: StateFlow<Long> = preferences.lastRotationMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    val autoPauseSettings: StateFlow<AutoPauseSettings> = preferences.autoPauseSettings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoPauseSettings())
+
+    val stats: StateFlow<RotationStats> = combine(
+        preferences.totalRotations,
+        preferences.historyJson
+    ) { total, histJson ->
+        val history = historyFromJson(histJson)
+        val topSources = history
+            .groupingBy { it.source.ifBlank { "local" } }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .map { it.key to it.value }
+        val topTags = history
+            .flatMap { it.tags }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(8)
+            .map { it.key to it.value }
+        RotationStats(total, history.size, topSources, topTags)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RotationStats())
 
     init {
         observeImageDir()
@@ -221,6 +256,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             preferences.setWallpaperTarget(target)
         }
+    }
+
+    fun setAutoPauseNight(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoPauseNight(enabled) }
+    }
+
+    fun setAutoPauseNightHours(start: Int, end: Int) {
+        viewModelScope.launch { preferences.setAutoPauseNightHours(start, end) }
+    }
+
+    fun setAutoPauseCharging(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoPauseCharging(enabled) }
     }
 
     val discoverBatchSize: StateFlow<Int> = preferences.discoverBatchSize

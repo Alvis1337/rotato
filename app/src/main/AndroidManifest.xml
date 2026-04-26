@@ -38,6 +38,16 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="rotato" android:host="callback" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
         <receiver
@@ -54,6 +64,10 @@
 
         <receiver
             android:name=".worker.SkipWallpaperReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".worker.FavoriteWallpaperReceiver"
             android:exported="false" />
 
         <receiver

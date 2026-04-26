@@ -57,8 +57,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chrisalvis.rotato.BuildConfig
+import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.RotationInterval
 import com.chrisalvis.rotato.data.WallpaperTarget
+import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +81,7 @@ fun SettingsScreen(
     val malFilterStatuses by malViewModel.filterStatuses.collectAsStateWithLifecycle()
     val malFilterMinScore by malViewModel.filterMinScore.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
+    val autoPauseSettings by viewModel.autoPauseSettings.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
@@ -182,6 +186,17 @@ fun SettingsScreen(
                         Text(target.label)
                     }
                 }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Auto-Pause") {
+                AutoPauseSection(
+                    settings = autoPauseSettings,
+                    onNightToggle = { viewModel.setAutoPauseNight(it) },
+                    onNightHoursChange = { start, end -> viewModel.setAutoPauseNightHours(start, end) },
+                    onChargingToggle = { viewModel.setAutoPauseCharging(it) }
+                )
             }
 
             HorizontalDivider()
@@ -373,6 +388,47 @@ fun SettingsScreen(
             HorizontalDivider()
 
             SettingsSection(title = "About") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Version", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(context, OssLicensesMenuActivity::class.java)
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open Source Licenses")
+                }
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/privacy/"))
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Privacy Policy")
+                }
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/terms/"))
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Terms of Service")
+                }
                 OutlinedButton(
                     onClick = {
                         context.startActivity(
@@ -381,7 +437,7 @@ fun SettingsScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Open Source Licenses")
+                    Text("Website")
                 }
             }
         }
@@ -402,6 +458,113 @@ private fun SettingsSection(
         )
         content()
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AutoPauseSection(
+    settings: AutoPauseSettings,
+    onNightToggle: (Boolean) -> Unit,
+    onNightHoursChange: (Int, Int) -> Unit,
+    onChargingToggle: (Boolean) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Pause at night")
+                Text(
+                    "Skip rotation during quiet hours",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = settings.nightEnabled, onCheckedChange = onNightToggle)
+        }
+
+        androidx.compose.animation.AnimatedVisibility(visible = settings.nightEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "From",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HourDropdown(
+                        hour = settings.nightStartHour,
+                        onSelect = { onNightHoursChange(it, settings.nightEndHour) }
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Until",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HourDropdown(
+                        hour = settings.nightEndHour,
+                        onSelect = { onNightHoursChange(settings.nightStartHour, it) }
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Pause while charging")
+                Text(
+                    "Stop rotating when plugged in",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = settings.chargingEnabled, onCheckedChange = onChargingToggle)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HourDropdown(hour: Int, onSelect: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = formatHour(hour),
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .menuAnchor(type = androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+            singleLine = true
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            (0..23).forEach { h ->
+                DropdownMenuItem(
+                    text = { Text(formatHour(h)) },
+                    onClick = { onSelect(h); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+private fun formatHour(hour: Int): String = when (hour) {
+    0 -> "12 AM"
+    in 1..11 -> "$hour AM"
+    12 -> "12 PM"
+    else -> "${hour - 12} PM"
 }
 
 private val MAL_STATUS_OPTIONS = listOf(
