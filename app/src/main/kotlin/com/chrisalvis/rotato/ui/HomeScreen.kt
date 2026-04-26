@@ -636,7 +636,7 @@ private fun StatsContent(stats: RotationStats, modifier: Modifier = Modifier) {
             }
         }
 
-        if (stats.totalRotations == 0L) {
+        if (stats.totalRotations == 0L && stats.recentCount == 0) {
             Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,

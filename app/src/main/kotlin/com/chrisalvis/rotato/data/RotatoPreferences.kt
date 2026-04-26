@@ -88,8 +88,11 @@ class RotatoPreferences(private val context: Context) {
         context.dataStore.edit { it[WALLPAPER_TARGET] = target.name }
     }
 
-    suspend fun recordRotation() {
-        context.dataStore.edit { it[LAST_ROTATION_MS] = System.currentTimeMillis() }
+    suspend fun recordRotationAndIncrement() {
+        context.dataStore.edit { prefs ->
+            prefs[LAST_ROTATION_MS] = System.currentTimeMillis()
+            prefs[TOTAL_ROTATIONS] = (prefs[TOTAL_ROTATIONS] ?: 0L) + 1L
+        }
     }
 
     suspend fun setHistoryJson(json: String) {
@@ -235,10 +238,4 @@ class RotatoPreferences(private val context: Context) {
     val totalRotations: Flow<Long> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[TOTAL_ROTATIONS] ?: 0L }
-
-    suspend fun incrementTotalRotations() {
-        context.dataStore.edit { prefs ->
-            prefs[TOTAL_ROTATIONS] = (prefs[TOTAL_ROTATIONS] ?: 0L) + 1L
-        }
-    }
 }

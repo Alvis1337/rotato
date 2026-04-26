@@ -2,6 +2,7 @@ package com.chrisalvis.rotato.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FilterChip
 
 import androidx.compose.material3.AlertDialog
@@ -485,7 +486,7 @@ private fun AutoPauseSection(
             Switch(checked = settings.nightEnabled, onCheckedChange = onNightToggle)
         }
 
-        androidx.compose.animation.AnimatedVisibility(visible = settings.nightEnabled) {
+        AnimatedVisibility(visible = settings.nightEnabled) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -545,7 +546,7 @@ private fun HourDropdown(hour: Int, onSelect: (Int) -> Unit) {
             readOnly = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier
-                .menuAnchor(type = androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth(),
             singleLine = true
         )
@@ -620,7 +621,7 @@ private fun MalMinScoreFilter(
                 onValueChange = {},
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable),
+                modifier = Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                 singleLine = true
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

@@ -7,10 +7,11 @@ import android.app.WallpaperManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.BatteryManager
 import kotlin.math.roundToInt
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -27,6 +28,8 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.loadScaledBitmap
+import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.flow.first
 import java.util.Calendar
@@ -44,10 +47,14 @@ class WallpaperWorker(
         val images = repository.getImages()
         if (images.isEmpty()) return Result.success()
 
-        val settings = prefs.settings.first()
+        val (settings, autoPause, history) = coroutineScope {
+            val sDeferred = async { prefs.settings.first() }
+            val aDeferred = async { prefs.autoPauseSettings.first() }
+            val hDeferred = async { prefs.historyJson.first() }
+            Triple(sDeferred.await(), aDeferred.await(), historyFromJson(hDeferred.await()))
+        }
 
         // Auto-pause: night window
-        val autoPause = prefs.autoPauseSettings.first()
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         if (autoPause.isInNightWindow(currentHour)) return Result.success()
 
@@ -58,7 +65,6 @@ class WallpaperWorker(
         }
 
         // Duplicate guard in shuffle mode: avoid recently shown wallpapers
-        val history = historyFromJson(prefs.historyJson.first())
         val targetFile = if (settings.shuffleMode) {
             val recentPaths = history
                 .take((images.size - 1).coerceAtLeast(0).coerceAtMost(10))
@@ -73,7 +79,7 @@ class WallpaperWorker(
         }
 
         return try {
-            val bitmap = loadScaledBitmap(targetFile.absolutePath)
+            val bitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
                 ?: return Result.failure()
 
             val wallpaperManager = WallpaperManager.getInstance(applicationContext)
@@ -98,13 +104,11 @@ class WallpaperWorker(
             try {
                 wallpaperManager.setBitmap(screenBitmap, null, true, flags)
 
-                prefs.recordRotation()
-                prefs.incrementTotalRotations()
+                prefs.recordRotationAndIncrement()
 
                 // Look up original source info from collections for richer history
                 val allEntries = LocalListsPreferences(applicationContext).allWallpapers.first()
-                val fileKey = targetFile.nameWithoutExtension
-                val matchingEntry = allEntries.find { sanitize(it.sourceId) == fileKey }
+                val matchingEntry = allEntries.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
                 val historyItem = WallpaperHistoryItem(
                     thumbUrl = targetFile.absolutePath,
@@ -214,29 +218,6 @@ class WallpaperWorker(
         WorkManager.getInstance(applicationContext)
             .enqueueUniqueWork(CHAIN_WORK_NAME, ExistingWorkPolicy.REPLACE, next)
     }
-
-    private fun loadScaledBitmap(path: String): Bitmap? {
-        val metrics = applicationContext.resources.displayMetrics
-        val targetWidth = metrics.widthPixels
-        val targetHeight = metrics.heightPixels
-
-        val boundsOnly = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, boundsOnly)
-
-        var sampleSize = 1
-        var w = boundsOnly.outWidth
-        var h = boundsOnly.outHeight
-        while (w / 2 >= targetWidth && h / 2 >= targetHeight) {
-            w /= 2
-            h /= 2
-            sampleSize *= 2
-        }
-
-        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        return BitmapFactory.decodeFile(path, opts)
-    }
-
-    private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 
     companion object {
         const val KEY_INTERVAL_MINUTES = "interval_minutes"

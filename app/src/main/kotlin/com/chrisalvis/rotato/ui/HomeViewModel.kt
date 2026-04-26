@@ -3,7 +3,6 @@ package com.chrisalvis.rotato.ui
 import android.app.Application
 import android.app.WallpaperManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import kotlin.math.roundToInt
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -21,6 +20,8 @@ import androidx.work.workDataOf
 import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
+import com.chrisalvis.rotato.data.loadScaledBitmap
+import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
@@ -331,7 +332,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _setNowState.update { SetNowState.SETTING }
             try {
                 val app = getApplication<Application>()
-                val bitmap = loadScaledBitmapFromFile(app, file.absolutePath)
+                val bitmap = loadScaledBitmap(app, file.absolutePath)
                     ?: run {
                         _setNowState.update { SetNowState.ERROR }
                         kotlinx.coroutines.delay(2_000)
@@ -619,20 +620,4 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         const val WORK_NAME = "rotato_wallpaper_rotation"
     }
-}
-
-private fun sanitizeFilename(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
-
-private fun loadScaledBitmapFromFile(app: Application, path: String): android.graphics.Bitmap? {
-    val metrics = app.resources.displayMetrics
-    val targetWidth = metrics.widthPixels
-    val targetHeight = metrics.heightPixels
-    val boundsOnly = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, boundsOnly)
-    var sampleSize = 1
-    var w = boundsOnly.outWidth
-    var h = boundsOnly.outHeight
-    while (w / 2 >= targetWidth && h / 2 >= targetHeight) { w /= 2; h /= 2; sampleSize *= 2 }
-    val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    return BitmapFactory.decodeFile(path, opts)
 }

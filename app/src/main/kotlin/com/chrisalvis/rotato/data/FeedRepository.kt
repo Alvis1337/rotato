@@ -29,7 +29,7 @@ class FeedRepository(private val imageDir: File) {
             return@withContext false
         }
         val ext = fullUrl.substringAfterLast('.').substringBefore('?').take(5).ifBlank { "jpg" }
-        val destFile = File(imageDir, "${sanitize(sourceId)}.$ext")
+        val destFile = File(imageDir, "${sanitizeFilename(sourceId)}.$ext")
         if (destFile.exists()) return@withContext true
         return@withContext try {
             val bytes = downloadBytes(fullUrl) ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null") }
@@ -56,7 +56,7 @@ class FeedRepository(private val imageDir: File) {
             else   -> "image/jpeg"
         }
         val ext = mimeType.substringAfterLast('/')
-        val fileName = "${sanitize(sourceId)}.$ext"
+        val fileName = "${sanitizeFilename(sourceId)}.$ext"
 
         return@withContext try {
             val bytes = downloadBytes(fullUrl) ?: return@withContext false.also { 
@@ -118,5 +118,4 @@ class FeedRepository(private val imageDir: File) {
         null 
     }
 
-    private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 }
