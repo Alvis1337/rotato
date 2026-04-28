@@ -24,7 +24,18 @@ class SchedulePreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             val current = parseEntries(prefs[SCHEDULE_KEY] ?: "[]").toMutableList()
             val idx = current.indexOfFirst { it.id == entry.id }
-            if (idx >= 0) current[idx] = entry else current.add(entry)
+            if (idx >= 0) {
+                val existing = current[idx]
+                // Preserve runtime diagnostic fields so that editing a schedule via the UI
+                // doesn't clobber trigger history written concurrently by the alarm receiver.
+                current[idx] = entry.copy(
+                    lastFiredMs = existing.lastFiredMs,
+                    lastFiredResult = existing.lastFiredResult,
+                    lastLockedMs = existing.lastLockedMs,
+                )
+            } else {
+                current.add(entry)
+            }
             prefs[SCHEDULE_KEY] = serialize(current)
         }
     }

@@ -1,15 +1,17 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
-import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.chrisalvis.rotato.RotatoApp
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.worker.ScheduleManager
 import com.chrisalvis.rotato.worker.ScheduleReceiver
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -17,9 +19,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 class ScheduleViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,6 +43,10 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     /** Emits the name of a locked collection when saveEdit fires its schedule immediately. */
     private val _lockedListWarning = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val lockedListWarning: SharedFlow<String> = _lockedListWarning.asSharedFlow()
+
+    /** Emits a one-shot result message from [triggerNow] or [saveEdit]. */
+    private val _triggerResult = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val triggerResult: SharedFlow<String> = _triggerResult.asSharedFlow()
 
     fun startAdd() {
         val defaultList = lists.value.firstOrNull()?.id ?: ""
@@ -67,21 +75,55 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
             // If today is one of this entry's days and the scheduled time has already passed,
-            // fire the receiver immediately instead of waiting until next week's occurrence.
+            // apply directly instead of waiting until the next alarm. This avoids a broadcast
+            // round-trip and ensures any exception surfaces in the schedule status.
             if (entry.enabled && todayDow in entry.days && triggerTodayMs <= now.timeInMillis) {
-                val intent = Intent(getApplication(), ScheduleReceiver::class.java).apply {
-                    putExtra(ScheduleReceiver.EXTRA_ENTRY_ID, entry.id)
-                }
-                getApplication<Application>().sendBroadcast(intent)
-                // Warn in-app: system notification may be blocked if the list is locked
-                val targetList = lists.value.find { it.id == entry.listId }
-                if (targetList?.isLocked == true) {
-                    _lockedListWarning.tryEmit(targetList.name)
+                withContext(Dispatchers.IO) {
+                    try {
+                        val allEntries = schedPrefs.entries.first()
+                        val targetList = listPrefs.lists.first().find { it.id == entry.listId }
+                        val sessionUnlocked = (getApplication() as? RotatoApp)
+                            ?.unlockedListIds?.value?.contains(entry.listId) == true
+                        if (targetList?.isLocked == true && !sessionUnlocked) {
+                            _lockedListWarning.tryEmit(targetList.name)
+                        } else {
+                            ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ScheduleViewModel", "Failed to apply entry ${entry.id} in saveEdit", e)
+                        runCatching { schedPrefs.recordTrigger(entry.id, "error: ${e.javaClass.simpleName}") }
+                    }
                 }
             }
             ScheduleManager.schedule(getApplication(), entry)
         }
         _editEntry.update { null }
+    }
+
+    /**
+     * Manually apply this schedule entry right now, bypassing the time-window check.
+     * If the collection is still locked and not session-unlocked, emits a prompt via [triggerResult].
+     */
+    fun triggerNow(entry: ScheduleEntry) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    val targetList = listPrefs.lists.first().find { it.id == entry.listId }
+                    val sessionUnlocked = (getApplication() as? RotatoApp)
+                        ?.unlockedListIds?.value?.contains(entry.listId) == true
+                    if (targetList?.isLocked == true && !sessionUnlocked) {
+                        _triggerResult.tryEmit("Unlock \"${targetList.name}\" in Collections first")
+                        return@withContext
+                    }
+                    val allEntries = schedPrefs.entries.first()
+                    ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
+                    _triggerResult.tryEmit("Applied!")
+                } catch (e: Exception) {
+                    Log.e("ScheduleViewModel", "triggerNow failed for ${entry.id}", e)
+                    _triggerResult.tryEmit("Error: ${e.message ?: e.javaClass.simpleName}")
+                }
+            }
+        }
     }
 
     fun delete(entry: ScheduleEntry) {

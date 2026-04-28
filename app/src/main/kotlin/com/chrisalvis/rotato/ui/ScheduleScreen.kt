@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,8 +50,13 @@ fun ScheduleScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
-        vm.lockedListWarning.collect { name ->
-            snackbarHostState.showSnackbar("\"$name\" is locked — unlock it in Collections for the schedule to apply")
+        launch {
+            vm.lockedListWarning.collect { name ->
+                snackbarHostState.showSnackbar("\"$name\" is locked — unlock it in Collections for the schedule to apply")
+            }
+        }
+        vm.triggerResult.collect { message ->
+            snackbarHostState.showSnackbar(message)
         }
     }
 
@@ -121,6 +127,7 @@ fun ScheduleScreen(
                         onEdit = { vm.startEdit(entry) },
                         onDelete = { vm.delete(entry) },
                         onToggleEnabled = { vm.setEnabled(entry, it) },
+                        onTriggerNow = { vm.triggerNow(entry) },
                     )
                 }
             }
@@ -139,6 +146,7 @@ private fun ScheduleEntryCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
+    onTriggerNow: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -216,6 +224,17 @@ private fun ScheduleEntryCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (entry.enabled) {
+                TextButton(
+                    onClick = onTriggerNow,
+                    modifier = Modifier.align(Alignment.End),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Apply now", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }

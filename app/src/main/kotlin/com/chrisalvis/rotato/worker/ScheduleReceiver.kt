@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -28,6 +29,7 @@ class ScheduleReceiver : BroadcastReceiver() {
     companion object {
         const val EXTRA_ENTRY_ID = "schedule_entry_id"
         const val EXTRA_NAVIGATE_TO = "navigate_to"
+        private const val TAG = "ScheduleReceiver"
         private const val RETRY_INTERVAL_MS = 5 * 60_000L
         const val RETRY_WINDOW_MS = 60 * 60_000L
 
@@ -118,10 +120,11 @@ class ScheduleReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val entryId = intent.getStringExtra(EXTRA_ENTRY_ID) ?: return
+        Log.d(TAG, "onReceive: entryId=$entryId")
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
+            val schedPrefs = SchedulePreferences(context)
             try {
-                val schedPrefs = SchedulePreferences(context)
                 val listPrefs = LocalListsPreferences(context)
                 val entries = schedPrefs.entries.first()
                 val fired = entries.find { it.id == entryId } ?: run {
@@ -136,6 +139,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                 // isLocked stays true in DataStore but the user granted session access).
                 val sessionUnlocked = (context.applicationContext as? RotatoApp)
                     ?.unlockedListIds?.value?.contains(fired.listId) == true
+                Log.d(TAG, "  listId=${fired.listId} isLocked=${firedList?.isLocked} sessionUnlocked=$sessionUnlocked")
                 if (firedList?.isLocked == true && !sessionUnlocked) {
                     schedPrefs.recordLockedEvent(entryId)
                     schedPrefs.recordTrigger(entryId, "blocked: locked")
@@ -159,6 +163,9 @@ class ScheduleReceiver : BroadcastReceiver() {
                 schedPrefs.clearLockedEvent(entryId)
 
                 applyEntry(context, fired, entries, schedPrefs, listPrefs)
+            } catch (e: Exception) {
+                Log.e(TAG, "Unhandled error processing entry $entryId", e)
+                runCatching { schedPrefs.recordTrigger(entryId, "error: ${e.javaClass.simpleName}") }
             } finally {
                 pendingResult.finish()
             }

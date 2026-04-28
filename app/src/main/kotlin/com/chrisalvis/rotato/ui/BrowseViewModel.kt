@@ -217,12 +217,21 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             val schedPrefs = SchedulePreferences(app)
             val allEntries = schedPrefs.entries.first()
             val listPrefs = LocalListsPreferences(app)
+            Log.d("BrowseViewModel", "applyPendingSchedules: listIds=$listIds allEntries=${allEntries.size}")
             listIds.forEach { listId ->
-                allEntries
-                    .filter { it.enabled && it.listId == listId && (it.lastLockedMs > 0L || isInScheduleWindow(it)) }
-                    .forEach { entry ->
+                val matching = allEntries.filter {
+                    it.enabled && it.listId == listId && (it.lastLockedMs > 0L || isInScheduleWindow(it))
+                }
+                Log.d("BrowseViewModel", "  listId=$listId matching=${matching.size}")
+                matching.forEach { entry ->
+                    Log.d("BrowseViewModel", "  applying entry ${entry.id}")
+                    try {
                         ScheduleReceiver.applyEntry(app, entry, allEntries, schedPrefs, listPrefs)
+                    } catch (e: Exception) {
+                        Log.e("BrowseViewModel", "applyEntry failed for ${entry.id}", e)
+                        runCatching { schedPrefs.recordTrigger(entry.id, "error: ${e.javaClass.simpleName}") }
                     }
+                }
             }
         }
     }
