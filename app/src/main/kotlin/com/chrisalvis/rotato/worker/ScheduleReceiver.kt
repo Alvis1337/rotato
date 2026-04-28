@@ -43,7 +43,20 @@ class ScheduleReceiver : BroadcastReceiver() {
                 val firedList = allLists.find { it.id == fired.listId }
                 if (firedList?.isLocked == true) {
                     postLockedNotification(context, firedList.name)
-                    ScheduleManager.schedule(context, fired)
+                    // Give the user 30 minutes to unlock. If we're already >35 min past the
+                    // scheduled time this is the retry — give up and go to next occurrence.
+                    val scheduledTodayMs = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, fired.startHour)
+                        set(java.util.Calendar.MINUTE, fired.startMinute)
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                    val isRetry = System.currentTimeMillis() > scheduledTodayMs + 35 * 60_000L
+                    if (isRetry) {
+                        ScheduleManager.schedule(context, fired)
+                    } else {
+                        ScheduleManager.scheduleAt(context, fired.id, System.currentTimeMillis() + 30 * 60_000L)
+                    }
                     return@launch
                 }
 

@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chrisalvis.rotato.data.LocalList
@@ -8,6 +9,7 @@ import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.worker.ScheduleManager
+import com.chrisalvis.rotato.worker.ScheduleReceiver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 class ScheduleViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -48,6 +51,22 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     fun saveEdit(entry: ScheduleEntry) {
         viewModelScope.launch {
             schedPrefs.upsert(entry)
+            val now = Calendar.getInstance()
+            val todayDow = now.get(Calendar.DAY_OF_WEEK)
+            val triggerTodayMs = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, entry.startHour)
+                set(Calendar.MINUTE, entry.startMinute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            // If today is one of this entry's days and the scheduled time has already passed,
+            // fire the receiver immediately instead of waiting until next week's occurrence.
+            if (entry.enabled && todayDow in entry.days && triggerTodayMs <= now.timeInMillis) {
+                val intent = Intent(getApplication(), ScheduleReceiver::class.java).apply {
+                    putExtra(ScheduleReceiver.EXTRA_ENTRY_ID, entry.id)
+                }
+                getApplication<Application>().sendBroadcast(intent)
+            }
             ScheduleManager.schedule(getApplication(), entry)
         }
         _editEntry.update { null }

@@ -17,8 +17,16 @@ object ScheduleManager {
 
     fun schedule(context: Context, entry: ScheduleEntry) {
         val triggerMs = nextTriggerTime(entry) ?: return
+        setAlarm(context, entry.id, triggerMs)
+    }
+
+    fun scheduleAt(context: Context, entryId: String, triggerMs: Long) {
+        setAlarm(context, entryId, triggerMs)
+    }
+
+    private fun setAlarm(context: Context, entryId: String, triggerMs: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pi = pendingIntent(context, entry.id)
+        val pi = pendingIntent(context, entryId)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMs, pi)
         } else {
