@@ -14,6 +14,7 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -203,10 +204,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * For each list in [listIds], immediately apply any schedule entry that was previously
-     * blocked by a lock. Called right after the user grants access so the schedule fires while
-     * the app is in the foreground — avoiding the race where the session unlock is cleared by
-     * [lockAll] before the retry alarm can check it.
+     * For each list in [listIds], immediately apply any schedule entry that is currently active.
+     * An entry is considered active if it has a pending locked event (lastLockedMs > 0) OR if the
+     * current time falls within its scheduled window (today is a scheduled day and the clock is at
+     * or past the entry's start time). The latter handles the case where the retry window already
+     * expired but the user is still within the intended schedule window (e.g., unlocking at 8pm
+     * for a 6pm schedule that gave up retrying at 7pm).
      */
     private suspend fun applyPendingSchedules(listIds: Set<String>) {
         if (listIds.isEmpty()) return
@@ -216,12 +219,21 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             val listPrefs = LocalListsPreferences(app)
             listIds.forEach { listId ->
                 allEntries
-                    .filter { it.enabled && it.listId == listId && it.lastLockedMs > 0L }
+                    .filter { it.enabled && it.listId == listId && (it.lastLockedMs > 0L || isInScheduleWindow(it)) }
                     .forEach { entry ->
                         ScheduleReceiver.applyEntry(app, entry, allEntries, schedPrefs, listPrefs)
                     }
             }
         }
+    }
+
+    /** Returns true if [entry] is currently within its scheduled window — today is one of its
+     *  scheduled days and the current time is at or past its start time. */
+    private fun isInScheduleWindow(entry: ScheduleEntry): Boolean {
+        val now = java.util.Calendar.getInstance()
+        if (now.get(java.util.Calendar.DAY_OF_WEEK) !in entry.days) return false
+        val nowMins = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+        return nowMins >= entry.startHour * 60 + entry.startMinute
     }
 
     fun removeWallpaper(entryId: String) {
