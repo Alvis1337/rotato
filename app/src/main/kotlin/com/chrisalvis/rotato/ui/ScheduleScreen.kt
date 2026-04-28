@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,6 +43,13 @@ fun ScheduleScreen(
     val entries by vm.entries.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
     val editEntry by vm.editEntry.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(vm) {
+        vm.lockedListWarning.collect { name ->
+            snackbarHostState.showSnackbar("\"$name\" is locked — unlock it in Collections for the schedule to apply")
+        }
+    }
 
     if (editEntry != null) {
         ScheduleEditDialog(
@@ -53,6 +61,7 @@ fun ScheduleScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Schedule", fontWeight = FontWeight.Bold) },
@@ -98,9 +107,11 @@ fun ScheduleScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(entries, key = { it.id }) { entry ->
+                    val targetList = lists.find { it.id == entry.listId }
                     ScheduleEntryCard(
                         entry = entry,
-                        listName = lists.find { it.id == entry.listId }?.name ?: "Unknown list",
+                        listName = targetList?.name ?: "Unknown list",
+                        isListLocked = targetList?.isLocked == true,
                         onEdit = { vm.startEdit(entry) },
                         onDelete = { vm.delete(entry) },
                         onToggleEnabled = { vm.setEnabled(entry, it) },
@@ -115,6 +126,7 @@ fun ScheduleScreen(
 private fun ScheduleEntryCard(
     entry: ScheduleEntry,
     listName: String,
+    isListLocked: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -123,7 +135,17 @@ private fun ScheduleEntryCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(listName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(listName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        if (isListLocked) {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = "Locked",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                     Text(
                         formatTime(entry.startHour, entry.startMinute),
                         style = MaterialTheme.typography.bodyMedium,
@@ -156,6 +178,13 @@ private fun ScheduleEntryCard(
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
                 }
+            }
+            if (entry.enabled && isListLocked) {
+                Text(
+                    "Collection is locked — unlock it in Collections for the schedule to apply",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
@@ -236,7 +265,7 @@ private fun ScheduleEditDialog(
                         readOnly = true,
                         label = { Text("Collection") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandListDropdown) },
-                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                     )
                     ExposedDropdownMenu(
                         expanded = expandListDropdown,

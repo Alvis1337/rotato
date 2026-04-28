@@ -10,9 +10,12 @@ import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.worker.ScheduleManager
 import com.chrisalvis.rotato.worker.ScheduleReceiver
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -32,6 +35,10 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
 
     private val _editEntry = MutableStateFlow<ScheduleEntry?>(null)
     val editEntry: StateFlow<ScheduleEntry?> = _editEntry.asStateFlow()
+
+    /** Emits the name of a locked collection when saveEdit fires its schedule immediately. */
+    private val _lockedListWarning = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val lockedListWarning: SharedFlow<String> = _lockedListWarning.asSharedFlow()
 
     fun startAdd() {
         val defaultList = lists.value.firstOrNull()?.id ?: ""
@@ -66,6 +73,11 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                     putExtra(ScheduleReceiver.EXTRA_ENTRY_ID, entry.id)
                 }
                 getApplication<Application>().sendBroadcast(intent)
+                // Warn in-app: system notification may be blocked if the list is locked
+                val targetList = lists.value.find { it.id == entry.listId }
+                if (targetList?.isLocked == true) {
+                    _lockedListWarning.tryEmit(targetList.name)
+                }
             }
             ScheduleManager.schedule(getApplication(), entry)
         }

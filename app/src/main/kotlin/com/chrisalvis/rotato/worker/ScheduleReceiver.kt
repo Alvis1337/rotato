@@ -27,9 +27,15 @@ class ScheduleReceiver : BroadcastReceiver() {
     companion object {
         const val EXTRA_ENTRY_ID = "schedule_entry_id"
         const val EXTRA_NAVIGATE_TO = "navigate_to"
-        private const val NOTIF_ID_LOCKED = 7002
         private const val RETRY_INTERVAL_MS = 5 * 60_000L
         private const val RETRY_WINDOW_MS = 60 * 60_000L
+
+        /** Stable per-entry notification ID so two locked entries each get their own notification. */
+        fun lockedNotifId(entryId: String): Int = try {
+            java.util.UUID.fromString(entryId).leastSignificantBits.toInt() and Int.MAX_VALUE
+        } catch (_: IllegalArgumentException) {
+            entryId.hashCode() and Int.MAX_VALUE
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -44,8 +50,12 @@ class ScheduleReceiver : BroadcastReceiver() {
 
                 val allLists = listPrefs.lists.first()
                 val firedList = allLists.find { it.id == fired.listId }
-                if (firedList?.isLocked == true) {
-                    postLockedNotification(context, firedList.name)
+                // Also check the session-level unlock (covers biometric-verify-only case where
+                // isLocked stays true in DataStore but the user granted session access).
+                val sessionUnlocked = (context.applicationContext as? RotatoApp)
+                    ?.unlockedListIds?.value?.contains(fired.listId) == true
+                if (firedList?.isLocked == true && !sessionUnlocked) {
+                    postLockedNotification(context, entryId, firedList.name)
                     // Retry every 5 minutes so the schedule applies shortly after the user
                     // unlocks the collection. Give up after 60 minutes.
                     val scheduledTodayMs = java.util.Calendar.getInstance().apply {
@@ -63,7 +73,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                val scheduledListIds = entries.map { it.listId }.toSet()
+                val scheduledListIds = entries.filter { it.enabled }.map { it.listId }.toSet()
                 scheduledListIds.forEach { listId ->
                     val active = listId == fired.listId
                     listPrefs.setUseAsRotation(listId, active)
@@ -89,16 +99,17 @@ class ScheduleReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun postLockedNotification(context: Context, listName: String) {
+    private fun postLockedNotification(context: Context, entryId: String, listName: String) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         if (!nm.areNotificationsEnabled()) return
 
+        val notifId = lockedNotifId(entryId)
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_NAVIGATE_TO, "browse")
         }
         val pi = PendingIntent.getActivity(
-            context, NOTIF_ID_LOCKED, tapIntent,
+            context, notifId, tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -111,7 +122,7 @@ class ScheduleReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .build()
 
-        nm.notify(NOTIF_ID_LOCKED, notif)
+        nm.notify(notifId, notif)
     }
 
     private suspend fun syncRotationPool(
