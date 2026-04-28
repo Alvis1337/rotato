@@ -50,11 +50,11 @@ fun ScheduleScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
-        launch {
-            vm.lockedListWarning.collect { name ->
-                snackbarHostState.showSnackbar("\"$name\" is locked — unlock it in Collections for the schedule to apply")
-            }
+        vm.lockedListWarning.collect { name ->
+            snackbarHostState.showSnackbar("\"$name\" is locked — unlock it in Collections for the schedule to apply")
         }
+    }
+    LaunchedEffect(snackbarHostState) {
         vm.triggerResult.collect { message ->
             snackbarHostState.showSnackbar(message)
         }
