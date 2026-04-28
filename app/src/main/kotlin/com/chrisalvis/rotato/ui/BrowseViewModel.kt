@@ -114,10 +114,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
         }
-        // Re-lock all collections when the entire app is backgrounded
-        processLifecycleObserver = object : DefaultLifecycleObserver {
-            override fun onStop(owner: LifecycleOwner) = lockAll()
-        }
+        // Session unlock persists for the process lifetime — re-locks only when the OS kills the app.
+        // This allows background wallpaper rotation on locked collections without constant re-prompts.
+        processLifecycleObserver = object : DefaultLifecycleObserver {}
         ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
     }
 
