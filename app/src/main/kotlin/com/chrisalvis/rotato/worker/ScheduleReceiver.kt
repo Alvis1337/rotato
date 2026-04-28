@@ -12,8 +12,10 @@ import androidx.work.WorkManager
 import com.chrisalvis.rotato.MainActivity
 import com.chrisalvis.rotato.R
 import com.chrisalvis.rotato.RotatoApp
+import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.SchedulePreferences
+import com.chrisalvis.rotato.data.sanitizeFilename
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -26,6 +28,8 @@ class ScheduleReceiver : BroadcastReceiver() {
         const val EXTRA_ENTRY_ID = "schedule_entry_id"
         const val EXTRA_NAVIGATE_TO = "navigate_to"
         private const val NOTIF_ID_LOCKED = 7002
+        private const val RETRY_INTERVAL_MS = 5 * 60_000L
+        private const val RETRY_WINDOW_MS = 60 * 60_000L
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,35 +42,38 @@ class ScheduleReceiver : BroadcastReceiver() {
                 val entries = schedPrefs.entries.first()
                 val fired = entries.find { it.id == entryId } ?: return@launch
 
-                // Check if the scheduled list is locked
                 val allLists = listPrefs.lists.first()
                 val firedList = allLists.find { it.id == fired.listId }
                 if (firedList?.isLocked == true) {
                     postLockedNotification(context, firedList.name)
-                    // Give the user 30 minutes to unlock. If we're already >35 min past the
-                    // scheduled time this is the retry — give up and go to next occurrence.
+                    // Retry every 5 minutes so the schedule applies shortly after the user
+                    // unlocks the collection. Give up after 60 minutes.
                     val scheduledTodayMs = java.util.Calendar.getInstance().apply {
                         set(java.util.Calendar.HOUR_OF_DAY, fired.startHour)
                         set(java.util.Calendar.MINUTE, fired.startMinute)
                         set(java.util.Calendar.SECOND, 0)
                         set(java.util.Calendar.MILLISECOND, 0)
                     }.timeInMillis
-                    val isRetry = System.currentTimeMillis() > scheduledTodayMs + 35 * 60_000L
-                    if (isRetry) {
+                    val pastWindow = System.currentTimeMillis() > scheduledTodayMs + RETRY_WINDOW_MS
+                    if (pastWindow) {
                         ScheduleManager.schedule(context, fired)
                     } else {
-                        ScheduleManager.scheduleAt(context, fired.id, System.currentTimeMillis() + 30 * 60_000L)
+                        ScheduleManager.scheduleAt(context, fired.id, System.currentTimeMillis() + RETRY_INTERVAL_MS)
                     }
                     return@launch
                 }
 
                 val scheduledListIds = entries.map { it.listId }.toSet()
-
                 scheduledListIds.forEach { listId ->
                     val active = listId == fired.listId
                     listPrefs.setUseAsRotation(listId, active)
                     if (!active) removeRotationFiles(context, listId, listPrefs)
                 }
+
+                // Download the new list's wallpapers into rotato_images/ before enqueuing
+                // WallpaperWorker — the app may be in the background so HomeViewModel's
+                // observeRotationCollections won't run to do this for us.
+                syncRotationPool(context, fired.listId, listPrefs)
 
                 WorkManager.getInstance(context)
                     .enqueueUniqueWork(
@@ -98,13 +105,38 @@ class ScheduleReceiver : BroadcastReceiver() {
         val notif = NotificationCompat.Builder(context, RotatoApp.CHANNEL_LOCKED_LIST)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Collection locked")
-            .setContentText("\"$listName\" is locked. Tap to unlock for today's schedule.")
+            .setContentText("\"$listName\" is locked. Unlock it and the schedule will apply within 5 minutes.")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
 
         nm.notify(NOTIF_ID_LOCKED, notif)
+    }
+
+    private suspend fun syncRotationPool(
+        context: Context,
+        listId: String,
+        listPrefs: LocalListsPreferences,
+    ) {
+        val wallpapers = listPrefs.wallpapersForList(listId).first()
+        val imageDir = File(context.filesDir, "rotato_images").also { it.mkdirs() }
+        val feedRepo = FeedRepository(imageDir)
+        wallpapers.forEach { entry ->
+            val key = sanitizeFilename(entry.sourceId)
+            val alreadyOnDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
+            if (alreadyOnDisk) return@forEach
+            when {
+                entry.source == "device" && entry.fullUrl.startsWith("list_images/") -> {
+                    val src = File(context.filesDir, entry.fullUrl)
+                    if (src.exists()) {
+                        val ext = src.extension.ifBlank { "jpg" }
+                        runCatching { src.copyTo(File(imageDir, "$key.$ext"), overwrite = true) }
+                    }
+                }
+                entry.fullUrl.isNotBlank() -> feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+            }
+        }
     }
 
     private suspend fun removeRotationFiles(
@@ -115,7 +147,7 @@ class ScheduleReceiver : BroadcastReceiver() {
         val wallpapers = listPrefs.wallpapersForList(listId).first()
         val imageDir = File(context.filesDir, "rotato_images")
         wallpapers.forEach { entry ->
-            val key = entry.sourceId.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
+            val key = sanitizeFilename(entry.sourceId)
             imageDir.listFiles()?.filter { it.nameWithoutExtension == key }?.forEach { it.delete() }
         }
     }
