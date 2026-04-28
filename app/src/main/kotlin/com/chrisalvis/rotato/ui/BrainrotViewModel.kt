@@ -127,6 +127,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
 
+    /** Tracks how many consecutive fetches returned 0 new items while the grid has content. */
+    private var consecutiveEmptyFetches = 0
+
     /** Page-level cache: keyed by "SOURCETYPE:query", populated in parallel at load time */
     private val pageCache = java.util.concurrent.ConcurrentHashMap<String, ArrayDeque<BrainrotWallpaper>>()
 
@@ -183,6 +186,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             pageCache.clear()
             _endReached.update { false }
             _noResults.update { false }
+            consecutiveEmptyFetches = 0
         }
         if (_endReached.value) return
         if (fetchJob?.isActive == true) return
@@ -190,7 +194,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         fetchJob = viewModelScope.launch {
             val isInitial = _gridItems.value.isEmpty()
             if (isInitial) _loading.update { true } else _loadingMore.update { true }
-
+            try {
             val ctx = getApplication<Application>().applicationContext
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
@@ -261,17 +265,27 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (_gridItems.value.isEmpty()) {
                     _noResults.update { true }
                     _endReached.update { true }
+                    consecutiveEmptyFetches = 0
                 } else {
-                    // Grid has content but this page was exhausted — clear cache so next
-                    // scroll fetch pulls a fresh page rather than declaring end of results.
-                    pageCache.clear()
-                    _endReached.update { false }
+                    // Grid has content but this page was exhausted. Track consecutive empty
+                    // pages — after 2 in a row, declare end of results so the spinner doesn't
+                    // loop indefinitely when filters are too restrictive to yield new content.
+                    consecutiveEmptyFetches++
+                    if (consecutiveEmptyFetches >= 2) {
+                        _endReached.update { true }
+                        consecutiveEmptyFetches = 0
+                    } else {
+                        pageCache.clear()
+                        _endReached.update { false }
+                    }
                 }
             } else {
+                consecutiveEmptyFetches = 0
                 _gridItems.update { it + newItems }  // single batch update → one recomposition
             }
-
-            if (isInitial) _loading.update { false } else _loadingMore.update { false }
+            } finally {
+                if (isInitial) _loading.update { false } else _loadingMore.update { false }
+            }
         }
     }
 
