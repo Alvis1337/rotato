@@ -625,13 +625,14 @@ private fun WallpaperDetailOverlay(
     val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
 
     val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
-    val wallpaper by remember { derivedStateOf { items.getOrNull(pagerState.currentPage) ?: items[startIndex] } }
+    // Key on items so the closure captures the latest list after any item is removed.
+    val wallpaper by remember(items) { derivedStateOf { items.getOrNull(pagerState.currentPage) ?: items[startIndex] } }
 
-    // Sync page change back to parent so action callbacks reference the right item
-    LaunchedEffect(pagerState.currentPage) {
+    // Fire whenever wallpaper changes — covers both manual swipes and list-shrink advances.
+    LaunchedEffect(wallpaper) {
         showZoom = false
         showInfoExpanded = false
-        onPageChanged(items[pagerState.currentPage])
+        onPageChanged(wallpaper)
     }
 
     val offsetY = remember { Animatable(0f) }
