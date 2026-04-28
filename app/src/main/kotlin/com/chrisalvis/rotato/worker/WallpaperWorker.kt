@@ -181,9 +181,12 @@ class WallpaperWorker(
             .build()
 
         nm.notify(NOTIF_ID_WALLPAPER_SET, notif)
+        thumb.recycle()
     }
 
     private fun postLowQueueNotification(count: Int) {
+        if (count == lastLowQueueNotifCount) return
+        lastLowQueueNotifCount = count
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         if (!nm.areNotificationsEnabled()) return
 
@@ -224,5 +227,8 @@ class WallpaperWorker(
         const val CHAIN_WORK_NAME = "rotato_chain"
         private const val NOTIF_ID_WALLPAPER_SET = 1001
         private const val NOTIF_ID_LOW_QUEUE = 1002
+
+        // Only notify once per distinct count so we don't fire every rotation while queue is low.
+        @Volatile private var lastLowQueueNotifCount = Int.MAX_VALUE
     }
 }
