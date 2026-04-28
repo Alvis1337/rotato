@@ -21,7 +21,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.ScheduleEntry
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 // Day order: Mon→Sun displayed left to right
 private val DAY_ORDER = listOf(
@@ -113,6 +116,8 @@ fun ScheduleScreen(
                         listName = targetList?.name ?: "Unknown list",
                         isListLocked = targetList?.isLocked == true,
                         wasBlockedByLock = entry.lastLockedMs > 0L,
+                        lastFiredMs = entry.lastFiredMs,
+                        lastFiredResult = entry.lastFiredResult,
                         onEdit = { vm.startEdit(entry) },
                         onDelete = { vm.delete(entry) },
                         onToggleEnabled = { vm.setEnabled(entry, it) },
@@ -129,6 +134,8 @@ private fun ScheduleEntryCard(
     listName: String,
     isListLocked: Boolean,
     wasBlockedByLock: Boolean,
+    lastFiredMs: Long,
+    lastFiredResult: String,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -189,6 +196,25 @@ private fun ScheduleEntryCard(
                         "Last trigger was blocked by a locked collection — unlock it in Collections",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (lastFiredMs > 0L) {
+                val timeStr = remember(lastFiredMs) {
+                    SimpleDateFormat("EEE h:mm a", Locale.getDefault()).format(Date(lastFiredMs))
+                }
+                Text(
+                    "Last triggered: $timeStr — $lastFiredResult",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (lastFiredResult.contains("empty pool") || lastFiredResult.contains("blocked"))
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Never triggered",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

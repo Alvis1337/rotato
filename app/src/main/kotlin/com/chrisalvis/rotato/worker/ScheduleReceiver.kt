@@ -46,7 +46,11 @@ class ScheduleReceiver : BroadcastReceiver() {
                 val schedPrefs = SchedulePreferences(context)
                 val listPrefs = LocalListsPreferences(context)
                 val entries = schedPrefs.entries.first()
-                val fired = entries.find { it.id == entryId } ?: return@launch
+                val fired = entries.find { it.id == entryId } ?: run {
+                    // Entry was deleted after the alarm was set — nothing to do.
+                    schedPrefs.recordTrigger(entryId, "entry not found")
+                    return@launch
+                }
 
                 val allLists = listPrefs.lists.first()
                 val firedList = allLists.find { it.id == fired.listId }
@@ -55,12 +59,9 @@ class ScheduleReceiver : BroadcastReceiver() {
                 val sessionUnlocked = (context.applicationContext as? RotatoApp)
                     ?.unlockedListIds?.value?.contains(fired.listId) == true
                 if (firedList?.isLocked == true && !sessionUnlocked) {
-                    // Persist the block event so the Schedule screen shows a warning even if
-                    // system notifications are blocked at channel or app level.
                     schedPrefs.recordLockedEvent(entryId)
+                    schedPrefs.recordTrigger(entryId, "blocked: locked")
                     postLockedNotification(context, entryId, firedList.name)
-                    // Retry every 5 minutes so the schedule applies shortly after the user
-                    // unlocks the collection. Give up after 60 minutes.
                     val scheduledTodayMs = java.util.Calendar.getInstance().apply {
                         set(java.util.Calendar.HOUR_OF_DAY, fired.startHour)
                         set(java.util.Calendar.MINUTE, fired.startMinute)
@@ -76,7 +77,6 @@ class ScheduleReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                // Schedule applied successfully — clear any lingering lock warning.
                 schedPrefs.clearLockedEvent(entryId)
 
                 val scheduledListIds = entries.filter { it.enabled }.map { it.listId }.toSet()
@@ -86,10 +86,12 @@ class ScheduleReceiver : BroadcastReceiver() {
                     if (!active) removeRotationFiles(context, listId, listPrefs)
                 }
 
-                // Download the new list's wallpapers into rotato_images/ before enqueuing
-                // WallpaperWorker — the app may be in the background so HomeViewModel's
-                // observeRotationCollections won't run to do this for us.
                 syncRotationPool(context, fired.listId, listPrefs)
+
+                val imagesInPool = File(context.filesDir, "rotato_images")
+                    .listFiles()?.count { it.isFile } ?: 0
+                val triggerResult = if (imagesInPool == 0) "applied (empty pool!)" else "applied ($imagesInPool images)"
+                schedPrefs.recordTrigger(entryId, triggerResult)
 
                 WorkManager.getInstance(context)
                     .enqueueUniqueWork(

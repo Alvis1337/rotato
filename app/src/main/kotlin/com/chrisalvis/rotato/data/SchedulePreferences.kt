@@ -54,6 +54,15 @@ class SchedulePreferences(private val context: Context) {
         }
     }
 
+    suspend fun recordTrigger(entryId: String, result: String) {
+        context.dataStore.edit { prefs ->
+            val entries = parseEntries(prefs[SCHEDULE_KEY] ?: "[]").map {
+                if (it.id == entryId) it.copy(lastFiredMs = System.currentTimeMillis(), lastFiredResult = result) else it
+            }
+            prefs[SCHEDULE_KEY] = serialize(entries)
+        }
+    }
+
     private fun parseEntries(json: String): List<ScheduleEntry> = try {
         val arr = JSONArray(json)
         (0 until arr.length()).map { i ->
@@ -67,6 +76,8 @@ class SchedulePreferences(private val context: Context) {
                 listId = o.getString("listId"),
                 enabled = o.optBoolean("enabled", true),
                 lastLockedMs = o.optLong("lastLockedMs", 0L),
+                lastFiredMs = o.optLong("lastFiredMs", 0L),
+                lastFiredResult = o.optString("lastFiredResult", ""),
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -82,6 +93,8 @@ class SchedulePreferences(private val context: Context) {
                     put("listId", e.listId)
                     put("enabled", e.enabled)
                     put("lastLockedMs", e.lastLockedMs)
+                    put("lastFiredMs", e.lastFiredMs)
+                    put("lastFiredResult", e.lastFiredResult)
                 })
             }
         }.toString()
