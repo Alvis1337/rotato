@@ -14,6 +14,7 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.SchedulePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
 import java.util.UUID
 
@@ -180,6 +182,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             localLists.setLocked(listId, false)
             _unlockedListIds.update { it + listId }
+            applyPendingSchedules(setOf(listId))
         }
     }
 
@@ -192,11 +195,34 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun grantSessionAccess() {
         val locked = _allLists.value.filter { it.isLocked }.map { it.id }.toSet()
         _unlockedListIds.update { it + locked }
+        viewModelScope.launch { applyPendingSchedules(locked) }
     }
 
     /** Re-lock all collections (clears session access). Called when app is backgrounded. */
     fun lockAll() {
         _unlockedListIds.update { emptySet() }
+    }
+
+    /**
+     * For each list in [listIds], immediately apply any schedule entry that was previously
+     * blocked by a lock. Called right after the user grants access so the schedule fires while
+     * the app is in the foreground — avoiding the race where the session unlock is cleared by
+     * [lockAll] before the retry alarm can check it.
+     */
+    private suspend fun applyPendingSchedules(listIds: Set<String>) {
+        if (listIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            val schedPrefs = SchedulePreferences(app)
+            val allEntries = schedPrefs.entries.first()
+            val listPrefs = LocalListsPreferences(app)
+            listIds.forEach { listId ->
+                allEntries
+                    .filter { it.enabled && it.listId == listId && it.lastLockedMs > 0L }
+                    .forEach { entry ->
+                        ScheduleReceiver.applyEntry(app, entry, allEntries, schedPrefs, listPrefs)
+                    }
+            }
+        }
     }
 
     fun removeWallpaper(entryId: String) {
