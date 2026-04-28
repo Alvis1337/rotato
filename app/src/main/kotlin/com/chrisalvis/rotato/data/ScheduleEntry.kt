@@ -10,4 +10,6 @@ data class ScheduleEntry(
     val startMinute: Int,
     val listId: String,
     val enabled: Boolean = true,
+    /** Non-zero when the last fire was blocked by a locked collection (epoch ms). Cleared on success. */
+    val lastLockedMs: Long = 0L,
 )

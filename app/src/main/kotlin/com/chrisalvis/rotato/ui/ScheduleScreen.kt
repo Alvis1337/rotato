@@ -112,6 +112,7 @@ fun ScheduleScreen(
                         entry = entry,
                         listName = targetList?.name ?: "Unknown list",
                         isListLocked = targetList?.isLocked == true,
+                        wasBlockedByLock = entry.lastLockedMs > 0L,
                         onEdit = { vm.startEdit(entry) },
                         onDelete = { vm.delete(entry) },
                         onToggleEnabled = { vm.setEnabled(entry, it) },
@@ -127,6 +128,7 @@ private fun ScheduleEntryCard(
     entry: ScheduleEntry,
     listName: String,
     isListLocked: Boolean,
+    wasBlockedByLock: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -179,9 +181,12 @@ private fun ScheduleEntryCard(
                     Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
                 }
             }
-            if (entry.enabled && isListLocked) {
+            if (entry.enabled && (isListLocked || wasBlockedByLock)) {
                 Text(
-                    "Collection is locked — unlock it in Collections for the schedule to apply",
+                    if (isListLocked)
+                        "Collection is locked — unlock it in Collections for the schedule to apply"
+                    else
+                        "Last trigger was blocked by a locked collection — unlock it in Collections",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                 )

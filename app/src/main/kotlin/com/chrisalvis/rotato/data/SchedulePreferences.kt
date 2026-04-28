@@ -36,6 +36,24 @@ class SchedulePreferences(private val context: Context) {
         }
     }
 
+    suspend fun recordLockedEvent(entryId: String) {
+        context.dataStore.edit { prefs ->
+            val entries = parseEntries(prefs[SCHEDULE_KEY] ?: "[]").map {
+                if (it.id == entryId) it.copy(lastLockedMs = System.currentTimeMillis()) else it
+            }
+            prefs[SCHEDULE_KEY] = serialize(entries)
+        }
+    }
+
+    suspend fun clearLockedEvent(entryId: String) {
+        context.dataStore.edit { prefs ->
+            val entries = parseEntries(prefs[SCHEDULE_KEY] ?: "[]").map {
+                if (it.id == entryId) it.copy(lastLockedMs = 0L) else it
+            }
+            prefs[SCHEDULE_KEY] = serialize(entries)
+        }
+    }
+
     private fun parseEntries(json: String): List<ScheduleEntry> = try {
         val arr = JSONArray(json)
         (0 until arr.length()).map { i ->
@@ -48,6 +66,7 @@ class SchedulePreferences(private val context: Context) {
                 startMinute = o.getInt("startMinute"),
                 listId = o.getString("listId"),
                 enabled = o.optBoolean("enabled", true),
+                lastLockedMs = o.optLong("lastLockedMs", 0L),
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -62,6 +81,7 @@ class SchedulePreferences(private val context: Context) {
                     put("startMinute", e.startMinute)
                     put("listId", e.listId)
                     put("enabled", e.enabled)
+                    put("lastLockedMs", e.lastLockedMs)
                 })
             }
         }.toString()

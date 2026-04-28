@@ -55,6 +55,9 @@ class ScheduleReceiver : BroadcastReceiver() {
                 val sessionUnlocked = (context.applicationContext as? RotatoApp)
                     ?.unlockedListIds?.value?.contains(fired.listId) == true
                 if (firedList?.isLocked == true && !sessionUnlocked) {
+                    // Persist the block event so the Schedule screen shows a warning even if
+                    // system notifications are blocked at channel or app level.
+                    schedPrefs.recordLockedEvent(entryId)
                     postLockedNotification(context, entryId, firedList.name)
                     // Retry every 5 minutes so the schedule applies shortly after the user
                     // unlocks the collection. Give up after 60 minutes.
@@ -72,6 +75,9 @@ class ScheduleReceiver : BroadcastReceiver() {
                     }
                     return@launch
                 }
+
+                // Schedule applied successfully — clear any lingering lock warning.
+                schedPrefs.clearLockedEvent(entryId)
 
                 val scheduledListIds = entries.filter { it.enabled }.map { it.listId }.toSet()
                 scheduledListIds.forEach { listId ->
