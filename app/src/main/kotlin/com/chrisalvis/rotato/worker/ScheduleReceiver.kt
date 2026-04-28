@@ -46,13 +46,17 @@ class ScheduleReceiver : BroadcastReceiver() {
          * directly by [com.chrisalvis.rotato.ui.BrowseViewModel] when a locked collection is
          * unlocked so the schedule applies immediately without waiting for a retry alarm.
          */
+        /**
+         * Returns the trigger result string (e.g. "applied (12 images)") that was also
+         * recorded to the schedule status. Callers can surface this in a snackbar.
+         */
         suspend fun applyEntry(
             context: Context,
             entry: ScheduleEntry,
             allEntries: List<ScheduleEntry>,
             schedPrefs: SchedulePreferences,
             listPrefs: LocalListsPreferences,
-        ) {
+        ): String {
             schedPrefs.clearLockedEvent(entry.id)
 
             val scheduledListIds = allEntries.filter { it.enabled }.map { it.listId }.toSet()
@@ -62,10 +66,8 @@ class ScheduleReceiver : BroadcastReceiver() {
                 if (!active) removeRotationFiles(context, listId, listPrefs)
             }
 
-            syncRotationPool(context, entry.listId, listPrefs)
-
-            val imagesInPool = File(context.filesDir, "rotato_images")
-                .listFiles()?.count { it.isFile } ?: 0
+            // Count only images belonging to the active list (not all files in the dir).
+            val imagesInPool = syncRotationPool(context, entry.listId, listPrefs)
             val triggerResult = if (imagesInPool == 0) "applied (empty pool!)" else "applied ($imagesInPool images)"
             schedPrefs.recordTrigger(entry.id, triggerResult)
 
@@ -77,13 +79,14 @@ class ScheduleReceiver : BroadcastReceiver() {
                 )
 
             ScheduleManager.schedule(context, entry)
+            return triggerResult
         }
 
         private suspend fun syncRotationPool(
             context: Context,
             listId: String,
             listPrefs: LocalListsPreferences,
-        ) {
+        ): Int {
             val wallpapers = listPrefs.wallpapersForList(listId).first()
             val imageDir = File(context.filesDir, "rotato_images").also { it.mkdirs() }
             val feedRepo = FeedRepository(imageDir)
@@ -101,6 +104,11 @@ class ScheduleReceiver : BroadcastReceiver() {
                     }
                     entry.fullUrl.isNotBlank() -> feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
                 }
+            }
+            // Count only this list's wallpapers that are now present on disk.
+            return wallpapers.count { wp ->
+                val key = sanitizeFilename(wp.sourceId)
+                imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
             }
         }
 
@@ -159,8 +167,6 @@ class ScheduleReceiver : BroadcastReceiver() {
                     }
                     return@launch
                 }
-
-                schedPrefs.clearLockedEvent(entryId)
 
                 applyEntry(context, fired, entries, schedPrefs, listPrefs)
             } catch (e: Exception) {

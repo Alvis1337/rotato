@@ -74,9 +74,6 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
-            // If today is one of this entry's days and the scheduled time has already passed,
-            // apply directly instead of waiting until the next alarm. This avoids a broadcast
-            // round-trip and ensures any exception surfaces in the schedule status.
             if (entry.enabled && todayDow in entry.days && triggerTodayMs <= now.timeInMillis) {
                 withContext(Dispatchers.IO) {
                     try {
@@ -86,16 +83,22 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                             ?.unlockedListIds?.value?.contains(entry.listId) == true
                         if (targetList?.isLocked == true && !sessionUnlocked) {
                             _lockedListWarning.tryEmit(targetList.name)
+                            // applyEntry wasn't called, so arm the next alarm manually.
+                            ScheduleManager.schedule(getApplication(), entry)
                         } else {
-                            ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
+                            // applyEntry arms the next alarm internally — no duplicate schedule() call.
+                            val result = ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
+                            _triggerResult.tryEmit(result)
                         }
                     } catch (e: Exception) {
                         Log.e("ScheduleViewModel", "Failed to apply entry ${entry.id} in saveEdit", e)
                         runCatching { schedPrefs.recordTrigger(entry.id, "error: ${e.javaClass.simpleName}") }
+                        ScheduleManager.schedule(getApplication(), entry)
                     }
                 }
+            } else {
+                ScheduleManager.schedule(getApplication(), entry)
             }
-            ScheduleManager.schedule(getApplication(), entry)
         }
         _editEntry.update { null }
     }
@@ -116,8 +119,8 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                         return@withContext
                     }
                     val allEntries = schedPrefs.entries.first()
-                    ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
-                    _triggerResult.tryEmit("Applied!")
+                    val result = ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
+                    _triggerResult.tryEmit(result)
                 } catch (e: Exception) {
                     Log.e("ScheduleViewModel", "triggerNow failed for ${entry.id}", e)
                     _triggerResult.tryEmit("Error: ${e.message ?: e.javaClass.simpleName}")

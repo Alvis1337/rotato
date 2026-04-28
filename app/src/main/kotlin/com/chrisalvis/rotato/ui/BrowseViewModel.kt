@@ -226,7 +226,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 matching.forEach { entry ->
                     Log.d("BrowseViewModel", "  applying entry ${entry.id}")
                     try {
-                        ScheduleReceiver.applyEntry(app, entry, allEntries, schedPrefs, listPrefs)
+                        val result = ScheduleReceiver.applyEntry(app, entry, allEntries, schedPrefs, listPrefs)
+                        Log.d("BrowseViewModel", "  applied entry ${entry.id}: $result")
                     } catch (e: Exception) {
                         Log.e("BrowseViewModel", "applyEntry failed for ${entry.id}", e)
                         runCatching { schedPrefs.recordTrigger(entry.id, "error: ${e.javaClass.simpleName}") }
