@@ -30,6 +30,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -407,29 +409,32 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun checkLinksForCurrentList() {
+        val listId = _selectedListId.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
             _isCheckingLinks.update { true }
             _brokenEntryIds.update { emptySet() }
-            // Wait for the wallpapers flow to emit for the newly selected list
-            val entries = kotlinx.coroutines.withTimeoutOrNull(3_000) {
-                wallpapers.first { it.isNotEmpty() }
-            } ?: wallpapers.value
-            if (entries.isEmpty()) {
+            // Read entries directly from the repo for this listId — avoids race condition
+            // where wallpapers StateFlow might still hold the previous list's entries
+            val rawEntries = localLists.wallpapersForList(listId).first()
+            if (rawEntries.isEmpty()) {
                 _isCheckingLinks.update { false }
                 return@launch
             }
             val broken = mutableSetOf<String>()
+            val semaphore = Semaphore(4) // max 4 parallel HTTP requests to avoid rate limiting
             coroutineScope {
-                entries.map { wp ->
+                rawEntries.map { entry ->
                     async {
-                        // Resolve actual URL — local files are always healthy
+                        // Resolve the stored URL to its best local-or-remote form
                         val resolved = resolveEntryUrl(
-                            wp.thumbUrl.ifBlank { wp.fullUrl },
+                            entry.thumbUrl.ifBlank { entry.fullUrl },
                             app.filesDir,
-                            wp.sourceId
+                            entry.sourceId
                         )
+                        // Local files are always healthy — no HTTP check needed
                         if (resolved.startsWith("file://")) return@async
-                        if (isUrlBroken(resolved)) synchronized(broken) { broken.add(wp.entryId) }
+                        val isBroken = semaphore.withPermit { isUrlBroken(resolved) }
+                        if (isBroken) synchronized(broken) { broken.add(entry.id) }
                     }
                 }.awaitAll()
             }
@@ -445,13 +450,14 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             when {
                 headResp.isSuccessful -> false
                 headResp.code == 405 -> {
-                    // Server doesn't support HEAD — fetch minimal bytes via GET
+                    // Server doesn't support HEAD — try a minimal Range GET
                     val getResp = healthClient.newCall(
                         Request.Builder().url(url).header("Range", "bytes=0-0").build()
                     ).execute()
                     getResp.body?.close()
-                    !getResp.isSuccessful && getResp.code != 416
+                    !getResp.isSuccessful && getResp.code != 416 // 416 = range invalid but image exists
                 }
+                headResp.code == 429 || headResp.code == 503 -> false // rate limited, not broken
                 else -> true
             }
         } catch (_: Exception) { true }
