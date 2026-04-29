@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Wallpaper
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -68,8 +71,14 @@ fun BrowseScreen() {
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
 
+    val inRotation by vm.inRotation.collectAsStateWithLifecycle()
+    val rotationCount = remember(wallpapers, inRotation) { wallpapers.count { vm.isInRotation(it) } }
+
     var showMoveDialog by remember { mutableStateOf(false) }
     var showSaveRotationDialog by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedList?.id) { showSearch = false }
 
     if (showSaveRotationDialog) {
         SaveRotationDialog(
@@ -105,13 +114,13 @@ fun BrowseScreen() {
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
 
     showActionsFor?.let { wp ->
-        WallpaperActionsDialog(
+        WallpaperDetailSheet(
             wallpaper = wp,
             isInRotation = vm.isInRotation(wp),
             isDeviceImage = wp.source == "device",
             onToggleRotation = { vm.toggleRotation(wp); showActionsFor = null },
             onSaveToGallery = { vm.saveWallpaper(wp); showActionsFor = null },
-            onShare = { showActionsFor = null },
+            onRemoveFromCollection = { if (wp.entryId.isNotBlank()) { vm.removeWallpaper(wp.entryId); showActionsFor = null } },
             onDismiss = { showActionsFor = null }
         )
     }
@@ -139,25 +148,32 @@ fun BrowseScreen() {
                     }
                 },
                 title = {
-                    Text(
-                        when {
-                            selectionMode -> "${selected.size} selected"
-                            selectedList != null -> selectedList!!.name
-                            else -> "Collections"
-                        },
-                        fontWeight = FontWeight.Bold
-                    )
+                    when {
+                        selectionMode -> Text("${selected.size} selected", fontWeight = FontWeight.Bold)
+                        selectedList != null -> Column {
+                            Text(selectedList!!.name, fontWeight = FontWeight.Bold)
+                            if (wallpapers.isNotEmpty()) {
+                                Text(
+                                    "${wallpapers.size} · $rotationCount in Library",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        else -> Text("Collections", fontWeight = FontWeight.Bold)
+                    }
                 },
                 actions = {
-                    if (selectionMode && selected.isNotEmpty()) {
-                        IconButton(onClick = { vm.downloadSelected() }) {
-                            Icon(Icons.Default.Download, contentDescription = "Download selected to gallery")
-                        }
-                        IconButton(onClick = { showMoveDialog = true }) {
-                            Icon(Icons.Default.DriveFileMove, contentDescription = "Move to another collection")
-                        }
-                    }
                     if (!selectionMode && selectedList != null) {
+                        IconButton(onClick = {
+                            if (showSearch) vm.setSearchQuery("")
+                            showSearch = !showSearch
+                        }) {
+                            Icon(
+                                if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = if (showSearch) "Hide search" else "Search"
+                            )
+                        }
                         IconButton(onClick = {
                             pickerTargetListId = selectedList!!.id
                             photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -180,6 +196,41 @@ fun BrowseScreen() {
                     }
                 }
             )
+        },
+        bottomBar = {
+            if (selectionMode && selected.isNotEmpty() && selectedList != null) {
+                BottomAppBar {
+                    Spacer(Modifier.weight(1f))
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { vm.removeSelected() },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
+                        Text("Delete", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { showMoveDialog = true },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.DriveFileMove, contentDescription = "Move")
+                        Text("Move", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { vm.downloadSelected() },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Save to gallery")
+                        Text("Save", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
         }
     ) { padding ->
         if (selectedList == null) {
@@ -218,20 +269,22 @@ fun BrowseScreen() {
             )
         } else {
             Column(modifier = Modifier.padding(padding)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { vm.setSearchQuery(it) },
-                    label = { Text("Search tags…") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        { IconButton(onClick = { vm.setSearchQuery("") }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
-                    } else null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.medium
-                )
+                AnimatedVisibility(visible = showSearch) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { vm.setSearchQuery(it) },
+                        label = { Text("Search tags…") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = if (searchQuery.isNotEmpty()) {
+                            { IconButton(onClick = { vm.setSearchQuery("") }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
+                        } else null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.medium
+                    )
+                }
                 WallpaperGridContent(
                     wallpapers = wallpapers,
                     listId = selectedList?.id,
@@ -244,7 +297,6 @@ fun BrowseScreen() {
                         else showActionsFor = wp
                     },
                     onLongPress = { wp -> vm.enterSelectionMode(wp) },
-                    onRemove = { wp -> if (wp.entryId.isNotBlank()) vm.removeWallpaper(wp.entryId) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -263,42 +315,65 @@ private fun shareWallpaper(context: android.content.Context, wallpaper: BrowseWa
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun WallpaperActionsDialog(
+private fun WallpaperDetailSheet(
     wallpaper: BrowseWallpaper,
     isInRotation: Boolean,
     isDeviceImage: Boolean,
     onToggleRotation: () -> Unit,
     onSaveToGallery: () -> Unit,
-    onShare: () -> Unit,
+    onRemoveFromCollection: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 32.dp)
-        ) {
-            Text(
-                "Wallpaper options",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            AsyncImage(
+                model = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl },
+                contentDescription = wallpaper.animeTitle.ifBlank { null },
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp)
+                    .padding(horizontal = 16.dp)
+                    .clip(MaterialTheme.shapes.medium)
             )
+            if (wallpaper.animeTitle.isNotBlank()) {
+                Text(
+                    wallpaper.animeTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
             HorizontalDivider()
             ListItem(
-                headlineContent = { Text(if (isInRotation) "Remove from rotation" else "Add to rotation") },
+                headlineContent = { Text(if (isInRotation) "Remove from Library" else "Add to Library") },
+                leadingContent = {
+                    Icon(
+                        if (isInRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
+                        contentDescription = null
+                    )
+                },
                 modifier = Modifier.clickable(onClick = onToggleRotation)
             )
             if (!isDeviceImage) {
                 ListItem(
                     headlineContent = { Text("Save to gallery") },
+                    leadingContent = { Icon(Icons.Default.Download, contentDescription = null) },
                     modifier = Modifier.clickable(onClick = onSaveToGallery)
                 )
             }
             ListItem(
                 headlineContent = { Text("Share") },
-                modifier = Modifier.clickable(onClick = { shareWallpaper(context, wallpaper); onShare() })
+                leadingContent = { Icon(Icons.Default.Share, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = { shareWallpaper(context, wallpaper); onDismiss() })
             )
+            ListItem(
+                headlineContent = { Text("Remove from collection", color = MaterialTheme.colorScheme.error) },
+                leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                modifier = Modifier.clickable(onClick = onRemoveFromCollection)
+            )
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -601,7 +676,6 @@ private fun WallpaperGridContent(
     selected: Set<String>,
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
-    onRemove: (BrowseWallpaper) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (wallpapers.isEmpty()) {
@@ -620,20 +694,12 @@ private fun WallpaperGridContent(
 
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(3),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item(span = { GridItemSpan(2) }) {
-                Text(
-                    "Tap to add/remove from Library rotation. Use ⊞ to add all, or 📷 to import from device.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-            }
         items(wallpapers, key = { it.entryId.ifBlank { it.sourceId } }) { wp ->
             WallpaperThumbnail(
                 wallpaper = wp,
@@ -642,8 +708,7 @@ private fun WallpaperGridContent(
                 isSelected = selected.contains(wp.sourceId),
                 selectionMode = selectionMode,
                 onTap = { onTap(wp) },
-                onLongPress = { onLongPress(wp) },
-                onRemove = { onRemove(wp) }
+                onLongPress = { onLongPress(wp) }
             )
         }
     }
@@ -658,14 +723,13 @@ private fun WallpaperThumbnail(
     isSelected: Boolean,
     selectionMode: Boolean,
     onTap: () -> Unit,
-    onLongPress: () -> Unit,
-    onRemove: () -> Unit
+    onLongPress: () -> Unit
 ) {
     val borderColor = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
+            .aspectRatio(9f / 16f)
             .clip(MaterialTheme.shapes.medium)
             .then(if (isSelected) Modifier.border(3.dp, borderColor, MaterialTheme.shapes.medium) else Modifier)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
@@ -684,12 +748,6 @@ private fun WallpaperThumbnail(
             ) {
                 Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(36.dp))
             }
-            isInRotation && !selectionMode -> Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(36.dp))
-            }
             isDownloading -> Box(
                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)),
                 contentAlignment = Alignment.Center
@@ -698,12 +756,21 @@ private fun WallpaperThumbnail(
             }
         }
 
-        if (!selectionMode && wallpaper.entryId.isNotBlank()) {
-            IconButton(
-                onClick = onRemove,
-                modifier = Modifier.align(Alignment.TopEnd).size(32.dp)
+        if (isInRotation && !selectionMode) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(3.dp)
+                    .background(Color.White, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "In Library",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
 

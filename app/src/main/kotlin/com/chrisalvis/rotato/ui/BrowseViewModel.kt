@@ -305,6 +305,23 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun removeSelected() {
+        val toRemove = wallpapers.value.filter { _selected.value.contains(it.sourceId) }
+        exitSelectionMode()
+        viewModelScope.launch {
+            toRemove.forEach { wp ->
+                localLists.removeWallpaper(wp.entryId)
+                if (wp.source == "device") {
+                    val uri = android.net.Uri.parse(wp.fullUrl)
+                    uri.path?.let { java.io.File(it).delete() }
+                    val key = sanitize(wp.sourceId)
+                    imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
+                    _inRotation.update { it - key }
+                }
+            }
+        }
+    }
+
     fun saveWallpaper(wallpaper: BrowseWallpaper) {
         if (wallpaper.source == "device") {
             Toast.makeText(app.applicationContext, "Already on device", Toast.LENGTH_SHORT).show()
