@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
 import java.util.UUID
@@ -68,7 +69,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 .mapValues { (_, entries) ->
                     entries.lastOrNull()?.let { entry ->
                         val rawUrl = entry.thumbUrl.ifBlank { entry.fullUrl }
-                        if (rawUrl.startsWith("list_images/")) File(app.filesDir, rawUrl).toURI().toString() else rawUrl
+                        resolveEntryUrl(rawUrl, app.filesDir, entry.sourceId)
                     }
                 }
         }
@@ -483,12 +484,27 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpaper(
     sourceId = sourceId,
     entryId = id,
-    fullUrl = resolveEntryUrl(fullUrl, filesDir),
-    thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir),
+    fullUrl = resolveEntryUrl(fullUrl, filesDir, sourceId),
+    thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir, sourceId),
     animeTitle = tags.take(3).joinToString(", "),
     source = source
 )
 
-/** Relative paths (list_images/…) are resolved to file:// URIs; remote URLs are passed through. */
-private fun resolveEntryUrl(url: String, filesDir: File): String =
-    if (url.startsWith("list_images/")) File(filesDir, url).toURI().toString() else url
+/**
+ * Resolves a stored URL to the best available local-or-remote URI:
+ * 1. `list_images/…` relative paths → absolute file:// URI
+ * 2. Already a file:// URI → pass through
+ * 3. If a local downloaded copy exists in rotato_images/ for this sourceId → use it
+ * 4. Otherwise return the remote URL as-is (may be dead)
+ */
+private fun resolveEntryUrl(url: String, filesDir: File, sourceId: String = ""): String {
+    if (url.startsWith("list_images/")) return File(filesDir, url).toURI().toString()
+    if (url.startsWith("file://")) return url
+    if (sourceId.isNotBlank()) {
+        val sanitized = sanitizeFilename(sourceId)
+        val localFile = File(filesDir, "rotato_images").listFiles()
+            ?.find { it.nameWithoutExtension == sanitized }
+        if (localFile?.exists() == true) return localFile.toURI().toString()
+    }
+    return url
+}
