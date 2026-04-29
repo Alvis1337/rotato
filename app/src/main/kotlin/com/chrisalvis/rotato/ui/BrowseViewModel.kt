@@ -407,30 +407,54 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun checkLinksForCurrentList() {
-        val entries = wallpapers.value
-        if (entries.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             _isCheckingLinks.update { true }
+            _brokenEntryIds.update { emptySet() }
+            // Wait for the wallpapers flow to emit for the newly selected list
+            val entries = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+                wallpapers.first { it.isNotEmpty() }
+            } ?: wallpapers.value
+            if (entries.isEmpty()) {
+                _isCheckingLinks.update { false }
+                return@launch
+            }
             val broken = mutableSetOf<String>()
             coroutineScope {
                 entries.map { wp ->
                     async {
-                        val url = wp.thumbUrl.ifBlank { wp.fullUrl }
-                        val isLocal = url.startsWith("file://") || url.startsWith("list_images/") || url.startsWith("rotato_images/")
-                        if (isLocal) return@async
-                        val isBroken = try {
-                            val req = Request.Builder().url(url).head().build()
-                            val resp = healthClient.newCall(req).execute()
-                            resp.close()
-                            !resp.isSuccessful
-                        } catch (_: Exception) { true }
-                        if (isBroken) synchronized(broken) { broken.add(wp.entryId) }
+                        // Resolve actual URL — local files are always healthy
+                        val resolved = resolveEntryUrl(
+                            wp.thumbUrl.ifBlank { wp.fullUrl },
+                            app.filesDir,
+                            wp.sourceId
+                        )
+                        if (resolved.startsWith("file://")) return@async
+                        if (isUrlBroken(resolved)) synchronized(broken) { broken.add(wp.entryId) }
                     }
                 }.awaitAll()
             }
             _brokenEntryIds.update { broken }
             _isCheckingLinks.update { false }
         }
+    }
+
+    private fun isUrlBroken(url: String): Boolean {
+        return try {
+            val headResp = healthClient.newCall(Request.Builder().url(url).head().build()).execute()
+            headResp.close()
+            when {
+                headResp.isSuccessful -> false
+                headResp.code == 405 -> {
+                    // Server doesn't support HEAD — fetch minimal bytes via GET
+                    val getResp = healthClient.newCall(
+                        Request.Builder().url(url).header("Range", "bytes=0-0").build()
+                    ).execute()
+                    getResp.body?.close()
+                    !getResp.isSuccessful && getResp.code != 416
+                }
+                else -> true
+            }
+        } catch (_: Exception) { true }
     }
 
     fun removeBrokenEntries() {
