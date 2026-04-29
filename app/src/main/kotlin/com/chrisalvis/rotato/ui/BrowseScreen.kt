@@ -234,6 +234,7 @@ fun BrowseScreen() {
                 )
                 WallpaperGridContent(
                     wallpapers = wallpapers,
+                    listId = selectedList?.id,
                     isInRotation = { vm.isInRotation(it) },
                     downloading = downloading,
                     selectionMode = selectionMode,
@@ -593,6 +594,7 @@ private fun CollectionCard(
 @Composable
 private fun WallpaperGridContent(
     wallpapers: List<BrowseWallpaper>,
+    listId: String?,
     isInRotation: (BrowseWallpaper) -> Boolean,
     downloading: Set<String>,
     selectionMode: Boolean,
@@ -614,7 +616,7 @@ private fun WallpaperGridContent(
     }
 
     val gridState = rememberLazyGridState()
-    LaunchedEffect(wallpapers) { gridState.animateScrollToItem(0) }
+    LaunchedEffect(listId) { gridState.animateScrollToItem(0) }
 
     LazyVerticalGrid(
         state = gridState,
