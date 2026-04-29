@@ -4,7 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.chrisalvis.rotato.RotatoApp
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.ScheduleEntry
@@ -40,10 +39,6 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     private val _editEntry = MutableStateFlow<ScheduleEntry?>(null)
     val editEntry: StateFlow<ScheduleEntry?> = _editEntry.asStateFlow()
 
-    /** Emits the name of a locked collection when saveEdit fires its schedule immediately. */
-    private val _lockedListWarning = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val lockedListWarning: SharedFlow<String> = _lockedListWarning.asSharedFlow()
-
     /** Emits a one-shot result message from [triggerNow] or [saveEdit]. */
     private val _triggerResult = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val triggerResult: SharedFlow<String> = _triggerResult.asSharedFlow()
@@ -78,18 +73,8 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.IO) {
                     try {
                         val allEntries = schedPrefs.entries.first()
-                        val targetList = listPrefs.lists.first().find { it.id == entry.listId }
-                        val sessionUnlocked = (getApplication() as? RotatoApp)
-                            ?.unlockedListIds?.value?.contains(entry.listId) == true
-                        if (targetList?.isLocked == true && !sessionUnlocked) {
-                            _lockedListWarning.tryEmit(targetList.name)
-                            // applyEntry wasn't called, so arm the next alarm manually.
-                            ScheduleManager.schedule(getApplication(), entry)
-                        } else {
-                            // applyEntry arms the next alarm internally — no duplicate schedule() call.
-                            val result = ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
-                            _triggerResult.tryEmit(result)
-                        }
+                        val result = ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
+                        _triggerResult.tryEmit(result)
                     } catch (e: Exception) {
                         Log.e("ScheduleViewModel", "Failed to apply entry ${entry.id} in saveEdit", e)
                         runCatching { schedPrefs.recordTrigger(entry.id, "error: ${e.javaClass.simpleName}") }
@@ -103,21 +88,11 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
         _editEntry.update { null }
     }
 
-    /**
-     * Manually apply this schedule entry right now, bypassing the time-window check.
-     * If the collection is still locked and not session-unlocked, emits a prompt via [triggerResult].
-     */
+    /** Manually apply this schedule entry right now, bypassing the time-window check. */
     fun triggerNow(entry: ScheduleEntry) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 try {
-                    val targetList = listPrefs.lists.first().find { it.id == entry.listId }
-                    val sessionUnlocked = (getApplication() as? RotatoApp)
-                        ?.unlockedListIds?.value?.contains(entry.listId) == true
-                    if (targetList?.isLocked == true && !sessionUnlocked) {
-                        _triggerResult.tryEmit("Unlock \"${targetList.name}\" in Collections first")
-                        return@withContext
-                    }
                     val allEntries = schedPrefs.entries.first()
                     val result = ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
                     _triggerResult.tryEmit(result)

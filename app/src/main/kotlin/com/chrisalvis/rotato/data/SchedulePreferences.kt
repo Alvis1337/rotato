@@ -47,15 +47,6 @@ class SchedulePreferences(private val context: Context) {
         }
     }
 
-    suspend fun recordLockedEvent(entryId: String) {
-        context.dataStore.edit { prefs ->
-            val entries = parseEntries(prefs[SCHEDULE_KEY] ?: "[]").map {
-                if (it.id == entryId) it.copy(lastLockedMs = System.currentTimeMillis()) else it
-            }
-            prefs[SCHEDULE_KEY] = serialize(entries)
-        }
-    }
-
     suspend fun clearLockedEvent(entryId: String) {
         context.dataStore.edit { prefs ->
             val entries = parseEntries(prefs[SCHEDULE_KEY] ?: "[]").map {
