@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,6 +68,8 @@ fun BrowseScreen() {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val brokenEntryIds by vm.brokenEntryIds.collectAsStateWithLifecycle()
+    val isCheckingLinks by vm.isCheckingLinks.collectAsStateWithLifecycle()
 
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
@@ -118,6 +121,7 @@ fun BrowseScreen() {
             wallpaper = wp,
             isInRotation = vm.isInRotation(wp),
             isDeviceImage = wp.source == "device",
+            isBroken = brokenEntryIds.contains(wp.entryId),
             onToggleRotation = { vm.toggleRotation(wp); showActionsFor = null },
             onSaveToGallery = { vm.saveWallpaper(wp); showActionsFor = null },
             onRemoveFromCollection = { if (wp.entryId.isNotBlank()) { vm.removeWallpaper(wp.entryId); showActionsFor = null } },
@@ -285,6 +289,34 @@ fun BrowseScreen() {
                         shape = MaterialTheme.shapes.medium
                     )
                 }
+                if (isCheckingLinks) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                if (brokenEntryIds.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            "${brokenEntryIds.size} broken link${if (brokenEntryIds.size != 1) "s" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { vm.removeBrokenEntries() }) {
+                            Text("Remove all", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
                 WallpaperGridContent(
                     wallpapers = wallpapers,
                     listId = selectedList?.id,
@@ -292,6 +324,7 @@ fun BrowseScreen() {
                     downloading = downloading,
                     selectionMode = selectionMode,
                     selected = selected,
+                    brokenEntryIds = brokenEntryIds,
                     onTap = { wp ->
                         if (selectionMode) vm.toggleSelection(wp)
                         else showActionsFor = wp
@@ -319,6 +352,7 @@ private fun WallpaperDetailSheet(
     wallpaper: BrowseWallpaper,
     isInRotation: Boolean,
     isDeviceImage: Boolean,
+    isBroken: Boolean,
     onToggleRotation: () -> Unit,
     onSaveToGallery: () -> Unit,
     onRemoveFromCollection: () -> Unit,
@@ -343,6 +377,12 @@ private fun WallpaperDetailSheet(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            if (isBroken) {
+                ListItem(
+                    headlineContent = { Text("Broken link — image may not load", color = MaterialTheme.colorScheme.error) },
+                    leadingContent = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
             }
             HorizontalDivider()
@@ -674,6 +714,7 @@ private fun WallpaperGridContent(
     downloading: Set<String>,
     selectionMode: Boolean,
     selected: Set<String>,
+    brokenEntryIds: Set<String>,
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
     modifier: Modifier = Modifier
@@ -706,6 +747,7 @@ private fun WallpaperGridContent(
                 isInRotation = isInRotation(wp),
                 isDownloading = downloading.contains(wp.sourceId),
                 isSelected = selected.contains(wp.sourceId),
+                isBroken = brokenEntryIds.contains(wp.entryId),
                 selectionMode = selectionMode,
                 onTap = { onTap(wp) },
                 onLongPress = { onLongPress(wp) }
@@ -721,6 +763,7 @@ private fun WallpaperThumbnail(
     isInRotation: Boolean,
     isDownloading: Boolean,
     isSelected: Boolean,
+    isBroken: Boolean,
     selectionMode: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit
@@ -770,6 +813,24 @@ private fun WallpaperThumbnail(
                     contentDescription = "In Library",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        if (isBroken) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
+                    .background(MaterialTheme.colorScheme.errorContainer, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = "Broken link",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxSize().padding(3.dp)
                 )
             }
         }

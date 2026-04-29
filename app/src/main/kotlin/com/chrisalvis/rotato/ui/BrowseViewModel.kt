@@ -26,8 +26,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
@@ -112,6 +118,17 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val _showCreateDialog = MutableStateFlow(false)
     val showCreateDialog: StateFlow<Boolean> = _showCreateDialog.asStateFlow()
 
+    private val _brokenEntryIds = MutableStateFlow<Set<String>>(emptySet())
+    val brokenEntryIds: StateFlow<Set<String>> = _brokenEntryIds.asStateFlow()
+
+    private val _isCheckingLinks = MutableStateFlow(false)
+    val isCheckingLinks: StateFlow<Boolean> = _isCheckingLinks.asStateFlow()
+
+    private val healthClient = OkHttpClient.Builder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .build()
+
     init {
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
@@ -126,6 +143,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         _selectedListId.update { list.id }
         _searchQuery.update { "" }
         exitSelectionMode()
+        _brokenEntryIds.update { emptySet() }
+        checkLinksForCurrentList()
     }
 
     fun clearSelection() {
@@ -384,6 +403,41 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun refreshInRotation() {
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
+        }
+    }
+
+    fun checkLinksForCurrentList() {
+        val entries = wallpapers.value
+        if (entries.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isCheckingLinks.update { true }
+            val broken = mutableSetOf<String>()
+            coroutineScope {
+                entries.map { wp ->
+                    async {
+                        val url = wp.thumbUrl.ifBlank { wp.fullUrl }
+                        val isLocal = url.startsWith("file://") || url.startsWith("list_images/") || url.startsWith("rotato_images/")
+                        if (isLocal) return@async
+                        val isBroken = try {
+                            val req = Request.Builder().url(url).head().build()
+                            val resp = healthClient.newCall(req).execute()
+                            resp.close()
+                            !resp.isSuccessful
+                        } catch (_: Exception) { true }
+                        if (isBroken) synchronized(broken) { broken.add(wp.entryId) }
+                    }
+                }.awaitAll()
+            }
+            _brokenEntryIds.update { broken }
+            _isCheckingLinks.update { false }
+        }
+    }
+
+    fun removeBrokenEntries() {
+        val ids = _brokenEntryIds.value.toSet()
+        _brokenEntryIds.update { emptySet() }
+        viewModelScope.launch(Dispatchers.IO) {
+            ids.forEach { entryId -> localLists.removeWallpaper(entryId) }
         }
     }
 
