@@ -507,7 +507,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _downloadingIds.update { it + key }
             val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl)
+            val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
             val ctx = getApplication<Application>().applicationContext
             if (ok) {
                 val history = historyFromJson(prefs.historyJson.first()).toMutableList()
@@ -538,7 +538,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _downloadingIds.update { it + key }
             val ctx = getApplication<Application>().applicationContext
             val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            val ok = feedRepo.saveToGallery(ctx, sourceId, wp.fullUrl)
+            val ok = feedRepo.saveToGallery(ctx, sourceId, wp.fullUrl, wp.sampleUrl)
             Toast.makeText(ctx, if (ok) "Saved to Pictures/Rotato" else "Save failed", Toast.LENGTH_SHORT).show()
             _downloadingIds.update { it - key }
         }

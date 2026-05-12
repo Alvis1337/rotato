@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -131,7 +132,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
-    init {
+    private var linkCheckJob: Job? = null
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
         }
@@ -312,7 +313,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             toDownload.forEach { wp ->
                 if (_downloading.value.contains(wp.sourceId)) return@forEach
                 _downloading.update { it + wp.sourceId }
-                val ok = feedRepo.saveToGallery(ctx, wp.sourceId, wp.fullUrl)
+                val ok = feedRepo.saveToGallery(ctx, wp.sourceId, wp.fullUrl, wp.thumbUrl)
                 if (ok) saved++ else failed++
                 _downloading.update { it - wp.sourceId }
             }
@@ -352,7 +353,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             if (_downloading.value.contains(wallpaper.sourceId)) return@launch
             _downloading.update { it + wallpaper.sourceId }
-            val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl)
+            val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.thumbUrl)
             _downloading.update { it - wallpaper.sourceId }
             val msg = if (ok) "Saved to Pictures/Rotato" else "Failed to save"
             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
@@ -374,7 +375,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             val ok = if (wallpaper.source == "device") {
                 copyLocalToRotation(wallpaper.fullUrl, key)
             } else {
-                feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl)
+                feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.thumbUrl)
             }
             if (ok) _inRotation.update { it + key }
             _downloading.update { it - wallpaper.sourceId }
@@ -393,7 +394,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 val ok = if (wp.source == "device") {
                     copyLocalToRotation(wp.fullUrl, key)
                 } else {
-                    feedRepo.downloadWallpaper(wp.sourceId, wp.fullUrl)
+                    feedRepo.downloadWallpaper(wp.sourceId, wp.fullUrl, wp.thumbUrl)
                 }
                 if (ok) { _inRotation.update { it + key }; added++ }
                 _downloading.update { it - wp.sourceId }
@@ -410,7 +411,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun checkLinksForCurrentList() {
         val listId = _selectedListId.value ?: return
-        viewModelScope.launch(Dispatchers.IO) {
+        linkCheckJob?.cancel()
+        linkCheckJob = viewModelScope.launch(Dispatchers.IO) {
             _isCheckingLinks.update { true }
             _brokenEntryIds.update { emptySet() }
             // Read entries directly from the repo for this listId — avoids race condition
@@ -438,7 +440,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }.awaitAll()
             }
-            _brokenEntryIds.update { broken }
+            // Only update state if we're still viewing this same list (guard against race on list switch)
+            if (_selectedListId.value == listId) {
+                _brokenEntryIds.update { broken }
+            }
             _isCheckingLinks.update { false }
         }
     }
@@ -458,6 +463,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     !getResp.isSuccessful && getResp.code != 416 // 416 = range invalid but image exists
                 }
                 headResp.code == 429 || headResp.code == 503 -> false // rate limited, not broken
+                headResp.code == 401 || headResp.code == 403 -> false // auth required — resource exists, not gone
                 else -> true
             }
         } catch (_: Exception) { true }
