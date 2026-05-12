@@ -268,6 +268,70 @@ fun BrainrotScreen(
     }
 
         Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Persistent header: source toggles + discover mode — always visible
+                if (!noSources) {
+                    Surface(
+                        tonalElevation = 2.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .statusBarsPadding()
+                                .padding(top = 8.dp, bottom = 6.dp)
+                        ) {
+                            if (allSources.isNotEmpty()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 2.dp)
+                                ) {
+                                    Icon(Icons.Default.FilterList, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Sources", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp)
+                                ) {
+                                    items(allSources, key = { it.type.name }) { src ->
+                                        FilterChip(
+                                            selected = src.enabled,
+                                            onClick = { vm.toggleSource(src) },
+                                            label = { Text(src.type.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Discover mode", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp)
+                            ) {
+                                items(DiscoverMode.entries, key = { it.name }) { mode ->
+                                    val icon = when (mode) {
+                                        DiscoverMode.RANDOM -> Icons.Default.Shuffle
+                                        DiscoverMode.POPULAR -> Icons.Default.TrendingUp
+                                        DiscoverMode.RECENT -> Icons.Default.Schedule
+                                    }
+                                    FilterChip(
+                                        selected = discoverMode == mode,
+                                        onClick = { vm.setDiscoverMode(mode) },
+                                        leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                                        label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             when {
                 noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
                 noResults -> NoResultsState(
@@ -291,7 +355,7 @@ fun BrainrotScreen(
                                     LazyVerticalStaggeredGrid(
                                         columns = StaggeredGridCells.Fixed(2),
                                         state = gridState,
-                                       modifier = Modifier.fillMaxSize().statusBarsPadding(),
+                                       modifier = Modifier.fillMaxSize(),
                                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalItemSpacing = 8.dp
@@ -306,40 +370,6 @@ fun BrainrotScreen(
                                                 ) {
                                                     if (sessionSaved > 0) StatChip("📌 $sessionSaved")
                                                     if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
-                                                }
-                                            }
-                                        }
-                                        // Source quick-toggle chips
-                                        if (allSources.isNotEmpty()) {
-                                            item(span = StaggeredGridItemSpan.FullLine) {
-                                                LazyRow(
-                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                    contentPadding = PaddingValues(horizontal = 4.dp)
-                                                ) {
-                                                    items(allSources, key = { it.type.name }) { src ->
-                                                        FilterChip(
-                                                            selected = src.enabled,
-                                                            onClick = { vm.toggleSource(src) },
-                                                            label = { Text(src.type.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // Discover mode chips (Random / Popular / Recent)
-                                        item(span = StaggeredGridItemSpan.FullLine) {
-                                            LazyRow(
-                                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                contentPadding = PaddingValues(horizontal = 4.dp)
-                                            ) {
-                                                items(DiscoverMode.entries, key = { it.name }) { mode ->
-                                                    FilterChip(
-                                                        selected = discoverMode == mode,
-                                                        onClick = { vm.setDiscoverMode(mode) },
-                                                        label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) }
-                                                    )
                                                 }
                                             }
                                         }
@@ -381,6 +411,7 @@ fun BrainrotScreen(
                                 }
                 }  // closes else ->
             } // closes when
+            } // closes Column
             if (!noSources) {
                                 // Bottom action bar
                                 Row(
