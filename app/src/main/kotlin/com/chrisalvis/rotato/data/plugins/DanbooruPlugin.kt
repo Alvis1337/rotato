@@ -58,6 +58,7 @@ object DanbooruPlugin : SourcePlugin() {
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+            else { if (normalized.isNotBlank()) append(" "); append("rating:explicit") }
             // TODO: add globalBlacklist tags as -tag exclusions here for Gold accounts.
             // Free accounts are capped at 2 tags total, so blacklist exclusions would break them.
             // Gold accounts (level >= 30) can use unlimited tags — same isPremiumAccount guard applies.
@@ -126,6 +127,7 @@ object DanbooruPlugin : SourcePlugin() {
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+            else { if (normalized.isNotBlank()) append(" "); append("rating:explicit") }
             if (isPremiumAccount && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }

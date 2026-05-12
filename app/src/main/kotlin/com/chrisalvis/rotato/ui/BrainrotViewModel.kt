@@ -233,6 +233,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
                 if (plugin.requiresCredentials &&
                     (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) return@mapNotNull null
+                if (!plugin.canServe(nsfw, source)) return@mapNotNull null
                 source to queriesFor(source, explicitQuery, malTitles)
             }
 

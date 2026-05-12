@@ -22,6 +22,7 @@ object GelbooruPlugin : SourcePlugin() {
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+            else { if (normalized.isNotBlank()) append(" "); append("rating:explicit") }
         }.trim()
         val authSuffix = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
             "&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
@@ -65,6 +66,7 @@ object GelbooruPlugin : SourcePlugin() {
         val tagQuery = buildString {
             if (normalized.isNotBlank()) append(normalized)
             if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
+            else { if (normalized.isNotBlank()) append(" "); append("rating:explicit") }
         }.trim()
         val authSuffix = if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
             "&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"

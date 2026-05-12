@@ -53,6 +53,7 @@ private suspend fun fetchMoebooru(
         val normalized = normalizeUserQuery(query)
         if (normalized.isNotBlank()) append("$normalized ")
         if (!nsfw) append("rating:safe ")
+        else append("rating:explicit ")
         append("order:random")
     }.trim()
     val url = "https://$host/post.json?tags=${tagQuery.urlEncode()}&limit=20"
@@ -97,6 +98,7 @@ private suspend fun fetchMoebooruPage(
         val normalized = normalizeUserQuery(query)
         if (normalized.isNotBlank()) append("$normalized ")
         if (!nsfw) append("rating:safe ")
+        else append("rating:explicit ")
         append("order:random")
     }.trim()
     val url = "https://$host/post.json?tags=${tagQuery.urlEncode()}&limit=$limit"
