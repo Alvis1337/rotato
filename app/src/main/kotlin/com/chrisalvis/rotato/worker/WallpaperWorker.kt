@@ -25,6 +25,8 @@ import com.chrisalvis.rotato.RotatoApp
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.RotationError
+import com.chrisalvis.rotato.data.RotationErrorType
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
@@ -44,14 +46,22 @@ class WallpaperWorker(
         val repository = ImageRepository(applicationContext)
         val prefs = RotatoPreferences(applicationContext)
 
-        val images = repository.getImages()
-        if (images.isEmpty()) return Result.success()
-
         val (settings, autoPause, history) = coroutineScope {
             val sDeferred = async { prefs.settings.first() }
             val aDeferred = async { prefs.autoPauseSettings.first() }
             val hDeferred = async { prefs.historyJson.first() }
             Triple(sDeferred.await(), aDeferred.await(), historyFromJson(hDeferred.await()))
+        }
+
+        val images = repository.getImages()
+        if (images.isEmpty()) {
+            if (settings.isEnabled) {
+                prefs.addRotationError(RotationError(
+                    RotationErrorType.POOL_EMPTY,
+                    "Rotation ran but the library pool is empty — add photos or link a collection"
+                ))
+            }
+            return Result.success()
         }
 
         // Auto-pause: night window
@@ -80,7 +90,12 @@ class WallpaperWorker(
 
         return try {
             val bitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
-                ?: return Result.failure()
+                ?: run {
+                    val errorType = if (targetFile.exists()) RotationErrorType.IMAGE_CORRUPT
+                                    else RotationErrorType.IMAGE_MISSING
+                    prefs.addRotationError(RotationError(errorType, "Could not load: ${targetFile.name}"))
+                    return Result.failure()
+                }
 
             val wallpaperManager = WallpaperManager.getInstance(applicationContext)
             val flags = when (settings.wallpaperTarget) {
@@ -140,6 +155,10 @@ class WallpaperWorker(
 
             Result.success()
         } catch (e: Exception) {
+            prefs.addRotationError(RotationError(
+                RotationErrorType.SET_FAILED,
+                "Failed to set wallpaper: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            ))
             Result.retry()
         }
     }

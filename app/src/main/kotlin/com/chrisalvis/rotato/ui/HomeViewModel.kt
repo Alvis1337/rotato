@@ -28,6 +28,7 @@ import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.RotationError
 import com.chrisalvis.rotato.data.RotatoSettings
 import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.WallpaperTarget
@@ -118,6 +119,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .map { it.key to it.value }
         RotationStats(total, history.size, topSources, topTags)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RotationStats())
+
+    val rotationErrors: StateFlow<List<RotationError>> = preferences.rotationErrors
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun clearRotationErrors() {
+        viewModelScope.launch { preferences.clearRotationErrors() }
+    }
 
     init {
         observeImageDir()

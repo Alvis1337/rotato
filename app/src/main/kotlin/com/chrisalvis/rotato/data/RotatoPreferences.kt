@@ -44,6 +44,7 @@ class RotatoPreferences(private val context: Context) {
         val AUTO_PAUSE_END = intPreferencesKey("auto_pause_end_hour")
         val AUTO_PAUSE_CHARGING = booleanPreferencesKey("auto_pause_charging")
         val TOTAL_ROTATIONS = longPreferencesKey("total_rotations")
+        val ROTATION_ERRORS = stringPreferencesKey("rotation_errors_json")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -238,4 +239,20 @@ class RotatoPreferences(private val context: Context) {
     val totalRotations: Flow<Long> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[TOTAL_ROTATIONS] ?: 0L }
+
+    val rotationErrors: Flow<List<RotationError>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { rotationErrorsFromJson(it[ROTATION_ERRORS] ?: "[]") }
+
+    suspend fun addRotationError(error: RotationError) {
+        context.dataStore.edit { prefs ->
+            val current = rotationErrorsFromJson(prefs[ROTATION_ERRORS] ?: "[]").toMutableList()
+            current.add(0, error)
+            prefs[ROTATION_ERRORS] = current.take(10).toErrorJson()
+        }
+    }
+
+    suspend fun clearRotationErrors() {
+        context.dataStore.edit { it[ROTATION_ERRORS] = "[]" }
+    }
 }

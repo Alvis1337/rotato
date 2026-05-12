@@ -5,6 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,9 +35,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -87,10 +94,15 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.SuggestionChip
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoSettings
+import com.chrisalvis.rotato.data.RotationError
+import com.chrisalvis.rotato.data.RotationErrorType
 import com.dragselectcompose.core.DragSelectState
 import com.dragselectcompose.core.gridDragSelect
 import com.dragselectcompose.core.rememberDragSelectState
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -214,6 +226,7 @@ private fun LibraryContent(
     onPhotoPick: () -> Unit
 ) {
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
+    val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
 
     if (showSaveToListDialog) {
@@ -236,6 +249,14 @@ private fun LibraryContent(
             onToggle = { viewModel.setRotationEnabled(!settings.isEnabled) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
+
+        if (rotationErrors.isNotEmpty()) {
+            RotationErrorPane(
+                errors = rotationErrors,
+                onClearAll = { viewModel.clearRotationErrors() },
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)
+            )
+        }
 
         if (isLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -764,5 +785,126 @@ private fun formatAgo(epochMs: Long): String {
         diffMin < 60 -> "${diffMin}m ago"
         diffMin < 1440 -> "${diffMin / 60}h ago"
         else -> "${diffMin / 1440}d ago"
+    }
+}
+
+@Composable
+private fun RotationErrorPane(
+    errors: List<RotationError>,
+    onClearAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(true) }
+    val errorColor = MaterialTheme.colorScheme.errorContainer
+    val onErrorColor = MaterialTheme.colorScheme.onErrorContainer
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = errorColor)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = onErrorColor
+                    )
+                    Text(
+                        text = "${errors.size} rotation issue${if (errors.size == 1) "" else "s"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = onErrorColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onClearAll,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Clear all errors",
+                            modifier = Modifier.size(14.dp),
+                            tint = onErrorColor.copy(alpha = 0.7f)
+                        )
+                    }
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(18.dp),
+                        tint = onErrorColor
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    errors.forEach { error ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                errorIconFor(error.type),
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp).padding(top = 2.dp),
+                                tint = onErrorColor.copy(alpha = 0.8f)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = error.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = onErrorColor
+                                )
+                                Text(
+                                    text = formatErrorTime(error.timestamp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = onErrorColor.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun errorIconFor(type: RotationErrorType) = when (type) {
+    RotationErrorType.POOL_EMPTY -> Icons.Default.Warning
+    RotationErrorType.IMAGE_MISSING -> Icons.Default.ErrorOutline
+    RotationErrorType.IMAGE_CORRUPT -> Icons.Default.ErrorOutline
+    RotationErrorType.SET_FAILED -> Icons.Default.ErrorOutline
+    RotationErrorType.DOWNLOAD_FAILED -> Icons.Default.ErrorOutline
+}
+
+private fun formatErrorTime(epochMs: Long): String {
+    val diffMs = System.currentTimeMillis() - epochMs
+    val diffMin = diffMs / 60_000
+    return when {
+        diffMin < 1 -> "just now"
+        diffMin < 60 -> "${diffMin}m ago"
+        diffMin < 1440 -> "${diffMin / 60}h ago"
+        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(epochMs))
     }
 }
