@@ -650,6 +650,10 @@ fun BrainrotScreen(
                                 vm.setSearchQuery(newQuery)
                                 vm.selectItem(null)
                             },
+                            onMoreLikeThis = { query ->
+                                vm.setSearchQuery(query)
+                                vm.selectItem(null)
+                            },
                             onDismiss = { vm.selectItem(null) }
                         )
                     }
@@ -779,6 +783,7 @@ private fun WallpaperDetailOverlay(
     onShare: (BrainrotWallpaper) -> Unit,
     onReport: (BrainrotWallpaper) -> Unit,
     onTagSearch: (String) -> Unit,
+    onMoreLikeThis: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
@@ -1019,11 +1024,51 @@ private fun WallpaperDetailOverlay(
                 )
             }
 
-            if (showInfoExpanded && wallpaper.tags.isNotEmpty()) {
+            if (wallpaper.tags.isNotEmpty()) {
+                // Generic/meta tags that make poor search terms — skip when picking "more like this"
+                val genericTags = setOf(
+                    "1girl", "1boy", "2girls", "2boys", "multiple_girls", "multiple_boys",
+                    "solo", "duo", "highres", "absurdres", "commentary_request",
+                    "translation_request", "simple_background", "white_background",
+                    "looking_at_viewer", "smile", "blush", "open_mouth",
+                    "long_hair", "short_hair", "medium_hair", "very_long_hair",
+                    "black_hair", "blonde_hair", "brown_hair", "white_hair",
+                    "blue_eyes", "red_eyes", "brown_eyes", "green_eyes", "purple_eyes"
+                )
+                val moreLikeQuery = wallpaper.tags
+                    .filter { it.lowercase() !in genericTags }
+                    .take(2)
+                    .joinToString(" ")
+                    .ifBlank { wallpaper.tags.take(2).joinToString(" ") }
+
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = PaddingValues(horizontal = 2.dp)
                 ) {
+                    if (moreLikeQuery.isNotBlank()) {
+                        item {
+                            AssistChip(
+                                onClick = { onMoreLikeThis(moreLikeQuery) },
+                                label = { Text("More like this", style = MaterialTheme.typography.labelSmall) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                    labelColor = Color.White,
+                                ),
+                                border = AssistChipDefaults.assistChipBorder(
+                                    enabled = true,
+                                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                )
+                            )
+                        }
+                    }
                     items(wallpaper.tags, key = { it }) { tag ->
                         SuggestionChip(
                             onClick = { onTagSearch(tag) },
@@ -1055,23 +1100,6 @@ private fun WallpaperDetailOverlay(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Info button
-                OutlinedIconButton(
-                    onClick = { showInfoExpanded = !showInfoExpanded },
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(
-                        1.5.dp,
-                        if (showInfoExpanded) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = "Info",
-                        tint = if (showInfoExpanded) MaterialTheme.colorScheme.primary else Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
                 // Main action - Bookmark with list dropdown
                 var showBookmarkMenu by remember { mutableStateOf(false) }
                 Box(modifier = Modifier.weight(1f)) {
