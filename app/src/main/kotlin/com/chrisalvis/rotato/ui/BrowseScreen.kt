@@ -560,15 +560,16 @@ private fun CollectionCard(
                 AsyncImage(
                     model = coverUrl,
                     contentDescription = "${list.name} cover",
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.FolderOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.outline
-                    )
-                }
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    Icons.Default.FolderOpen,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp).align(Alignment.Center),
+                    tint = MaterialTheme.colorScheme.outline
+                )
             }
 
             // Bottom gradient with name + count
