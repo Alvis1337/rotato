@@ -172,7 +172,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                             }
                         } else {
-                            feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+                            feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.thumbUrl)
                             changed = true
                         }
                     }
@@ -294,6 +294,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             if (_images.value.isEmpty() && settings.value.isEnabled) {
                 setRotationEnabled(false)
             }
+        }
+    }
+
+    private val _saveToListInProgress = MutableStateFlow(false)
+    val saveToListInProgress: StateFlow<Boolean> = _saveToListInProgress.asStateFlow()
+
+    fun saveRotationToList(listId: String) {
+        if (_saveToListInProgress.value) return
+        viewModelScope.launch {
+            _saveToListInProgress.update { true }
+            val files = imageDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+            val existing = localLists.allWallpapers.first()
+                .filter { it.listId == listId }
+                .map { it.sourceId }
+                .toSet()
+            var added = 0
+            files.forEach { file ->
+                val sourceId = file.nameWithoutExtension
+                if (sourceId in existing) return@forEach
+                val fileUri = file.toURI().toString()
+                localLists.addWallpaperEntry(
+                    LocalWallpaperEntry(
+                        listId = listId,
+                        sourceId = sourceId,
+                        source = "device",
+                        thumbUrl = fileUri,
+                        fullUrl = fileUri,
+                        resolution = "",
+                        pageUrl = "",
+                        tags = emptyList()
+                    )
+                )
+                added++
+            }
+            val ctx = getApplication<Application>().applicationContext
+            val total = files.size
+            val msg = when {
+                total == 0 -> "No images in Library"
+                added == 0 -> "All ${total} image${if (total != 1) "s" else ""} already in collection"
+                else -> "Added $added image${if (added != 1) "s" else ""} to collection"
+            }
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+            _saveToListInProgress.update { false }
         }
     }
 

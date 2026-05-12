@@ -105,7 +105,8 @@ object DanbooruPlugin : SourcePlugin() {
             pageUrl = "https://danbooru.donmai.us/posts/$id",
             tags = (post.optString("tag_string_general") + " " + post.optString("tag_string_character"))
                 .trim().split(" ").filter { it.isNotBlank() }
-        )
+                    .map { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }
+            )
     }
 
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
@@ -146,6 +147,7 @@ object DanbooruPlugin : SourcePlugin() {
                 pageUrl = "https://danbooru.donmai.us/posts/$id",
                 tags = (obj.optString("tag_string_general") + " " + obj.optString("tag_string_character"))
                     .trim().split(" ").filter { it.isNotBlank() }
+                    .map { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }
             )
         }
     }

@@ -183,6 +183,7 @@ fun HomeScreen(
                     setNowState = setNowState,
                     lastRotationMs = lastRotationMs,
                     linkedCollection = linkedCollection,
+                    collections = collections,
                     dragSelectState = dragSelectState,
                     inSelectionMode = inSelectionMode,
                     onPhotoPick = {
@@ -207,10 +208,24 @@ private fun LibraryContent(
     setNowState: SetNowState,
     lastRotationMs: Long,
     linkedCollection: LocalList?,
+    collections: List<LocalList>,
     dragSelectState: DragSelectState<File>,
     inSelectionMode: Boolean,
     onPhotoPick: () -> Unit
 ) {
+    val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
+    var showSaveToListDialog by remember { mutableStateOf(false) }
+
+    if (showSaveToListDialog) {
+        SaveToCollectionDialog(
+            collections = collections,
+            onDismiss = { showSaveToListDialog = false },
+            onSelect = { listId ->
+                showSaveToListDialog = false
+                viewModel.saveRotationToList(listId)
+            }
+        )
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         RotationStatusCard(
             isEnabled = settings.isEnabled,
@@ -309,6 +324,82 @@ private fun LibraryContent(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Add Photos")
+            }
+        }
+        if (images.isNotEmpty()) {
+            OutlinedButton(
+                onClick = { showSaveToListDialog = true },
+                enabled = !saveToListInProgress && collections.isNotEmpty(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 12.dp),
+                contentPadding = PaddingValues(14.dp)
+            ) {
+                if (saveToListInProgress) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Saving...")
+                } else {
+                    Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Save to collection…")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveToCollectionDialog(
+    collections: List<LocalList>,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Card(
+            modifier = androidx.compose.ui.Modifier
+                .fillMaxWidth(0.9f)
+                .padding(vertical = 24.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = androidx.compose.ui.Modifier.padding(16.dp)) {
+                Text(
+                    text = "Save library to collection",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = androidx.compose.ui.Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "Images already in the collection will be skipped.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = androidx.compose.ui.Modifier.padding(bottom = 12.dp)
+                )
+                Column(
+                    modifier = androidx.compose.ui.Modifier
+                        .verticalScroll(rememberScrollState())
+                        .weight(1f, fill = false)
+                ) {
+                    collections.forEach { list ->
+                        androidx.compose.foundation.layout.Row(
+                            modifier = androidx.compose.ui.Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(list.id) }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = androidx.compose.ui.Modifier.size(20.dp))
+                            Text(list.name, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+                Spacer(androidx.compose.ui.Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                ) { Text("Cancel") }
             }
         }
     }
