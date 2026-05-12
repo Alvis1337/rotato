@@ -291,14 +291,30 @@ fun BrainrotScreen(
                                 }
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp)
+                                    contentPadding = PaddingValues(start = 12.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     items(allSources, key = { it.type.name }) { src ->
+                                        val missingCreds = src.type.needsApiKey && src.apiKey.isBlank()
+                                        val hasCreds = src.type.needsApiKey && src.apiKey.isNotBlank()
                                         FilterChip(
                                             selected = src.enabled,
                                             onClick = { vm.toggleSource(src) },
-                                            label = { Text(src.type.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
+                                            label = { Text(src.type.displayName, style = MaterialTheme.typography.labelSmall) },
+                                            trailingIcon = when {
+                                                missingCreds -> {{ Icon(Icons.Default.Warning, contentDescription = "API key missing", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.error) }}
+                                                hasCreds -> {{ Icon(Icons.Default.VpnKey, contentDescription = "API key set", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }}
+                                                else -> null
+                                            }
                                         )
+                                    }
+                                    item {
+                                        IconButton(
+                                            onClick = onNavigateToSources,
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Default.Settings, contentDescription = "Configure sources", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
