@@ -291,7 +291,7 @@ fun BrainrotScreen(
                                     LazyVerticalStaggeredGrid(
                                         columns = StaggeredGridCells.Fixed(2),
                                         state = gridState,
-                                        modifier = Modifier.fillMaxSize(),
+                                       modifier = Modifier.fillMaxSize().statusBarsPadding(),
                                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalItemSpacing = 8.dp
