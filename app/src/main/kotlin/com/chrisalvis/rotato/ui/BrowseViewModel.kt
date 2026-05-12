@@ -133,6 +133,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .build()
 
     private var linkCheckJob: Job? = null
+
+    init {
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
         }
