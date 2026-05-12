@@ -124,7 +124,7 @@ fun BrainrotScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(snackbarHostState) {
+    LaunchedEffect(Unit) {
         vm.skipEvent.collect {
             snackbarHostState.currentSnackbarData?.dismiss()
             val result = snackbarHostState.showSnackbar(
@@ -859,7 +859,7 @@ private fun WallpaperDetailOverlay(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = PaddingValues(horizontal = 2.dp)
                 ) {
-                    items(wallpaper.tags) { tag ->
+                    items(wallpaper.tags, key = { it }) { tag ->
                         SuggestionChip(
                             onClick = { onTagSearch(tag) },
                             label = {

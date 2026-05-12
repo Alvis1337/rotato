@@ -49,7 +49,7 @@ fun ScheduleScreen(
     val editEntry by vm.editEntry.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(snackbarHostState) {
+    LaunchedEffect(Unit) {
         vm.triggerResult.collect { message ->
             snackbarHostState.showSnackbar(message)
         }
@@ -169,18 +169,11 @@ private fun ScheduleEntryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DAY_ORDER.forEach { (dayConst, label) ->
                     val active = dayConst in entry.days
-                    AssistChip(
+                    FilterChip(
+                        selected = active,
                         onClick = {},
                         label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                         modifier = Modifier.height(28.dp),
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            labelColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        border = AssistChipDefaults.assistChipBorder(
-                            enabled = true,
-                            borderColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        )
                     )
                 }
                 Spacer(Modifier.weight(1f))

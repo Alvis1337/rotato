@@ -469,6 +469,20 @@ private fun ListPickerContent(
             }
         }
     } else {
+        var listToDelete by remember { mutableStateOf<LocalList?>(null) }
+        listToDelete?.let { list ->
+            AlertDialog(
+                onDismissRequest = { listToDelete = null },
+                title = { Text("Delete \"${list.name}\"?") },
+                text = { Text("All saved wallpapers in this collection will be removed.") },
+                confirmButton = {
+                    TextButton(onClick = { onDeleteList(list); listToDelete = null }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = { TextButton(onClick = { listToDelete = null }) { Text("Cancel") } }
+            )
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = modifier.fillMaxSize(),
@@ -477,20 +491,6 @@ private fun ListPickerContent(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(lists, key = { it.id }) { list ->
-                var showDeleteConfirm by remember { mutableStateOf(false) }
-                if (showDeleteConfirm) {
-                    AlertDialog(
-                        onDismissRequest = { showDeleteConfirm = false },
-                        title = { Text("Delete \"${list.name}\"?") },
-                        text = { Text("All saved wallpapers in this collection will be removed.") },
-                        confirmButton = {
-                            TextButton(onClick = { onDeleteList(list); showDeleteConfirm = false }) {
-                                Text("Delete", color = MaterialTheme.colorScheme.error)
-                            }
-                        },
-                        dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
-                    )
-                }
                 val count = listCounts[list.id] ?: 0
                 val coverUrl = listCovers[list.id]
                 CollectionCard(
@@ -499,7 +499,7 @@ private fun ListPickerContent(
                     coverUrl = coverUrl,
                     isSessionUnlocked = list.isLocked && list.id in unlockedListIds,
                     onClick = { onSelectList(list) },
-                    onDelete = { showDeleteConfirm = true },
+                    onDelete = { listToDelete = list },
                     onToggleRotation = { onToggleRotation(list) },
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
@@ -559,15 +559,7 @@ private fun CollectionCard(
             if (coverUrl != null) {
                 AsyncImage(
                     model = coverUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentDescription = "${list.name} cover",
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

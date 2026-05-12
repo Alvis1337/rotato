@@ -286,6 +286,7 @@ private fun SourceCard(
                         if (isPremium) {
                             SuggestionChip(
                                 onClick = {},
+                                enabled = false,
                                 label = { Text("Premium", style = MaterialTheme.typography.labelSmall) },
                                 icon = if (isLocked) {
                                     { Icon(Icons.Default.Lock, contentDescription = "Locked", modifier = Modifier.size(12.dp)) }
