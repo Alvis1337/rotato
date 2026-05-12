@@ -107,6 +107,8 @@ fun BrainrotScreen(
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
     val handsFreeInterval by vm.handsFreeInterval.collectAsStateWithLifecycle()
     val savedSourceIds by vm.savedSourceIds.collectAsStateWithLifecycle()
+    val resetVersion by vm.resetVersion.collectAsStateWithLifecycle()
+    val danbooruEnabled by vm.danbooruEnabled.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
     val coroutineScope = rememberCoroutineScope()
@@ -120,6 +122,9 @@ fun BrainrotScreen(
     }
     LaunchedEffect(shouldLoadMore) {
         if (shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null) vm.loadMore()
+    }
+    LaunchedEffect(resetVersion) {
+        if (resetVersion > 0) gridState.scrollToItem(0)
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -141,6 +146,17 @@ fun BrainrotScreen(
     var showSearch by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     LaunchedEffect(showSearch) { if (showSearch) searchText = searchQuery.ifBlank { "" } }
+    // Track position in grid while user browses the detail overlay; restore on dismiss
+    var restoreScrollIndex by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(selectedItem) {
+        if (selectedItem == null && restoreScrollIndex >= 0) {
+            gridState.scrollToItem(restoreScrollIndex)
+            restoreScrollIndex = -1
+        } else if (selectedItem != null) {
+            val idx = gridItems.indexOfFirst { it.id == selectedItem!!.id && it.source == selectedItem!!.source }
+            if (idx >= 0) restoreScrollIndex = idx
+        }
+    }
     var showCreateListDialog by remember { mutableStateOf(false) }
     var pendingAddWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
 
@@ -262,7 +278,6 @@ fun BrainrotScreen(
                 }
                 else -> {
                     val pullRefreshState = rememberPullToRefreshState()
-                            Box(modifier = Modifier.fillMaxSize()) {
                                 PullToRefreshBox(
                                     isRefreshing = loading,
                                     onRefresh = { vm.loadMore(reset = true) },
@@ -312,6 +327,9 @@ fun BrainrotScreen(
                                         }
                                     }
                                 }
+                }  // closes else ->
+            } // closes when
+            if (!noSources) {
                                 // Bottom action bar
                                 Row(
                                     modifier = Modifier
@@ -387,7 +405,7 @@ fun BrainrotScreen(
                                                 onExpandedChange = { expanded ->
                                                     if (!expanded) showSearch = false
                                                 },
-                                                placeholder = { Text("e.g. anime 1girl landscape") },
+                                                placeholder = { Text("e.g. blue_hair 1girl") },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                                 trailingIcon = {
                                                     if (searchText.isNotEmpty()) {
@@ -409,10 +427,18 @@ fun BrainrotScreen(
                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Text(
-                                                "Use spaces to combine tags — e.g. \"anime 1girl\" searches for posts tagged with both. Wallhaven supports keyword search too.",
+                                                "Use spaces between tags — e.g. \"blue_hair 1girl\" (use underscores within multi-word tags). Wallhaven also supports keyword search.",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                            val searchTokens = searchText.split(" ").filter { it.isNotBlank() }
+                                            if (danbooruEnabled && searchTokens.size > 2) {
+                                                Text(
+                                                    "⚠️ Danbooru limits most accounts to 2 tags — extra tags may be ignored.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.error
+                                                )
+                                            }
                                             val activeTokens = searchQuery.split(" ").filter { it.isNotBlank() }
                                             if (activeTokens.isNotEmpty()) {
                                                 Text(
@@ -447,9 +473,7 @@ fun BrainrotScreen(
                                         }
                                     }
                                 }
-                            }
-                        } // closes grid Box
-            } // closes when
+            } // closes if (!noSources)
             selectedItem?.let { selected ->
                         val startIndex = gridItems.indexOfFirst { it.id == selected.id && it.source == selected.source }.coerceAtLeast(0)
                         WallpaperDetailOverlay(

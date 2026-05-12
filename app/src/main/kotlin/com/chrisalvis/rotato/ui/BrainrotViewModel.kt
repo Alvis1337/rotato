@@ -20,6 +20,7 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
+import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
@@ -124,6 +125,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _resetVersion = MutableStateFlow(0)
+    val resetVersion: StateFlow<Int> = _resetVersion.asStateFlow()
+
+    val danbooruEnabled: StateFlow<Boolean> = localSources.sources
+        .map { sources -> sources.any { it.enabled && it.type == SourceType.DANBOORU } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
 
@@ -187,6 +195,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _endReached.update { false }
             _noResults.update { false }
             consecutiveEmptyFetches = 0
+            _resetVersion.update { it + 1 }
         }
         if (_endReached.value) return
         if (fetchJob?.isActive == true) return
