@@ -22,7 +22,7 @@ class FeedRepository(private val imageDir: File) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = ""): Boolean = withContext(Dispatchers.IO) {
+    suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): Boolean = withContext(Dispatchers.IO) {
         Log.d(TAG, "downloadWallpaper: sourceId=$sourceId, fullUrl=$fullUrl")
         if (fullUrl.isBlank()) {
             Log.e(TAG, "downloadWallpaper: fullUrl is blank!")
@@ -32,10 +32,10 @@ class FeedRepository(private val imageDir: File) {
         val destFile = File(imageDir, "${sanitizeFilename(sourceId)}.$ext")
         if (destFile.exists()) return@withContext true
         return@withContext try {
-            var bytes = downloadBytes(fullUrl)
+            var bytes = downloadBytes(fullUrl, authHeader)
             if (bytes == null && fallbackUrl.isNotBlank()) {
                 Log.d(TAG, "downloadWallpaper: primary URL failed, retrying with fallback: $fallbackUrl")
-                bytes = downloadBytes(fallbackUrl)
+                bytes = downloadBytes(fallbackUrl, authHeader)
             }
             bytes ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
             imageDir.mkdirs()
@@ -48,7 +48,7 @@ class FeedRepository(private val imageDir: File) {
         }
     }
 
-    suspend fun saveToGallery(context: Context, sourceId: String, fullUrl: String, fallbackUrl: String = ""): Boolean = withContext(Dispatchers.IO) {
+    suspend fun saveToGallery(context: Context, sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): Boolean = withContext(Dispatchers.IO) {
         Log.d(TAG, "saveToGallery: sourceId=$sourceId, url=$fullUrl")
         if (fullUrl.isBlank()) {
             Log.e(TAG, "saveToGallery fullUrl is blank!")
@@ -56,11 +56,11 @@ class FeedRepository(private val imageDir: File) {
         }
 
         return@withContext try {
-            var bytes = downloadBytes(fullUrl)
+            var bytes = downloadBytes(fullUrl, authHeader)
             var effectiveUrl = fullUrl
             if (bytes == null && fallbackUrl.isNotBlank()) {
                 Log.d(TAG, "saveToGallery: primary URL failed, retrying with fallback: $fallbackUrl")
-                bytes = downloadBytes(fallbackUrl)
+                bytes = downloadBytes(fallbackUrl, authHeader)
                 if (bytes != null) effectiveUrl = fallbackUrl
             }
             bytes ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
@@ -111,13 +111,16 @@ class FeedRepository(private val imageDir: File) {
         }
     }
 
-    private fun downloadBytes(url: String): ByteArray? = try {
+    private fun downloadBytes(url: String, authHeader: String? = null): ByteArray? = try {
         Log.d(TAG, "Downloading from: $url")
         val reqBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-        if (url.contains("cdn.donmai.us")) {
+        if (url.contains("cdn.donmai.us") || url.contains("danbooru.donmai.us")) {
             reqBuilder.header("Referer", "https://danbooru.donmai.us/")
+        }
+        if (authHeader != null) {
+            reqBuilder.header("Authorization", authHeader)
         }
         httpClient.newCall(reqBuilder.build()).execute().use { resp ->
             Log.d(TAG, "HTTP ${resp.code} for $url")

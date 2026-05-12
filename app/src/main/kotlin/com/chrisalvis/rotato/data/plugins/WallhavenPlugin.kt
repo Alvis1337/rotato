@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.MinResolution
 
@@ -19,7 +20,12 @@ object WallhavenPlugin : SourcePlugin() {
 
     override suspend fun fetch(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters): BrainrotWallpaper? = onIO {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
-        var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
+        val sorting = when (filters.discoverMode) {
+            DiscoverMode.POPULAR -> "toplist&topRange=1M"
+            DiscoverMode.RECENT -> "date_added"
+            DiscoverMode.RANDOM -> "random"
+        }
+        var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=$sorting"
         when (filters.minResolution) {
             MinResolution.ANY -> Unit
             MinResolution.MY_PHONE ->
@@ -58,7 +64,12 @@ object WallhavenPlugin : SourcePlugin() {
 
     override suspend fun fetchPage(source: LocalSource, query: String, exclude: List<String>, nsfw: Boolean, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> = onIO {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
-        var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
+        val sorting = when (filters.discoverMode) {
+            DiscoverMode.POPULAR -> "toplist&topRange=1M"
+            DiscoverMode.RECENT -> "date_added"
+            DiscoverMode.RANDOM -> "random"
+        }
+        var urlBase = "https://wallhaven.cc/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=$sorting"
         when (filters.minResolution) {
             MinResolution.ANY -> Unit
             MinResolution.MY_PHONE ->

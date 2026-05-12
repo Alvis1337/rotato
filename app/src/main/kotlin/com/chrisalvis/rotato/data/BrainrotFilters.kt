@@ -8,13 +8,11 @@ enum class MinResolution(val label: String, val width: Int, val height: Int) {
     FHD("FHD (1920×1080)", 1920, 1080),
     QHD("QHD (2560×1440)", 2560, 1440),
     UHD("4K  (3840×2160)", 3840, 2160),
-    // Dynamic — actual screen pixels stored in BrainrotFilters.phoneScreenWidth/phoneScreenHeight
     MY_PHONE("My Phone", -1, -1),
 }
 
 enum class AspectRatio(
     val label: String,
-    /** Value passed to Wallhaven's `ratios` param */
     val wallhavenKey: String,
     val widthParts: Int,
     val heightParts: Int,
@@ -25,8 +23,13 @@ enum class AspectRatio(
     WIDE_10("Wide (16:10)", "16x10", 16, 10),
     STANDARD("Standard (4:3)", "4x3", 4, 3),
     PORTRAIT("Portrait (9:16)", "9x16", 9, 16),
-    // Dynamic — ratio stored in BrainrotFilters.phoneWidthParts/phoneHeightParts
     MY_PHONE("My Phone", "", -1, -1),
+}
+
+enum class DiscoverMode(val label: String) {
+    RANDOM("Random"),
+    POPULAR("Popular"),
+    RECENT("Recent"),
 }
 
 data class BrainrotFilters(
@@ -37,6 +40,7 @@ data class BrainrotFilters(
     val phoneScreenWidth: Int = 0,
     val phoneScreenHeight: Int = 0,
     val useMalFilter: Boolean = true,
+    val discoverMode: DiscoverMode = DiscoverMode.RANDOM,
 )
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */

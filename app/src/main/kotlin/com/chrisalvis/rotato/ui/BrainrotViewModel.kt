@@ -15,6 +15,7 @@ import coil.request.SuccessResult
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
@@ -110,6 +111,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     val brainrotFilters: StateFlow<BrainrotFilters> = prefs.brainrotFilters
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrainrotFilters())
+
+    val discoverMode: StateFlow<DiscoverMode> = prefs.brainrotFilters
+        .map { it.discoverMode }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverMode.RANDOM)
+
+    val allSources: StateFlow<List<LocalSource>> = localSources.sources
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val pinnedSearches: StateFlow<List<String>> = prefs.pinnedSearches
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val globalBlacklist: StateFlow<Set<String>> = prefs.globalBlacklist
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
@@ -502,6 +513,37 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             prefs.setGlobalBlacklist(tags)
             loadMore(reset = true)
         }
+    }
+
+    fun setDiscoverMode(mode: DiscoverMode) {
+        viewModelScope.launch {
+            prefs.setDiscoverMode(mode)
+            loadMore(reset = true)
+        }
+    }
+
+    fun toggleSource(source: LocalSource) {
+        viewModelScope.launch {
+            localSources.update(source.type, enabled = !source.enabled)
+            loadMore(reset = true)
+        }
+    }
+
+    fun pinCurrentSearch() {
+        val q = _searchQuery.value.trim()
+        if (q.isBlank()) return
+        viewModelScope.launch { prefs.addPinnedSearch(q) }
+    }
+
+    fun unpinSearch(query: String) {
+        viewModelScope.launch { prefs.removePinnedSearch(query) }
+    }
+
+    fun forceLoadMore() {
+        pageCache.clear()
+        consecutiveEmptyFetches = 0
+        _endReached.update { false }
+        loadMore(reset = false)
     }
 
     fun setSearchQuery(query: String) {

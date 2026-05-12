@@ -13,6 +13,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "rotato_prefs")
 
@@ -45,6 +46,8 @@ class RotatoPreferences(private val context: Context) {
         val AUTO_PAUSE_CHARGING = booleanPreferencesKey("auto_pause_charging")
         val TOTAL_ROTATIONS = longPreferencesKey("total_rotations")
         val ROTATION_ERRORS = stringPreferencesKey("rotation_errors_json")
+        val PINNED_SEARCHES = stringPreferencesKey("pinned_searches_json")
+        val DISCOVER_MODE = stringPreferencesKey("discover_mode")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -123,6 +126,9 @@ class RotatoPreferences(private val context: Context) {
                 phoneScreenWidth = prefs[PHONE_SCREEN_WIDTH] ?: 0,
                 phoneScreenHeight = prefs[PHONE_SCREEN_HEIGHT] ?: 0,
                 useMalFilter = prefs[USE_MAL_FILTER] ?: true,
+                discoverMode = prefs[DISCOVER_MODE]?.let {
+                    runCatching { DiscoverMode.valueOf(it) }.getOrNull()
+                } ?: DiscoverMode.RANDOM,
             )
         }
 
@@ -254,5 +260,43 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun clearRotationErrors() {
         context.dataStore.edit { it[ROTATION_ERRORS] = "[]" }
+    }
+
+    suspend fun setDiscoverMode(mode: DiscoverMode) {
+        context.dataStore.edit { it[DISCOVER_MODE] = mode.name }
+    }
+
+    val pinnedSearches: Flow<List<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            try {
+                val arr = JSONArray(prefs[PINNED_SEARCHES] ?: "[]")
+                (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }
+            } catch (_: Exception) { emptyList() }
+        }
+
+    suspend fun addPinnedSearch(query: String) {
+        if (query.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val current = try {
+                val arr = JSONArray(prefs[PINNED_SEARCHES] ?: "[]")
+                (0 until arr.length()).map { arr.optString(it) }.toMutableList()
+            } catch (_: Exception) { mutableListOf() }
+            if (query !in current) {
+                current.add(0, query)
+                prefs[PINNED_SEARCHES] = JSONArray(current.take(12)).toString()
+            }
+        }
+    }
+
+    suspend fun removePinnedSearch(query: String) {
+        context.dataStore.edit { prefs ->
+            val current = try {
+                val arr = JSONArray(prefs[PINNED_SEARCHES] ?: "[]")
+                (0 until arr.length()).map { arr.optString(it) }.toMutableList()
+            } catch (_: Exception) { mutableListOf() }
+            current.remove(query)
+            prefs[PINNED_SEARCHES] = JSONArray(current).toString()
+        }
     }
 }

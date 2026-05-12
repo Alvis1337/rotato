@@ -60,6 +60,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -109,6 +110,9 @@ fun BrainrotScreen(
     val savedSourceIds by vm.savedSourceIds.collectAsStateWithLifecycle()
     val resetVersion by vm.resetVersion.collectAsStateWithLifecycle()
     val danbooruEnabled by vm.danbooruEnabled.collectAsStateWithLifecycle()
+    val allSources by vm.allSources.collectAsStateWithLifecycle()
+    val discoverMode by vm.discoverMode.collectAsStateWithLifecycle()
+    val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
     val coroutineScope = rememberCoroutineScope()
@@ -305,6 +309,40 @@ fun BrainrotScreen(
                                                 }
                                             }
                                         }
+                                        // Source quick-toggle chips
+                                        if (allSources.isNotEmpty()) {
+                                            item(span = StaggeredGridItemSpan.FullLine) {
+                                                LazyRow(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 4.dp)
+                                                ) {
+                                                    items(allSources, key = { it.type.name }) { src ->
+                                                        FilterChip(
+                                                            selected = src.enabled,
+                                                            onClick = { vm.toggleSource(src) },
+                                                            label = { Text(src.type.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // Discover mode chips (Random / Popular / Recent)
+                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                            LazyRow(
+                                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp)
+                                            ) {
+                                                items(DiscoverMode.entries, key = { it.name }) { mode ->
+                                                    FilterChip(
+                                                        selected = discoverMode == mode,
+                                                        onClick = { vm.setDiscoverMode(mode) },
+                                                        label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) }
+                                                    )
+                                                }
+                                            }
+                                        }
                                         items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
                                             DiscoverGridItem(
                                                 wallpaper = wp,
@@ -322,6 +360,20 @@ fun BrainrotScreen(
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                }
+                                            }
+                                        }
+                                        if (endReached && gridItems.isNotEmpty()) {
+                                            item(span = StaggeredGridItemSpan.FullLine) {
+                                                OutlinedButton(
+                                                    onClick = { vm.forceLoadMore() },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text("Try to load more")
                                                 }
                                             }
                                         }
@@ -408,9 +460,16 @@ fun BrainrotScreen(
                                                 placeholder = { Text("e.g. blue_hair 1girl") },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                                 trailingIcon = {
-                                                    if (searchText.isNotEmpty()) {
-                                                        IconButton(onClick = { searchText = "" }) {
-                                                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        if (searchText.isNotBlank()) {
+                                                            IconButton(onClick = { vm.pinCurrentSearch() }) {
+                                                                Icon(Icons.Default.PushPin, contentDescription = "Pin search", modifier = Modifier.size(20.dp))
+                                                            }
+                                                        }
+                                                        if (searchText.isNotEmpty()) {
+                                                            IconButton(onClick = { searchText = "" }) {
+                                                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -465,6 +524,41 @@ fun BrainrotScreen(
                                                                     contentDescription = "Remove",
                                                                     modifier = Modifier.size(14.dp)
                                                                 )
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (pinnedSearches.isNotEmpty()) {
+                                                Text(
+                                                    "Pinned searches:",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                FlowRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    pinnedSearches.forEach { pinned ->
+                                                        InputChip(
+                                                            selected = searchQuery == pinned,
+                                                            onClick = {
+                                                                searchText = pinned
+                                                                vm.setSearchQuery(pinned)
+                                                                showSearch = false
+                                                            },
+                                                            label = { Text(pinned, style = MaterialTheme.typography.labelSmall) },
+                                                            trailingIcon = {
+                                                                IconButton(
+                                                                    onClick = { vm.unpinSearch(pinned) },
+                                                                    modifier = Modifier.size(18.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Default.Close,
+                                                                        contentDescription = "Unpin",
+                                                                        modifier = Modifier.size(12.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         )
                                                     }
