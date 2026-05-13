@@ -116,7 +116,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
                 source = item.source,
                 thumbUrl = item.thumbUrl,
                 fullUrl = item.fullUrl,
-                resolution = item.resolution,
+                resolution = "",
                 pageUrl = item.pageUrl,
                 tags = item.tags
             )
