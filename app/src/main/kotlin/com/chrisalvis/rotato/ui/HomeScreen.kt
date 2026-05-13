@@ -276,7 +276,7 @@ private fun LibraryContent(
         }
 
         if (images.isEmpty()) {
-            EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onBrowseFeed)
+            EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onGoToDiscover)
         } else {
             var selectedFile by remember { mutableStateOf<File?>(null) }
             selectedFile?.let { file ->
