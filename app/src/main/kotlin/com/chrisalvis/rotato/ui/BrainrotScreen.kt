@@ -4,7 +4,11 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -1000,16 +1004,19 @@ private fun DiscoverThumbnailGridItem(
                 )
             }
     ) {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = ImageRequest.Builder(context)
                 .data(imageUrl)
                 .memoryCacheKey(imageUrl)
                 .diskCacheKey(imageUrl)
                 .crossfade(true)
+                .size(256, 256)
                 .build(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            loading = { ShimmerBox(Modifier.fillMaxSize()) },
+            error = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) }
         )
 
         if (isSelected) {
@@ -1113,9 +1120,7 @@ private fun DiscoverGridItem(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            loading = {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
-            },
+            loading = { ShimmerBox(Modifier.fillMaxSize()) },
             error = {
                 if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
                     LaunchedEffect(Unit) { useFullUrl = true }
@@ -1659,6 +1664,25 @@ private fun StatChip(text: String) {
 }
 
 @Composable
+@Composable
+private fun ShimmerBox(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val offset by transition.animateFloat(
+        initialValue = -1f, targetValue = 2f,
+        animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing)),
+        label = "shimmerOffset"
+    )
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    val highlightColor = MaterialTheme.colorScheme.surface
+    Box(modifier = modifier.background(
+        brush = Brush.linearGradient(
+            colors = listOf(baseColor, highlightColor, baseColor),
+            start = Offset(offset * 1000f - 500f, 0f),
+            end = Offset(offset * 1000f + 500f, 0f)
+        )
+    ))
+}
+
 private fun sourceColor(source: String): Color = when (source.lowercase()) {
     "wallhaven" -> Color(0xFF1565C0)
     "konachan"  -> Color(0xFF6A1B9A)
