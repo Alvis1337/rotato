@@ -65,23 +65,34 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     val keyValidationState: StateFlow<Map<SourceType, Boolean?>> = _keyValidationState.asStateFlow()
     private val latestWallhavenKey = MutableStateFlow("")
 
-    private val _testingSource = MutableStateFlow<SourceType?>(null)
-    val testingSource: StateFlow<SourceType?> = _testingSource.asStateFlow()
+    // Key format: "${type.name}:${instanceId}" — unique per source instance
+    private val _testingSource = MutableStateFlow<String?>(null)
+    val testingSource: StateFlow<String?> = _testingSource.asStateFlow()
 
-    fun setEnabled(type: SourceType, enabled: Boolean) {
-        viewModelScope.launch { prefs.update(type, enabled = enabled) }
+    fun setEnabled(type: SourceType, instanceId: String = "", enabled: Boolean) {
+        viewModelScope.launch { prefs.update(type, instanceId, enabled = enabled) }
     }
 
-    fun setCredentials(type: SourceType, apiKey: String, apiUser: String) {
-        viewModelScope.launch { prefs.update(type, apiKey = apiKey, apiUser = apiUser) }
+    fun setCredentials(type: SourceType, instanceId: String = "", apiKey: String, apiUser: String) {
+        viewModelScope.launch { prefs.update(type, instanceId, apiKey = apiKey, apiUser = apiUser) }
     }
 
-    fun setTags(type: SourceType, tags: String) {
-        viewModelScope.launch { prefs.update(type, tags = tags) }
+    fun setTags(type: SourceType, instanceId: String = "", tags: String) {
+        viewModelScope.launch { prefs.update(type, instanceId, tags = tags) }
     }
 
-    fun setWallhavenPurity(type: SourceType, purity: String) {
-        viewModelScope.launch { prefs.update(type, wallhavenPurity = purity) }
+    fun setWallhavenPurity(type: SourceType, instanceId: String = "", purity: String) {
+        viewModelScope.launch { prefs.update(type, instanceId, wallhavenPurity = purity) }
+    }
+
+    fun addRedditInstance(subreddit: String) {
+        val trimmed = subreddit.trim().removePrefix("r/").trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch { prefs.addInstance(SourceType.REDDIT, trimmed) }
+    }
+
+    fun removeInstance(type: SourceType, instanceId: String) {
+        viewModelScope.launch { prefs.removeInstance(type, instanceId) }
     }
 
     fun validateWallhavenKey(apiKey: String) {
@@ -116,7 +127,8 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun testSource(source: LocalSource) {
         viewModelScope.launch(Dispatchers.IO) {
-            _testingSource.update { source.type }
+            val key = "${source.type.name}:${source.instanceId}"
+            _testingSource.update { key }
             try {
                 val plugin = SourcePluginRegistry.forType(source.type) ?: error("No plugin")
                 val nsfw = rotaPrefs.nsfwMode.first()
@@ -146,6 +158,38 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
 
     var showDisableAllConfirm by remember { mutableStateOf(false) }
+    var showAddRedditDialog by remember { mutableStateOf(false) }
+    var newSubreddit by remember { mutableStateOf("") }
+
+    if (showAddRedditDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddRedditDialog = false; newSubreddit = "" },
+            title = { Text("Add subreddit") },
+            text = {
+                OutlinedTextField(
+                    value = newSubreddit,
+                    onValueChange = { newSubreddit = it },
+                    label = { Text("Subreddit") },
+                    placeholder = { Text("e.g. wallpapers") },
+                    prefix = { Text("r/") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.addRedditInstance(newSubreddit)
+                    showAddRedditDialog = false
+                    newSubreddit = ""
+                }, enabled = newSubreddit.trim().isNotBlank()) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddRedditDialog = false; newSubreddit = "" }) { Text("Cancel") }
+            }
+        )
+    }
     if (showDisableAllConfirm) {
         AlertDialog(
             onDismissRequest = { showDisableAllConfirm = false },
@@ -162,8 +206,9 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
         )
     }
 
-    // Partition: free first, then premium
-    val freeSources = sources.filter { !it.type.isPremium }
+    // Partition: non-Reddit free, Reddit instances, then premium
+    val freeSources = sources.filter { !it.type.isPremium && it.type != SourceType.REDDIT }
+    val redditSources = sources.filter { it.type == SourceType.REDDIT }
     val premiumSources = sources.filter { it.type.isPremium }
 
     Scaffold(
@@ -200,19 +245,52 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                items(freeSources, key = { it.type.name }) { source ->
+                items(freeSources, key = { "${it.type.name}:${it.instanceId}" }) { source ->
                     SourceCard(
                         source = source,
                         health = healthMap[source.type],
                         keyValidation = keyValidationState[source.type],
-                        isTesting = testingSource == source.type,
-                        onToggle = { vm.setEnabled(source.type, it) },
-                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
-                        onSaveTags = { vm.setTags(source.type, it) },
-                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, it) },
+                        isTesting = testingSource == "${source.type.name}:${source.instanceId}",
+                        onToggle = { vm.setEnabled(source.type, source.instanceId, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, source.instanceId, key, user) },
+                        onSaveTags = { vm.setTags(source.type, source.instanceId, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, source.instanceId, it) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { vm.testSource(source) },
                     )
+                }
+            }
+
+            // Reddit multi-instance section
+            item {
+                Text(
+                    "REDDIT",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            items(redditSources, key = { "${it.type.name}:${it.instanceId}" }) { source ->
+                SourceCard(
+                    source = source,
+                    health = healthMap[source.type],
+                    keyValidation = null,
+                    isTesting = testingSource == "${source.type.name}:${source.instanceId}",
+                    onToggle = { vm.setEnabled(source.type, source.instanceId, it) },
+                    onSaveCredentials = { _, _ -> },
+                    onSaveTags = { vm.setTags(source.type, source.instanceId, it) },
+                    onSaveWallhavenPurity = {},
+                    onValidateWallhavenKey = {},
+                    onTest = { vm.testSource(source) },
+                    onRemove = { vm.removeInstance(source.type, source.instanceId) },
+                )
+            }
+            item {
+                OutlinedButton(
+                    onClick = { showAddRedditDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("+ Add subreddit")
                 }
             }
 
@@ -225,7 +303,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                items(premiumSources, key = { it.type.name }) { source ->
+                items(premiumSources, key = { "${it.type.name}:${it.instanceId}" }) { source ->
                     val plugin = source.type.plugin
                     val unlocked = plugin == null || PluginEntitlement.isUnlocked(plugin)
                     SourceCard(
@@ -234,11 +312,11 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         keyValidation = keyValidationState[source.type],
                         isPremium = true,
                         isLocked = !unlocked,
-                        isTesting = testingSource == source.type,
-                        onToggle = { if (unlocked) vm.setEnabled(source.type, it) },
-                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
-                        onSaveTags = { vm.setTags(source.type, it) },
-                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, it) },
+                        isTesting = testingSource == "${source.type.name}:${source.instanceId}",
+                        onToggle = { if (unlocked) vm.setEnabled(source.type, source.instanceId, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, source.instanceId, key, user) },
+                        onSaveTags = { vm.setTags(source.type, source.instanceId, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, source.instanceId, it) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { if (unlocked) vm.testSource(source) },
                     )
@@ -276,6 +354,7 @@ private fun SourceCard(
     onSaveWallhavenPurity: (String) -> Unit = {},
     onValidateWallhavenKey: (String) -> Unit = {},
     onTest: () -> Unit = {},
+    onRemove: (() -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
@@ -325,7 +404,9 @@ private fun SourceCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(source.type.displayName, fontWeight = FontWeight.Medium)
+                        val displayName = if (source.type == SourceType.REDDIT && source.instanceId.isNotBlank())
+                            "r/${source.instanceId}" else source.type.displayName
+                        Text(displayName, fontWeight = FontWeight.Medium)
                         if (isPremium) {
                             SuggestionChip(
                                 onClick = {},
@@ -421,15 +502,18 @@ private fun SourceCard(
 
             if (expanded && !isLocked) {
                 HorizontalDivider()
-                OutlinedTextField(
-                    value = tags,
-                    onValueChange = { tags = it },
-                    label = { Text("Tags / Query") },
-                    placeholder = { Text("e.g. scenery landscape (leave blank for global search)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    supportingText = { Text("Space-separated tags used only for this source") }
-                )
+                val isReddit = source.type == SourceType.REDDIT
+                if (!isReddit) {
+                    OutlinedTextField(
+                        value = tags,
+                        onValueChange = { tags = it },
+                        label = { Text("Tags / Query") },
+                        placeholder = { Text("e.g. scenery landscape (leave blank for global search)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        supportingText = { Text("Space-separated tags used only for this source") }
+                    )
+                }
                 if (source.type.needsApiUser) {
                     OutlinedTextField(
                         value = apiUser,
@@ -519,7 +603,19 @@ private fun SourceCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (onRemove != null) Arrangement.SpaceBetween else Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (onRemove != null) {
+                        TextButton(
+                            onClick = onRemove,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Remove")
+                        }
+                    }
                     OutlinedButton(onClick = {
                         onSaveTags(tags.trim())
                         onSaveCredentials(apiKey, apiUser)

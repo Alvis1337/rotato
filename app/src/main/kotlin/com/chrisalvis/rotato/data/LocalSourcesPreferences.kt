@@ -15,29 +15,55 @@ class LocalSourcesPreferences(private val context: Context) {
     companion object {
         private val SOURCES_KEY = stringPreferencesKey("local_sources_json")
 
-        private fun defaultSources() = SourceType.entries.map {
-            // Enable safe sources that don't require a user account on first install
-            LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser)
-        }
+        // Reddit is user-managed (multi-instance) — never auto-created by defaults.
+        private fun defaultSources() = SourceType.entries
+            .filter { it != SourceType.REDDIT }
+            .map { LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser) }
     }
 
     val sources: Flow<List<LocalSource>> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { prefs -> parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() } }
 
-    suspend fun update(type: SourceType, enabled: Boolean? = null, apiKey: String? = null, apiUser: String? = null, tags: String? = null, wallhavenPurity: String? = null) {
+    suspend fun update(
+        type: SourceType,
+        instanceId: String = "",
+        enabled: Boolean? = null,
+        apiKey: String? = null,
+        apiUser: String? = null,
+        tags: String? = null,
+        wallhavenPurity: String? = null,
+    ) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
-            val idx = current.indexOfFirst { it.type == type }
+            val idx = current.indexOfFirst { it.type == type && it.instanceId == instanceId }
             if (idx == -1) return@edit
             val existing = current[idx]
             current[idx] = existing.copy(
                 enabled = enabled ?: existing.enabled,
-                apiKey = if (apiKey != null) apiKey else existing.apiKey,
-                apiUser = if (apiUser != null) apiUser else existing.apiUser,
-                tags = if (tags != null) tags else existing.tags,
-                wallhavenPurity = if (wallhavenPurity != null) wallhavenPurity else existing.wallhavenPurity
+                apiKey = apiKey ?: existing.apiKey,
+                apiUser = apiUser ?: existing.apiUser,
+                tags = tags ?: existing.tags,
+                wallhavenPurity = wallhavenPurity ?: existing.wallhavenPurity,
             )
+            prefs[SOURCES_KEY] = serialize(current)
+        }
+    }
+
+    suspend fun addInstance(type: SourceType, instanceId: String) {
+        if (instanceId.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
+            if (current.any { it.type == type && it.instanceId == instanceId }) return@edit
+            current.add(LocalSource(type = type, instanceId = instanceId, enabled = true))
+            prefs[SOURCES_KEY] = serialize(current)
+        }
+    }
+
+    suspend fun removeInstance(type: SourceType, instanceId: String) {
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
+            current.removeAll { it.type == type && it.instanceId == instanceId }
             prefs[SOURCES_KEY] = serialize(current)
         }
     }
@@ -57,18 +83,19 @@ class LocalSourcesPreferences(private val context: Context) {
             val type = runCatching { SourceType.valueOf(o.getString("type")) }.getOrNull() ?: return@forEach
             result.add(LocalSource(
                 type = type,
+                instanceId = o.optString("instanceId", ""),
                 enabled = o.optBoolean("enabled", false),
                 apiKey = o.optString("apiKey", ""),
                 apiUser = o.optString("apiUser", ""),
                 tags = o.optString("tags", ""),
-                wallhavenPurity = o.optString("wallhavenPurity", "110")
+                wallhavenPurity = o.optString("wallhavenPurity", "110"),
             ))
         }
-        // Always include all source types, inserting defaults for any not yet persisted
-        val seen = result.map { it.type }.toSet()
-        result + SourceType.entries.filter { it !in seen }.map {
-            LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser)
-        }
+        // Backfill any missing non-Reddit source types with defaults
+        val seenNonReddit = result.filter { it.instanceId.isEmpty() }.map { it.type }.toSet()
+        result + SourceType.entries
+            .filter { it != SourceType.REDDIT && it !in seenNonReddit }
+            .map { LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser) }
     } catch (_: Exception) { emptyList() }
 
     private fun serialize(sources: List<LocalSource>): String =
@@ -76,6 +103,7 @@ class LocalSourcesPreferences(private val context: Context) {
             sources.forEach { s ->
                 arr.put(JSONObject().apply {
                     put("type", s.type.name)
+                    put("instanceId", s.instanceId)
                     put("enabled", s.enabled)
                     put("apiKey", s.apiKey)
                     put("apiUser", s.apiUser)

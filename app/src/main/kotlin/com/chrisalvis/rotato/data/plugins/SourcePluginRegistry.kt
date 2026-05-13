@@ -14,6 +14,7 @@ object SourcePluginRegistry {
         SafebooruPlugin,   // free — works without an account, SFW only
         ZerochanPlugin,    // free — SFW only
         Rule34Plugin,      // free — NSFW by default
+        RedditPlugin,      // free — public subreddits, multi-instance
         WallhavenPlugin,   // premium
         DanbooruPlugin,    // premium
         GelbooruPlugin,    // premium

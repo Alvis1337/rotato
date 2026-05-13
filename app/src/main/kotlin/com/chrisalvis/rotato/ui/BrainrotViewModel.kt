@@ -355,7 +355,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun cacheKey(source: LocalSource, query: String) = "${source.type.name}:$query"
+    private fun cacheKey(source: LocalSource, query: String) = "${source.type.name}:${source.instanceId}:$query"
 
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>): List<String> = when {
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
@@ -719,7 +719,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleSource(source: LocalSource) {
         viewModelScope.launch {
-            localSources.update(source.type, enabled = !source.enabled)
+            localSources.update(source.type, source.instanceId, enabled = !source.enabled)
             loadMore(reset = true)
         }
     }

@@ -64,6 +64,12 @@ enum class SourceType(
         apiKeyLabel = "API Key",
         apiUserLabel = "User ID",
         safeContent = false
+    ),
+    REDDIT(
+        displayName = "Reddit",
+        needsApiKey = false,
+        needsApiUser = false,
+        safeContent = true
     );
 
     /** Returns the [SourcePlugin] that handles fetch logic for this source type. */
@@ -75,6 +81,8 @@ enum class SourceType(
 
 data class LocalSource(
     val type: SourceType,
+    /** For multi-instance sources (Reddit): the subreddit name. Empty for all other sources. */
+    val instanceId: String = "",
     val enabled: Boolean = false,
     val apiKey: String = "",
     val apiUser: String = "",
