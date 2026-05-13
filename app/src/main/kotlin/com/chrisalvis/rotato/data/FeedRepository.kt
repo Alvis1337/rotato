@@ -30,7 +30,8 @@ class FeedRepository(private val imageDir: File) {
         }
         val ext = fullUrl.substringAfterLast('.').substringBefore('?').take(5).ifBlank { "jpg" }
         val destFile = File(imageDir, "${sanitizeFilename(sourceId)}.$ext")
-        if (destFile.exists()) return@withContext true
+        if (destFile.exists() && destFile.isValidImage()) return@withContext true
+        if (destFile.exists()) destFile.delete() // corrupt/stale file — force re-download
         return@withContext try {
             var bytes = downloadBytes(fullUrl, authHeader)
             if (bytes == null && fallbackUrl.isNotBlank()) {
@@ -109,6 +110,25 @@ class FeedRepository(private val imageDir: File) {
             Log.e(TAG, "saveToGallery failed for $fullUrl", e)
             false
         }
+    }
+
+    /** Returns true if this file starts with known image magic bytes (JPEG, PNG, GIF, WebP). */
+    private fun File.isValidImage(): Boolean {
+        if (!exists() || length() < 4) return false
+        return try {
+            inputStream().use { stream ->
+                val header = ByteArray(4)
+                stream.read(header)
+                // JPEG: FF D8 FF
+                (header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() && header[2] == 0xFF.toByte()) ||
+                // PNG: 89 50 4E 47
+                (header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte()) ||
+                // GIF: GIF8
+                (header[0] == 0x47.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte()) ||
+                // WebP: RIFF
+                (header[0] == 0x52.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte())
+            }
+        } catch (e: Exception) { false }
     }
 
     private fun downloadBytes(url: String, authHeader: String? = null): ByteArray? = try {
