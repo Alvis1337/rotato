@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.material3.Checkbox
@@ -35,6 +37,7 @@ import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +46,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = LocalSourcesPreferences(app)
@@ -52,6 +58,12 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val health = SourceHealthTracker.health
+
+    private val httpClient = OkHttpClient()
+
+    private val _keyValidationState = MutableStateFlow<Map<SourceType, Boolean?>>(emptyMap())
+    val keyValidationState: StateFlow<Map<SourceType, Boolean?>> = _keyValidationState.asStateFlow()
+    private val latestWallhavenKey = MutableStateFlow("")
 
     private val _testingSource = MutableStateFlow<SourceType?>(null)
     val testingSource: StateFlow<SourceType?> = _testingSource.asStateFlow()
@@ -70,6 +82,36 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setWallhavenPurity(type: SourceType, purity: String) {
         viewModelScope.launch { prefs.update(type, wallhavenPurity = purity) }
+    }
+
+    fun validateWallhavenKey(apiKey: String) {
+        val trimmedKey = apiKey.trim()
+        latestWallhavenKey.value = trimmedKey
+        _keyValidationState.update { it + (SourceType.WALLHAVEN to null) }
+        if (trimmedKey.isBlank()) return
+
+        viewModelScope.launch {
+            try {
+                val isValid = withContext(Dispatchers.IO) {
+                    val request = Request.Builder()
+                        .url("https://wallhaven.cc/api/v1/settings?apikey=$trimmedKey")
+                        .get()
+                        .build()
+                    httpClient.newCall(request).execute().use { response ->
+                        when (response.code) {
+                            200 -> true
+                            401, 403 -> false
+                            else -> null
+                        }
+                    }
+                }
+                if (isValid != null && latestWallhavenKey.value == trimmedKey) {
+                    _keyValidationState.update { it + (SourceType.WALLHAVEN to isValid) }
+                }
+            } catch (_: Exception) {
+                // Leave the checking state as-is on network errors.
+            }
+        }
     }
 
     fun testSource(source: LocalSource) {
@@ -100,6 +142,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val vm: LocalSourcesViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val healthMap by vm.health.collectAsStateWithLifecycle()
+    val keyValidationState by vm.keyValidationState.collectAsStateWithLifecycle()
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
 
     var showDisableAllConfirm by remember { mutableStateOf(false) }
@@ -161,11 +204,13 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     SourceCard(
                         source = source,
                         health = healthMap[source.type],
+                        keyValidation = keyValidationState[source.type],
                         isTesting = testingSource == source.type,
                         onToggle = { vm.setEnabled(source.type, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
                         onSaveTags = { vm.setTags(source.type, it) },
                         onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, it) },
+                        onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { vm.testSource(source) },
                     )
                 }
@@ -186,6 +231,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     SourceCard(
                         source = source,
                         health = healthMap[source.type],
+                        keyValidation = keyValidationState[source.type],
                         isPremium = true,
                         isLocked = !unlocked,
                         isTesting = testingSource == source.type,
@@ -193,6 +239,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, key, user) },
                         onSaveTags = { vm.setTags(source.type, it) },
                         onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, it) },
+                        onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { if (unlocked) vm.testSource(source) },
                     )
                 }
@@ -219,6 +266,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
 private fun SourceCard(
     source: LocalSource,
     health: SourceHealth? = null,
+    keyValidation: Boolean? = null,
     isPremium: Boolean = false,
     isLocked: Boolean = false,
     isTesting: Boolean = false,
@@ -226,6 +274,7 @@ private fun SourceCard(
     onSaveCredentials: (String, String) -> Unit,
     onSaveTags: (String) -> Unit,
     onSaveWallhavenPurity: (String) -> Unit = {},
+    onValidateWallhavenKey: (String) -> Unit = {},
     onTest: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -240,6 +289,14 @@ private fun SourceCard(
     var showHealthDetail by remember { mutableStateOf(false) }
 
     var showPremiumInfo by remember { mutableStateOf(false) }
+
+    LaunchedEffect(source.type, expanded, apiKey) {
+        if (source.type == SourceType.WALLHAVEN && expanded) {
+            delay(800)
+            if (apiKey.isNotBlank()) onValidateWallhavenKey(apiKey)
+        }
+    }
+
     if (showPremiumInfo) {
         AlertDialog(
             onDismissRequest = { showPremiumInfo = false },
@@ -268,20 +325,6 @@ private fun SourceCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Health dot — only shown for enabled sources
-                        if (source.enabled && !isLocked) {
-                            val healthDesc = when {
-                                health == null || !health.hasData -> "Status: untested"
-                                health.isHealthy -> "Status: healthy"
-                                else -> "Status: error"
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(healthDotColor, CircleShape)
-                                    .semantics { contentDescription = healthDesc }
-                            )
-                        }
                         Text(source.type.displayName, fontWeight = FontWeight.Medium)
                         if (isPremium) {
                             SuggestionChip(
@@ -341,6 +384,17 @@ private fun SourceCard(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val healthDesc = when {
+                        health == null || !health.hasData -> "Status: never fetched"
+                        health.isHealthy -> "Status: healthy"
+                        else -> "Status: error"
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(healthDotColor, CircleShape)
+                            .semantics { contentDescription = healthDesc }
+                    )
                     if (!isLocked) {
                         if (source.enabled) {
                             if (isTesting) {
@@ -399,6 +453,48 @@ private fun SourceCard(
                             }
                         }
                     )
+                    if (source.type == SourceType.WALLHAVEN && apiKey.isNotBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            when (keyValidation) {
+                                true -> {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Key valid",
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        "Key valid",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF4CAF50)
+                                    )
+                                }
+                                false -> {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Invalid key",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        "Invalid key",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                null -> {
+                                    Text(
+                                        "Verifying...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 // Wallhaven-specific purity picker
                 if (source.type == SourceType.WALLHAVEN) {
@@ -428,6 +524,7 @@ private fun SourceCard(
                         onSaveTags(tags.trim())
                         onSaveCredentials(apiKey, apiUser)
                         if (source.type == SourceType.WALLHAVEN) {
+                            if (apiKey.isNotBlank()) onValidateWallhavenKey(apiKey)
                             val p = "${if (puritySfw) '1' else '0'}${if (puritySketchy) '1' else '0'}${if (purityNsfw) '1' else '0'}"
                             onSaveWallhavenPurity(if (p == "000") "100" else p)
                         }
