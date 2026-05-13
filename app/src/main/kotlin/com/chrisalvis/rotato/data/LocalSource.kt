@@ -59,8 +59,10 @@ enum class SourceType(
     ),
     RULE34(
         displayName = "Rule34",
-        needsApiKey = false,
-        needsApiUser = false,
+        needsApiKey = true,
+        needsApiUser = true,
+        apiKeyLabel = "API Key",
+        apiUserLabel = "User ID",
         safeContent = false
     );
 

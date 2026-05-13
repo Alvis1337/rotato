@@ -10,13 +10,14 @@ import org.json.JSONObject
 object Rule34Plugin : SourcePlugin() {
     override val id = "RULE34"
     override val displayName = "Rule34"
-    override val description = "Gelbooru-compatible Rule34 board with safe or explicit rating filters."
+    override val description = "Rule34 booru. Requires a free account — get your User ID and API Key from rule34.xxx account options."
     override val isPremium = false
-    override val needsApiKey = false
-    override val needsApiUser = false
+    override val needsApiKey = true
+    override val needsApiUser = true
     override val apiKeyLabel = "API Key"
-    override val apiUserLabel = "API User"
+    override val apiUserLabel = "User ID"
     override val safeContent = false
+    override val requiresCredentials = true
 
     private val videoExtensions = listOf(".mp4", ".webm", ".mkv", ".avi", ".mov")
 
@@ -29,9 +30,10 @@ object Rule34Plugin : SourcePlugin() {
     ): BrainrotWallpaper? = onIO {
         val limit = 20
         val tagQuery = buildTagQuery(query, nsfw)
-        val maxPid = fetchMaxPid(tagQuery, limit)
+        val authSuffix = buildAuthSuffix(source)
+        val maxPid = fetchMaxPid(tagQuery, limit, authSuffix)
         val pid = if (maxPid > 0) (0..maxPid).random() else 0
-        val arr = getJsonArray(buildJsonUrl(tagQuery, pid, limit)) ?: return@onIO null
+        val arr = getJsonArray(buildJsonUrl(tagQuery, pid, limit, authSuffix)) ?: return@onIO null
         val post = pickFiltered(arr, filters, exclude) {
             postId(it) to (it.optInt("width") to it.optInt("height"))
         } ?: return@onIO null
@@ -48,9 +50,10 @@ object Rule34Plugin : SourcePlugin() {
     ): List<BrainrotWallpaper> = onIO {
         val pageSize = limit.coerceIn(1, 100)
         val tagQuery = buildTagQuery(query, nsfw)
-        val maxPid = fetchMaxPid(tagQuery, pageSize)
+        val authSuffix = buildAuthSuffix(source)
+        val maxPid = fetchMaxPid(tagQuery, pageSize, authSuffix)
         val pid = if (maxPid > 0) (0..maxPid).random() else 0
-        val arr = getJsonArray(buildJsonUrl(tagQuery, pid, pageSize)) ?: return@onIO emptyList()
+        val arr = getJsonArray(buildJsonUrl(tagQuery, pid, pageSize, authSuffix)) ?: return@onIO emptyList()
         (0 until arr.length()).mapNotNull { index ->
             val post = arr.optJSONObject(index) ?: return@mapNotNull null
             if (exclude.contains(postId(post))) return@mapNotNull null
@@ -61,6 +64,11 @@ object Rule34Plugin : SourcePlugin() {
         }
     }
 
+    private fun buildAuthSuffix(source: LocalSource): String =
+        if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
+            "&user_id=${source.apiUser.urlEncode()}&api_key=${source.apiKey.urlEncode()}"
+        else ""
+
     private fun buildTagQuery(query: String, nsfw: Boolean): String = buildString {
         val normalized = normalizeUserQuery(query)
         if (normalized.isNotBlank()) append(normalized)
@@ -68,12 +76,12 @@ object Rule34Plugin : SourcePlugin() {
         append(if (nsfw) "rating:explicit" else "rating:safe")
     }.trim()
 
-    private fun buildJsonUrl(tagQuery: String, pid: Int, limit: Int): String =
-        "https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=$limit&pid=$pid&tags=${tagQuery.urlEncode()}"
+    private fun buildJsonUrl(tagQuery: String, pid: Int, limit: Int, authSuffix: String): String =
+        "https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=$limit&pid=$pid&tags=${tagQuery.urlEncode()}$authSuffix"
 
-    private fun fetchMaxPid(tagQuery: String, limit: Int): Int {
+    private fun fetchMaxPid(tagQuery: String, limit: Int, authSuffix: String): Int {
         val req = Request.Builder()
-            .url("https://rule34.xxx/index.php?page=dapi&s=post&q=index&limit=1&tags=${tagQuery.urlEncode()}")
+            .url("https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&limit=1&tags=${tagQuery.urlEncode()}$authSuffix")
             .header("User-Agent", BROWSER_UA)
             .build()
         return runCatching {
