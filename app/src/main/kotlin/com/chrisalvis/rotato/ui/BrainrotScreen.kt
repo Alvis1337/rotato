@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.item as gridItem
 import androidx.compose.foundation.lazy.grid.items as gridGridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -486,7 +485,7 @@ fun BrainrotScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     if (sessionSaved > 0 || sessionSkipped > 0) {
-                                        gridItem(span = { GridItemSpan(maxLineSpan) }) {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -512,7 +511,7 @@ fun BrainrotScreen(
                                         )
                                     }
                                     if (loadingMore) {
-                                        gridItem(span = { GridItemSpan(maxLineSpan) }) {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -524,7 +523,7 @@ fun BrainrotScreen(
                                         }
                                     }
                                     if (endReached && gridItems.isNotEmpty()) {
-                                        gridItem(span = { GridItemSpan(maxLineSpan) }) {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
                                             OutlinedButton(
                                                 onClick = { vm.forceLoadMore() },
                                                 modifier = Modifier
