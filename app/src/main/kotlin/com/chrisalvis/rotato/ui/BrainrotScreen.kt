@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
-import androidx.compose.foundation.lazy.staggeredgrid.item
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
@@ -560,7 +559,7 @@ fun BrainrotScreen(
                                     verticalItemSpacing = 8.dp
                                 ) {
                                     if (sessionSaved > 0 || sessionSkipped > 0) {
-                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                        items(listOf("session-stats"), span = { StaggeredGridItemSpan.FullLine }) {
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -586,7 +585,7 @@ fun BrainrotScreen(
                                         )
                                     }
                                     if (loadingMore) {
-                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                        items(listOf("loading-more"), span = { StaggeredGridItemSpan.FullLine }) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -598,7 +597,7 @@ fun BrainrotScreen(
                                         }
                                     }
                                     if (endReached && gridItems.isNotEmpty()) {
-                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                        items(listOf("end-reached"), span = { StaggeredGridItemSpan.FullLine }) {
                                             OutlinedButton(
                                                 onClick = { vm.forceLoadMore() },
                                                 modifier = Modifier
