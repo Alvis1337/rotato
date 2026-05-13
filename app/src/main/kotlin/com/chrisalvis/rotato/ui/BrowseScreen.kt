@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -784,13 +785,11 @@ private fun WallpaperThumbnail(
     onTap: () -> Unit,
     onLongPress: () -> Unit
 ) {
-    val borderColor = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(9f / 16f)
             .clip(MaterialTheme.shapes.medium)
-            .then(if (isSelected) Modifier.border(3.dp, borderColor, MaterialTheme.shapes.medium) else Modifier)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
     ) {
         AsyncImage(
@@ -800,13 +799,29 @@ private fun WallpaperThumbnail(
             modifier = Modifier.fillMaxSize()
         )
 
+        // Subtle scrim when selected (matches HomeScreen pattern)
+        if (isSelected) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
+        }
+
+        // Corner selection indicator — consistent with HomeScreen
+        if (selectionMode) {
+            Icon(
+                imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (isSelected) "Selected" else "Not selected",
+                tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .background(
+                        if (isSelected) Color.White else Color.Black.copy(alpha = 0.35f),
+                        CircleShape
+                    )
+            )
+        }
+
         when {
-            isSelected -> Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(36.dp))
-            }
             isDownloading -> Box(
                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)),
                 contentAlignment = Alignment.Center
