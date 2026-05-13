@@ -99,11 +99,12 @@ class MainActivity : AppCompatActivity() {
                 val showBottomBar = currentRoute !in setOf("sources", "setup", "onboarding")
                     && brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null
 
-                // Handle navigation from notification (e.g., locked collection alert)
+                // Handle navigation from notifications, shortcuts, or schedule receiver
                 val pendingNav = _pendingNavigate.value
                 LaunchedEffect(pendingNav) {
-                    if (pendingNav == "browse") {
-                        navController.navigate("browse") {
+                    val route = pendingNav ?: return@LaunchedEffect
+                    if (route in setOf("discover", "home", "browse", "settings")) {
+                        navController.navigate(route) {
                             popUpTo("discover") { saveState = true }
                             launchSingleTop = true
                             restoreState = true

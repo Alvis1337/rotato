@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.BatteryManager
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -96,6 +97,12 @@ class WallpaperWorker(
         if (autoPause.chargingEnabled) {
             val bm = applicationContext.getSystemService(BatteryManager::class.java)
             if (bm?.isCharging == true) return Result.success()
+        }
+
+        // Auto-pause: screen on (skip rotation while device is interactive)
+        if (!autoPause.rotateScreenOn) {
+            val pm = applicationContext.getSystemService(PowerManager::class.java)
+            if (pm?.isInteractive == true) return Result.success()
         }
 
         val activeScheduledListId = findActiveScheduledListId(scheduleEntries, lists)
@@ -325,6 +332,12 @@ class WallpaperWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val dislikeIntent = PendingIntent.getBroadcast(
+            applicationContext, 4,
+            Intent(applicationContext, DislikeWallpaperReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val thumb = centerCropBitmap(bitmap, NOTIF_THUMB_W, NOTIF_THUMB_H)
         val bigPicture = centerCropBitmap(bitmap, NOTIF_BIG_W, NOTIF_BIG_H)
         val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WALLPAPER_SET)
@@ -337,6 +350,7 @@ class WallpaperWorker(
             .setAutoCancel(true)
             .addAction(0, "Skip", skipIntent)
             .addAction(0, "⭐ Favorite", favoriteIntent)
+            .addAction(0, "👎 Dislike", dislikeIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 

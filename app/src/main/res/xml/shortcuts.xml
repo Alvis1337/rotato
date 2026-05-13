@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="shortcut_discover"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_discover_short"
+        android:shortcutLongLabel="@string/shortcut_discover_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.chrisalvis.rotato"
+            android:targetClass="com.chrisalvis.rotato.MainActivity">
+            <extra android:name="navigate_to" android:value="discover" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_library"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_library_short"
+        android:shortcutLongLabel="@string/shortcut_library_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.chrisalvis.rotato"
+            android:targetClass="com.chrisalvis.rotato.MainActivity">
+            <extra android:name="navigate_to" android:value="home" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_collections"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_collections_short"
+        android:shortcutLongLabel="@string/shortcut_collections_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.chrisalvis.rotato"
+            android:targetClass="com.chrisalvis.rotato.MainActivity">
+            <extra android:name="navigate_to" android:value="browse" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_settings"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_settings_short"
+        android:shortcutLongLabel="@string/shortcut_settings_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.chrisalvis.rotato"
+            android:targetClass="com.chrisalvis.rotato.MainActivity">
+            <extra android:name="navigate_to" android:value="settings" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+</shortcuts>

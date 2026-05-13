@@ -228,7 +228,8 @@ fun SettingsScreen(
                     settings = autoPauseSettings,
                     onNightToggle = { viewModel.setAutoPauseNight(it) },
                     onNightHoursChange = { start, end -> viewModel.setAutoPauseNightHours(start, end) },
-                    onChargingToggle = { viewModel.setAutoPauseCharging(it) }
+                    onChargingToggle = { viewModel.setAutoPauseCharging(it) },
+                    onRotateScreenOnToggle = { viewModel.setRotateScreenOn(it) },
                 )
             }
 
@@ -585,7 +586,8 @@ private fun AutoPauseSection(
     settings: AutoPauseSettings,
     onNightToggle: (Boolean) -> Unit,
     onNightHoursChange: (Int, Int) -> Unit,
-    onChargingToggle: (Boolean) -> Unit
+    onChargingToggle: (Boolean) -> Unit,
+    onRotateScreenOnToggle: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
@@ -649,6 +651,22 @@ private fun AutoPauseSection(
                 )
             }
             Switch(checked = settings.chargingEnabled, onCheckedChange = onChargingToggle)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                Text("Rotate while screen is on")
+                Text(
+                    "When off, wallpaper only changes while the screen is off. Turning this on may cause sudden changes or accent color shifts while you're using your phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = settings.rotateScreenOn, onCheckedChange = onRotateScreenOnToggle)
         }
     }
 }

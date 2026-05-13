@@ -1,4 +1,12 @@
 <resources>
     <string name="app_name">Rotato</string>
     <string name="widget_description">Shows your current wallpaper and a Next button.</string>
+    <string name="shortcut_discover_short">Discover</string>
+    <string name="shortcut_discover_long">Open Discover</string>
+    <string name="shortcut_library_short">Library</string>
+    <string name="shortcut_library_long">Open Library</string>
+    <string name="shortcut_collections_short">Collections</string>
+    <string name="shortcut_collections_long">Open Collections</string>
+    <string name="shortcut_settings_short">Settings</string>
+    <string name="shortcut_settings_long">Open Settings</string>
 </resources>

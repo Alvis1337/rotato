@@ -29,7 +29,8 @@ data class AutoPauseSettings(
     val nightEnabled: Boolean = false,
     val nightStartHour: Int = 22,
     val nightEndHour: Int = 7,
-    val chargingEnabled: Boolean = false
+    val chargingEnabled: Boolean = false,
+    val rotateScreenOn: Boolean = true,
 ) {
     fun isInNightWindow(hour: Int): Boolean {
         if (!nightEnabled || nightStartHour == nightEndHour) return false

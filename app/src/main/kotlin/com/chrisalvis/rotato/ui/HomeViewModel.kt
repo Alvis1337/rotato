@@ -299,6 +299,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { preferences.setAutoPauseCharging(enabled) }
     }
 
+    fun setRotateScreenOn(enabled: Boolean) {
+        viewModelScope.launch { preferences.setRotateScreenOn(enabled) }
+    }
+
     fun setChargingTriggerEnabled(enabled: Boolean) {
         viewModelScope.launch { preferences.setChargingTriggerEnabled(enabled) }
     }

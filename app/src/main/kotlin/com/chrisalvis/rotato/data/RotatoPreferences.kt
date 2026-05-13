@@ -45,6 +45,7 @@ class RotatoPreferences(private val context: Context) {
         val AUTO_PAUSE_START = intPreferencesKey("auto_pause_start_hour")
         val AUTO_PAUSE_END = intPreferencesKey("auto_pause_end_hour")
         val AUTO_PAUSE_CHARGING = booleanPreferencesKey("auto_pause_charging")
+        val ROTATE_SCREEN_ON = booleanPreferencesKey("rotate_screen_on")
         val CHARGING_TRIGGER_ENABLED = booleanPreferencesKey("charging_trigger_enabled")
         val AUTO_FAVORITE_ENABLED = booleanPreferencesKey("auto_favorite_enabled")
         val AUTO_FAVORITE_MINUTES = intPreferencesKey("auto_favorite_minutes")
@@ -309,7 +310,8 @@ class RotatoPreferences(private val context: Context) {
                 nightEnabled = prefs[AUTO_PAUSE_NIGHT] ?: false,
                 nightStartHour = prefs[AUTO_PAUSE_START] ?: 22,
                 nightEndHour = prefs[AUTO_PAUSE_END] ?: 7,
-                chargingEnabled = prefs[AUTO_PAUSE_CHARGING] ?: false
+                chargingEnabled = prefs[AUTO_PAUSE_CHARGING] ?: false,
+                rotateScreenOn = prefs[ROTATE_SCREEN_ON] ?: true,
             )
         }
 
@@ -326,6 +328,10 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setAutoPauseCharging(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_PAUSE_CHARGING] = enabled }
+    }
+
+    suspend fun setRotateScreenOn(enabled: Boolean) {
+        context.dataStore.edit { it[ROTATE_SCREEN_ON] = enabled }
     }
 
     val chargingTriggerEnabled: Flow<Boolean> = context.dataStore.data
