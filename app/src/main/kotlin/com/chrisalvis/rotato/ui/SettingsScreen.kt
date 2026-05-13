@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
@@ -74,6 +75,7 @@ fun SettingsScreen(
     onNavigateToSources: () -> Unit = {},
     onNavigateToSchedule: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
+    onShowOnboarding: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
@@ -430,6 +432,14 @@ fun SettingsScreen(
             HorizontalDivider()
 
             SettingsSection(title = "About") {
+                OutlinedButton(
+                    onClick = onShowOnboarding,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("View App Tour")
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween

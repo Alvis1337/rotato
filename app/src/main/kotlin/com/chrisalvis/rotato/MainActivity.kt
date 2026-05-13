@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
                     else -> 0
                 }
 
-                val showBottomBar = currentRoute !in setOf("sources", "setup")
+                val showBottomBar = currentRoute !in setOf("sources", "setup", "onboarding")
                     && brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null
 
                 // Handle navigation from notification (e.g., locked collection alert)
@@ -185,6 +185,11 @@ class MainActivity : AppCompatActivity() {
                                 }
                             )
                         }
+                        composable("onboarding") {
+                            SetupScreen(
+                                onSetupComplete = { navController.popBackStack() }
+                            )
+                        }
                         composable("discover") {
                             BrainrotScreen(
                                 externalViewModel = brainrotViewModel,
@@ -212,6 +217,7 @@ class MainActivity : AppCompatActivity() {
                                 onNavigateToSources = { navController.navigate("sources") },
                                 onNavigateToSchedule = { navController.navigate("schedule") },
                                 onNavigateToStats = { navController.navigate("stats") },
+                                onShowOnboarding = { navController.navigate("onboarding") },
                             )
                         }
                         composable("sources") {
