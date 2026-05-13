@@ -53,6 +53,7 @@ suspend fun fetchPageFromSource(
     exclude: List<String> = emptyList(),
     nsfwMode: Boolean = false,
     filters: BrainrotFilters = BrainrotFilters(),
+    limit: Int = 100,
 ): List<BrainrotWallpaper> {
     val plugin = SourcePluginRegistry.forType(source.type)
     if (plugin == null) {
@@ -65,7 +66,7 @@ suspend fun fetchPageFromSource(
         return emptyList()
     }
     return try {
-        val results = plugin.fetchPage(source, query, exclude, nsfwMode, filters)
+        val results = plugin.fetchPage(source, query, exclude, nsfwMode, filters, limit)
         if (results.isNotEmpty()) SourceHealthTracker.recordSuccess(source.type)
         results
     } catch (e: Exception) {

@@ -237,6 +237,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 source to queriesFor(source, explicitQuery, malTitles)
             }
 
+            // When a strict aspect-ratio filter is active most fetched items will be discarded
+            // by the plugin-side matches() check. Fetch more candidates per call to compensate.
+            val fetchLimit = if (filters.aspectRatio != AspectRatio.ANY || filters.minResolution != MinResolution.ANY) 200 else 100
+
+            // Steps 1+2 repeat up to 3 rounds: if strict filters drain the caches before the
+            // target is reached, clear and fetch again rather than stopping short.
+            val newItems = mutableListOf<BrainrotWallpaper>()
+            var totalSkipped = 0
+            var round = 0
+            while (newItems.size < target && round < 3) {
             // Step 1: fetch pages from ALL sources in parallel (network bound)
             val seenKeys = displayedKeys.toSet()
             sourcesWithQueries.mapNotNull { (source, queries) ->
@@ -250,20 +260,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                             .filter { it.startsWith("$sourceKey:") }
                             .map { it.removePrefix("$sourceKey:") }
                         val page = try {
-                            fetchPageFromSource(source, q, excludes, nsfw, filters)
+                            fetchPageFromSource(source, q, excludes, nsfw, filters, fetchLimit)
                         } catch (e: Exception) {
                             Log.e("DiscoverFetch", "${source.type.name} q=$q exception: ${e.message}", e)
                             emptyList()
                         }
-                        Log.d("DiscoverFetch", "${source.type.name} q=$q → ${page.size} items after filter")
+                        Log.d("DiscoverFetch", "${source.type.name} q=$q → ${page.size} items after filter (r${round+1})")
                         if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
                     }
                 }
             }.awaitAll()
 
             // Step 2: drain from caches — purely in-memory, no network
-            val newItems = mutableListOf<BrainrotWallpaper>()
-            var totalSkipped = 0
             while (newItems.size < target) {
                 val wp = drainOne(sourcesWithQueries) ?: break  // null = all caches empty
                 val key = "${wp.source}:${wp.id}"
@@ -280,6 +288,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 newItems += wp
             }
+            // If still under target, clear caches so next round fetches fresh pages
+            round++
+            if (round < 3 && newItems.size < target) pageCache.clear()
+            } // end round loop
 
             Log.d("DiscoverFetch", "drain complete — ${newItems.size} new items, ${displayedKeys.size} total seen")
             if (newItems.isEmpty()) {
