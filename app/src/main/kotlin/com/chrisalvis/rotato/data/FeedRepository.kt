@@ -119,6 +119,9 @@ class FeedRepository(private val imageDir: File) {
         if (url.contains("cdn.donmai.us") || url.contains("danbooru.donmai.us")) {
             reqBuilder.header("Referer", "https://danbooru.donmai.us/")
         }
+        if (url.contains("gelbooru.com") || url.contains("img2.gelbooru.com")) {
+            reqBuilder.header("Referer", "https://gelbooru.com/")
+        }
         if (authHeader != null) {
             reqBuilder.header("Authorization", authHeader)
         }
