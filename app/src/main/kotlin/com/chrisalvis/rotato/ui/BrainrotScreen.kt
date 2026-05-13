@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.item
 import androidx.compose.foundation.lazy.grid.items as gridGridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -486,7 +485,11 @@ fun BrainrotScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     if (sessionSaved > 0 || sessionSkipped > 0) {
-                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                        gridGridItems(
+                                            items = listOf("session-summary"),
+                                            key = { it },
+                                            span = { GridItemSpan(maxLineSpan) },
+                                        ) {
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -512,7 +515,11 @@ fun BrainrotScreen(
                                         )
                                     }
                                     if (loadingMore) {
-                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                        gridGridItems(
+                                            items = listOf("loading-more"),
+                                            key = { it },
+                                            span = { GridItemSpan(maxLineSpan) },
+                                        ) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -524,7 +531,11 @@ fun BrainrotScreen(
                                         }
                                     }
                                     if (endReached && gridItems.isNotEmpty()) {
-                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                        gridGridItems(
+                                            items = listOf("end-reached"),
+                                            key = { it },
+                                            span = { GridItemSpan(maxLineSpan) },
+                                        ) {
                                             OutlinedButton(
                                                 onClick = { vm.forceLoadMore() },
                                                 modifier = Modifier
