@@ -177,7 +177,7 @@ fun BrowseScreen() {
             onToggleRotation = { vm.toggleRotation(wp); showActionsFor = null },
             onSaveToGallery = { vm.saveWallpaper(wp); showActionsFor = null },
             onCopyUrl = {
-                clipboard.setText(AnnotatedString(wp.fullUrl.ifBlank { wp.thumbUrl }))
+                clipboard.setText(AnnotatedString(wp.fullUrl))
                 android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
                 showActionsFor = null
             },
@@ -304,6 +304,35 @@ fun BrowseScreen() {
                     Column(
                         modifier = Modifier
                             .weight(1f)
+                            .clickable {
+                                val urls = selectedWallpapers.joinToString("\n") { it.fullUrl }
+                                if (urls.isNotBlank()) {
+                                    clipboard.setText(AnnotatedString(urls))
+                                    android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
+                        Text("Copy URL", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                vm.shareWallpapers(
+                                    context,
+                                    selectedWallpapers.map { it.toLocalWallpaperEntry(selectedList?.id.orEmpty()) }
+                                )
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Share")
+                        Text("Share", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
                             .clickable { vm.downloadSelected() },
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -315,16 +344,16 @@ fun BrowseScreen() {
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable {
-                                    updateCover(singleSelectedWallpaper)
-                                    vm.exitSelectionMode()
+                                    singleSelectedWallpaper?.let {
+                                        updateCover(it)
+                                        vm.exitSelectionMode()
+                                    }
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(Icons.Default.FolderOpen, contentDescription = "Set collection cover")
                             Text("Set cover", style = MaterialTheme.typography.labelSmall)
                         }
-                    } else {
-                        Spacer(Modifier.weight(1f))
                     }
                 }
             }
@@ -366,22 +395,20 @@ fun BrowseScreen() {
             )
         } else {
             Column(modifier = Modifier.padding(padding)) {
-                AnimatedVisibility(visible = showSearch) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { vm.setSearchQuery(it) },
-                        label = { Text("Search tags…") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = if (searchQuery.isNotEmpty()) {
-                            { IconButton(onClick = { vm.setSearchQuery("") }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
-                        } else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.medium
-                    )
-                }
+                OutlinedTextField(
+                    value = collectionSearch,
+                    onValueChange = { vm.setCollectionSearch(it) },
+                    placeholder = { Text("Filter by tag...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = if (collectionSearch.isNotEmpty()) {
+                        { IconButton(onClick = { vm.setCollectionSearch("") }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
+                    } else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -480,15 +507,6 @@ fun BrowseScreen() {
     }
 }
 
-private fun shareWallpaper(context: android.content.Context, wallpaper: BrowseWallpaper) {
-    val text = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
-    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(android.content.Intent.EXTRA_TEXT, text)
-    }
-    context.startActivity(android.content.Intent.createChooser(intent, "Share wallpaper"))
-}
-
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun WallpaperDetailSheet(
@@ -498,11 +516,12 @@ private fun WallpaperDetailSheet(
     isBroken: Boolean,
     onToggleRotation: () -> Unit,
     onSaveToGallery: () -> Unit,
+    onCopyUrl: () -> Unit,
+    onShare: () -> Unit,
     onSetAsCover: () -> Unit,
     onRemoveFromCollection: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             AsyncImage(
@@ -548,9 +567,14 @@ private fun WallpaperDetailSheet(
                 )
             }
             ListItem(
+                headlineContent = { Text("Copy URL") },
+                leadingContent = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onCopyUrl)
+            )
+            ListItem(
                 headlineContent = { Text("Share") },
                 leadingContent = { Icon(Icons.Default.Share, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = { shareWallpaper(context, wallpaper); onDismiss() })
+                modifier = Modifier.clickable(onClick = onShare)
             )
             ListItem(
                 headlineContent = { Text("Set as cover") },
@@ -928,6 +952,18 @@ private fun WallpaperSortOrder.label(): String = when (this) {
     WallpaperSortOrder.SOURCE -> "Source"
     WallpaperSortOrder.RESOLUTION -> "Resolution"
 }
+
+private fun BrowseWallpaper.toLocalWallpaperEntry(listId: String) = LocalWallpaperEntry(
+    id = entryId,
+    listId = listId,
+    sourceId = sourceId,
+    source = source,
+    thumbUrl = thumbUrl,
+    fullUrl = fullUrl,
+    resolution = "",
+    pageUrl = "",
+    tags = emptyList()
+)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
