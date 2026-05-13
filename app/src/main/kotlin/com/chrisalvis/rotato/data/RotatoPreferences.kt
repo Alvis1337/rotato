@@ -39,6 +39,7 @@ class RotatoPreferences(private val context: Context) {
         val HANDS_FREE_INTERVAL = intPreferencesKey("hands_free_interval")
         val GLOBAL_BLACKLIST = stringPreferencesKey("global_blacklist_tags")
         val BLOCKED_URLS = stringPreferencesKey("blocked_urls")
+        val BLOCKED_IMAGE_KEYS = stringPreferencesKey("blocked_image_keys_json")
         val DISCOVER_BATCH_SIZE = intPreferencesKey("discover_batch_size")
         val AUTO_PAUSE_NIGHT = booleanPreferencesKey("auto_pause_night")
         val AUTO_PAUSE_START = intPreferencesKey("auto_pause_start_hour")
@@ -185,6 +186,33 @@ class RotatoPreferences(private val context: Context) {
             val set = if (existing.isBlank()) mutableSetOf() else existing.split("\n").filter { it.isNotBlank() }.toMutableSet()
             set.add(url)
             prefs[BLOCKED_URLS] = set.joinToString("\n")
+        }
+    }
+
+    val blockedImageKeys: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val json = prefs[BLOCKED_IMAGE_KEYS] ?: return@map emptySet()
+            try {
+                val arr = JSONArray(json)
+                (0 until arr.length()).map { arr.getString(it) }.toSet()
+            } catch (_: Exception) {
+                emptySet()
+            }
+        }
+
+    suspend fun addBlockedImageKey(key: String) {
+        if (key.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val existing = try {
+                val arr = JSONArray(prefs[BLOCKED_IMAGE_KEYS] ?: "[]")
+                (0 until arr.length()).map { arr.getString(it) }.toMutableSet()
+            } catch (_: Exception) {
+                mutableSetOf()
+            }
+            existing.add(key)
+            val arr = JSONArray().apply { existing.forEach { put(it) } }
+            prefs[BLOCKED_IMAGE_KEYS] = arr.toString()
         }
     }
 

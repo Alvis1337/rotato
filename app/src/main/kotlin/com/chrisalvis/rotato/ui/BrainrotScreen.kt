@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -111,6 +113,8 @@ fun BrainrotScreen(
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
     val globalBlacklist by vm.globalBlacklist.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val batchSelected by vm.batchSelected.collectAsStateWithLifecycle()
+    val batchMode by vm.batchMode.collectAsStateWithLifecycle()
     val downloadingIds by vm.downloadingIds.collectAsStateWithLifecycle()
     val handsFreeInterval by vm.handsFreeInterval.collectAsStateWithLifecycle()
     val savedSourceIds by vm.savedSourceIds.collectAsStateWithLifecycle()
@@ -152,6 +156,10 @@ fun BrainrotScreen(
         }
     }
 
+    BackHandler(enabled = batchMode && selectedItem == null) {
+        vm.clearBatchSelection()
+    }
+
     var showSettings by remember { mutableStateOf(false) }
     var showHandsFree by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
@@ -181,11 +189,17 @@ fun BrainrotScreen(
     }
     var showCreateListDialog by remember { mutableStateOf(false) }
     var pendingAddWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
+    var pendingBatchSave by remember { mutableStateOf(false) }
+    var showBatchSaveMenu by remember { mutableStateOf(false) }
 
     if (showCreateListDialog) {
         var newListName by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showCreateListDialog = false; pendingAddWallpaper = null },
+            onDismissRequest = {
+                showCreateListDialog = false
+                pendingAddWallpaper = null
+                pendingBatchSave = false
+            },
             title = { Text("New Collection") },
             text = {
                 OutlinedTextField(
@@ -207,7 +221,11 @@ fun BrainrotScreen(
                 ) { Text("Create") }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateListDialog = false; pendingAddWallpaper = null }) {
+                TextButton(onClick = {
+                    showCreateListDialog = false
+                    pendingAddWallpaper = null
+                    pendingBatchSave = false
+                }) {
                     Text("Cancel")
                 }
             }
@@ -225,12 +243,28 @@ fun BrainrotScreen(
         }
     }
 
+    fun startBatchSave() {
+        when {
+            lists.isEmpty() -> {
+                pendingBatchSave = true
+                showCreateListDialog = true
+            }
+            else -> showBatchSaveMenu = true
+        }
+    }
+
     // React to newly created list by completing pending add
-    LaunchedEffect(selectedListId) {
-        val pending = pendingAddWallpaper
-        if (pending != null && selectedListId != null && lists.isNotEmpty()) {
-            vm.addToList(selectedListId!!, pending)
-            pendingAddWallpaper = null
+    LaunchedEffect(selectedListId, lists) {
+        val currentListId = selectedListId
+        if (currentListId != null && lists.isNotEmpty()) {
+            pendingAddWallpaper?.let { pending ->
+                vm.addToList(currentListId, pending)
+                pendingAddWallpaper = null
+            }
+            if (pendingBatchSave) {
+                vm.saveBatchToList(currentListId)
+                pendingBatchSave = false
+            }
         }
     }
 
@@ -412,7 +446,12 @@ fun BrainrotScreen(
                                                 wallpaper = wp,
                                                 isDownloading = downloadingIds.contains(wp.id),
                                                 isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
-                                                onClick = { vm.selectItem(wp) }
+                                                isSelected = wp.id in batchSelected,
+                                                selectionMode = batchMode,
+                                                onClick = {
+                                                    if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
+                                                },
+                                                onLongPress = { vm.toggleBatchSelect(wp.id) }
                                             )
                                         }
                                         if (loadingMore) {
@@ -447,67 +486,119 @@ fun BrainrotScreen(
             } // closes when
             } // closes Column
             if (!noSources) {
-                                // Bottom action bar
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .navigationBarsPadding()
-                                        .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
-                                        .fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                    verticalAlignment = Alignment.CenterVertically
+                if (batchMode) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
+                            .fillMaxWidth(),
+                        tonalElevation = 4.dp,
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${batchSelected.size} selected",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Box {
+                                FilledTonalButton(onClick = { startBatchSave() }) {
+                                    Icon(Icons.Default.Bookmark, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Save all")
+                                }
+                                DropdownMenu(
+                                    expanded = showBatchSaveMenu,
+                                    onDismissRequest = { showBatchSaveMenu = false },
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                                 ) {
-                                    if (showScrollTop) {
-                                        SmallFloatingActionButton(
-                                            onClick = { coroutineScope.launch { gridState.scrollToItem(0) } },
-                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                        ) {
-                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
-                                        }
-                                        Spacer(Modifier.width(8.dp))
-                                    }
-                                    if (searchQuery.isNotBlank()) {
-                                        AssistChip(
-                                            onClick = { showSearch = true },
-                                            label = { Text(searchQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                            trailingIcon = {
-                                                IconButton(onClick = { vm.setSearchQuery("") }, modifier = Modifier.size(16.dp)) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
-                                                }
-                                            },
-                                            colors = AssistChipDefaults.assistChipColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
-                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                            ),
-                                            border = AssistChipDefaults.assistChipBorder(
-                                                enabled = true,
-                                                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                                            ),
-                                            modifier = Modifier.weight(1f)
+                                    lists.forEach { list ->
+                                        DropdownMenuItem(
+                                            text = { Text(list.name) },
+                                            onClick = {
+                                                vm.saveBatchToList(list.id)
+                                                showBatchSaveMenu = false
+                                            }
                                         )
-                                        Spacer(Modifier.width(8.dp))
-                                    }
-                                    SmallFloatingActionButton(onClick = { showSearch = true }) {
-                                        Icon(
-                                            Icons.Default.Search,
-                                            contentDescription = "Search",
-                                            tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                                        )
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                    SmallFloatingActionButton(
-                                        onClick = { if (gridItems.isNotEmpty()) showHandsFree = true }
-                                    ) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = "Hands-free slideshow")
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                    FloatingActionButton(onClick = { showSettings = true }) {
-                                        Icon(Icons.Default.Tune, contentDescription = "Discover settings")
                                     }
                                 }
+                            }
+                            TextButton(onClick = {
+                                showBatchSaveMenu = false
+                                vm.clearBatchSelection()
+                            }) {
+                                Text("Clear")
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (showScrollTop) {
+                            SmallFloatingActionButton(
+                                onClick = { coroutineScope.launch { gridState.scrollToItem(0) } },
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
+                            }
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        if (searchQuery.isNotBlank()) {
+                            AssistChip(
+                                onClick = { showSearch = true },
+                                label = { Text(searchQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                trailingIcon = {
+                                    IconButton(onClick = { vm.setSearchQuery("") }, modifier = Modifier.size(16.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
+                                    }
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                border = AssistChipDefaults.assistChipBorder(
+                                    enabled = true,
+                                    borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        SmallFloatingActionButton(onClick = { showSearch = true }) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        SmallFloatingActionButton(
+                            onClick = { if (gridItems.isNotEmpty()) showHandsFree = true }
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Hands-free slideshow")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        FloatingActionButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Default.Tune, contentDescription = "Discover settings")
+                        }
+                    }
+                }
                                 if (showSearch) {
                                     SearchBar(
                                         inputField = {
@@ -678,22 +769,16 @@ fun BrainrotScreen(
                             onDownloadToRotation = { w -> vm.downloadToRotation(w) },
                             onSaveToGallery = { w -> vm.saveToGallery(w) },
                             onSetWallpaper = { w -> vm.setWallpaperDirectly(w) },
-                            onShare = { w ->
-                                val url = w.pageUrl.ifBlank { w.fullUrl }
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, url)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share wallpaper"))
+                            onBlock = { w ->
+                                vm.blockImage(w)
+                                vm.selectItem(null)
                             },
                             onReport = { w ->
                                 reportingWallpaper = w
                                 showReportSheet = true
                             },
                             onTagSearch = { tag ->
-                                val current = searchQuery
-                                val newQuery = if (current.isBlank()) tag else "$current $tag"
-                                vm.setSearchQuery(newQuery)
+                                vm.searchByTag(tag)
                                 vm.selectItem(null)
                             },
                             onMoreLikeThis = { query ->
@@ -728,7 +813,10 @@ private fun DiscoverGridItem(
     wallpaper: BrainrotWallpaper,
     isDownloading: Boolean,
     isSaved: Boolean,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit
 ) {
     val ratio = parseAspectRatio(wallpaper.resolution)
         .coerceIn(0.25f, 4f)
@@ -745,6 +833,12 @@ private fun DiscoverGridItem(
             .fillMaxWidth()
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
+            .pointerInput(wallpaper.id, selectionMode, isSelected) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { onLongPress() }
+                )
+            }
     ) {
         SubcomposeAsyncImage(
             model = ImageRequest.Builder(context)
@@ -755,11 +849,7 @@ private fun DiscoverGridItem(
                 .build(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onClick() })
-                },
+            modifier = Modifier.fillMaxSize(),
             loading = {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
             },
@@ -770,6 +860,10 @@ private fun DiscoverGridItem(
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
             }
         )
+
+        if (isSelected) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
+        }
 
         // Source color badge — bottom-left
         Box(
@@ -793,9 +887,25 @@ private fun DiscoverGridItem(
                 contentDescription = "Saved",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(if (selectionMode) Alignment.TopStart else Alignment.TopEnd)
                     .padding(6.dp)
                     .size(20.dp)
+            )
+        }
+
+        if (selectionMode) {
+            Icon(
+                imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (isSelected) "Selected" else "Not selected",
+                tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .background(
+                        if (isSelected) Color.White else Color.Black.copy(alpha = 0.35f),
+                        CircleShape
+                    )
             )
         }
 
@@ -826,7 +936,7 @@ private fun WallpaperDetailOverlay(
     onDownloadToRotation: (BrainrotWallpaper) -> Unit,
     onSaveToGallery: (BrainrotWallpaper) -> Unit,
     onSetWallpaper: (BrainrotWallpaper) -> Unit,
-    onShare: (BrainrotWallpaper) -> Unit,
+    onBlock: (BrainrotWallpaper) -> Unit,
     onReport: (BrainrotWallpaper) -> Unit,
     onTagSearch: (String) -> Unit,
     onMoreLikeThis: (String) -> Unit,
@@ -1143,14 +1253,13 @@ private fun WallpaperDetailOverlay(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Main action - Bookmark with list dropdown
                 var showBookmarkMenu by remember { mutableStateOf(false) }
                 Box(modifier = Modifier.weight(1f)) {
                     FilledIconButton(
-                        onClick = { 
+                        onClick = {
                             if (lists.isNotEmpty()) {
                                 showBookmarkMenu = !showBookmarkMenu
                             } else {
@@ -1162,7 +1271,7 @@ private fun WallpaperDetailOverlay(
                     ) {
                         Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(28.dp))
                     }
-                    
+
                     DropdownMenu(
                         expanded = showBookmarkMenu,
                         onDismissRequest = { showBookmarkMenu = false },
@@ -1181,7 +1290,6 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
-                // Download
                 OutlinedIconButton(
                     onClick = { onDownloadToRotation(wallpaper) },
                     enabled = !isDownloading,
@@ -1195,7 +1303,6 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
-                // Save to gallery
                 OutlinedIconButton(
                     onClick = { onSaveToGallery(wallpaper) },
                     enabled = !isSavingToGallery,
@@ -1209,7 +1316,28 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
-                // Share + Report in overflow menu
+                OutlinedIconButton(
+                    onClick = {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, wallpaper.fullUrl)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                    },
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+
+                OutlinedIconButton(
+                    onClick = { onBlock(wallpaper) },
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                ) {
+                    Icon(Icons.Default.Block, contentDescription = "Never show again", tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+
                 var showMore by remember { mutableStateOf(false) }
                 Box {
                     OutlinedIconButton(
@@ -1219,17 +1347,12 @@ private fun WallpaperDetailOverlay(
                     ) {
                         Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
-                    
+
                     DropdownMenu(
                         expanded = showMore,
                         onDismissRequest = { showMore = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Share", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { onShare(wallpaper); showMore = false },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                        )
                         DropdownMenuItem(
                             text = { Text("Set as wallpaper", style = MaterialTheme.typography.bodyMedium) },
                             onClick = { onSetWallpaper(wallpaper); showMore = false },

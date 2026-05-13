@@ -23,6 +23,7 @@ import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.MalPreferences
+import com.chrisalvis.rotato.data.MalRepository
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealthTracker
@@ -62,6 +63,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val localLists = LocalListsPreferences(app)
     private val localSources = LocalSourcesPreferences(app)
     private val malPrefs = MalPreferences(app)
+    private val malRepo = MalRepository(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
 
     /** Grid feed — single source of truth for displayed wallpapers */
@@ -140,6 +142,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _batchSelected = MutableStateFlow<Set<String>>(emptySet())
+    val batchSelected: StateFlow<Set<String>> = _batchSelected.asStateFlow()
+    val batchMode: StateFlow<Boolean> = _batchSelected
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     private val _tagSuggestions = MutableStateFlow<List<String>>(emptyList())
     val tagSuggestions: StateFlow<List<String>> = _tagSuggestions.asStateFlow()
 
@@ -152,6 +160,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
+    private val persistentBlockedKeys = mutableSetOf<String>()
 
     /** Tracks how many consecutive fetches returned 0 new items while the grid has content. */
     private var consecutiveEmptyFetches = 0
@@ -184,6 +193,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun init() {
+        persistentBlockedKeys.clear()
+        persistentBlockedKeys.addAll(prefs.blockedImageKeys.first())
+        displayedKeys.addAll(persistentBlockedKeys)
         displayedKeys.addAll(prefs.seenWallpaperKeys.first())
         val localEnabled = localSources.sources.first().filter { it.enabled }
         if (localEnabled.isEmpty()) {
@@ -192,7 +204,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         loadLists()
-        loadMore(reset = false)
+        val seeded = applyMalSeedIfEnabledInternal()
+        if (!seeded && _searchQuery.value.isBlank()) {
+            loadMore(reset = false)
+        }
     }
 
     /**
@@ -211,6 +226,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             fetchJob = null
             _gridItems.update { emptyList() }
             displayedKeys.clear()
+            displayedKeys.addAll(persistentBlockedKeys)
+            clearBatchSelection()
             viewModelScope.launch(Dispatchers.IO) { prefs.clearSeenWallpaperKeys() }
             pageCache.clear()
             _endReached.update { false }
@@ -399,10 +416,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Block a URL permanently and remove the wallpaper from the current grid. */
     fun blockAndRemove(wp: BrainrotWallpaper) {
+        blockImage(wp)
         viewModelScope.launch { prefs.blockUrl(wp.fullUrl) }
-        displayedKeys.remove("${wp.source}:${wp.id}")
-        removeFromGrid(wp)
         _selectedItem.update { null }
+    }
+
+    fun blockImage(wp: BrainrotWallpaper) {
+        val key = "${wp.source}:${wp.id}"
+        persistentBlockedKeys.add(key)
+        displayedKeys.add(key)
+        removeFromGrid(wp)
+        if (_selectedItem.value?.id == wp.id && _selectedItem.value?.source == wp.source) {
+            _selectedItem.update { null }
+        }
+        viewModelScope.launch { prefs.addBlockedImageKey(key) }
     }
 
     fun undo() {
@@ -473,6 +500,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun removeFromGrid(wp: BrainrotWallpaper) {
+        _batchSelected.update { it - wp.id }
         _gridItems.update { items ->
             items.filter { it.source != wp.source || it.id != wp.id }
         }
@@ -487,6 +515,25 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val list = localLists.createList(name)
             _selectedListId.update { list.id }
         }
+    }
+
+    fun toggleBatchSelect(id: String) {
+        _batchSelected.update { selected ->
+            if (id in selected) selected - id else selected + id
+        }
+    }
+
+    fun clearBatchSelection() {
+        _batchSelected.update { emptySet() }
+    }
+
+    fun saveBatchToList(listId: String) {
+        val selectedIds = _batchSelected.value
+        if (selectedIds.isEmpty()) return
+        _gridItems.value
+            .filter { it.id in selectedIds }
+            .forEach { addToList(listId, it) }
+        clearBatchSelection()
     }
 
     fun retry() {
@@ -532,6 +579,35 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             prefs.setUseMalFilter(enabled)
             loadMore(reset = true)
         }
+    }
+
+    fun applyMalSeedIfEnabled() {
+        viewModelScope.launch {
+            if (!applyMalSeedIfEnabledInternal()) {
+                loadMore(reset = true)
+            }
+        }
+    }
+
+    private suspend fun applyMalSeedIfEnabledInternal(): Boolean {
+        if (_searchQuery.value.isNotBlank()) return false
+        if (!prefs.brainrotFilters.first().useMalFilter) return false
+        if (malPrefs.accessToken.first().isBlank()) return false
+
+        val entries = malRepo.fetchAnimeList().getOrNull().orEmpty()
+        if (entries.isEmpty()) return false
+
+        malPrefs.setAnimeEntries(entries)
+        val seed = entries
+            .random()
+            .title
+            .trim()
+            .lowercase()
+            .replace(" ", "_")
+            .takeIf { it.isNotBlank() } ?: return false
+
+        setSearchQuery(seed)
+        return true
     }
 
     fun setGlobalBlacklist(tags: Set<String>) {
@@ -614,6 +690,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _searchQuery.update { query }
         clearTagSuggestions()
         loadMore(reset = true)
+    }
+
+    fun searchByTag(tag: String) {
+        val trimmed = tag.trim()
+        if (trimmed.isBlank()) return
+        val current = _searchQuery.value
+        setSearchQuery(trimmed)
+        if (current == trimmed) {
+            loadMore(reset = true)
+        }
     }
 
     fun downloadToRotation(wp: BrainrotWallpaper) {
