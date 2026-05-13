@@ -1,5 +1,6 @@
 package com.chrisalvis.rotato.ui
 
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9,9 +10,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,11 +26,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -79,10 +85,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -269,17 +278,18 @@ private fun LibraryContent(
             var selectedFile by remember { mutableStateOf<File?>(null) }
             selectedFile?.let { file ->
                 ImagePreviewDialog(
-                    file = file,
+                    images = images,
+                    initialFile = file,
                     onDismiss = { selectedFile = null },
-                    onSetWallpaper = {
-                        viewModel.setSpecificWallpaper(file)
+                    onSetWallpaper = { currentFile ->
+                        viewModel.setSpecificWallpaper(currentFile)
                         selectedFile = null
                     },
-                    onRemove = {
-                        viewModel.deleteSelected(setOf(file))
-                        selectedFile = null
+                    onRemove = { currentFile ->
+                        viewModel.removeImage(currentFile)
+                        if (images.size == 1) selectedFile = null
                     },
-                    onSaveToGallery = { viewModel.saveFileToGallery(file) }
+                    onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) }
                 )
             }
             LazyVerticalGrid(
@@ -511,6 +521,10 @@ private fun ImageThumbnail(
     inSelectionMode: Boolean,
     onClick: () -> Unit = {}
 ) {
+    val badgeInfo = remember(file.absolutePath, file.length(), file.lastModified()) {
+        readImageBadgeInfo(file)
+    }
+
     Box(
         modifier = Modifier
             .aspectRatio(1f)
@@ -536,6 +550,23 @@ private fun ImageThumbnail(
             )
         }
 
+        badgeInfo?.let { info ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = "${info.width}×${info.height} · ${info.fileSizeText}",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    maxLines = 1
+                )
+            }
+        }
+
         if (inSelectionMode) {
             Icon(
                 imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
@@ -554,14 +585,76 @@ private fun ImageThumbnail(
     }
 }
 
+private data class ImageBadgeInfo(
+    val width: Int,
+    val height: Int,
+    val fileSizeText: String
+)
+
+private fun readImageBadgeInfo(file: File): ImageBadgeInfo? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, options)
+    if (options.outWidth <= 0 || options.outHeight <= 0) return null
+    return ImageBadgeInfo(
+        width = options.outWidth,
+        height = options.outHeight,
+        fileSizeText = formatFileSize(file.length())
+    )
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kib = bytes / 1024.0
+    if (kib < 1024) return String.format(Locale.US, "%.1f KB", kib)
+    val mib = kib / 1024.0
+    if (mib < 1024) return String.format(Locale.US, "%.1f MB", mib)
+    val gib = mib / 1024.0
+    return String.format(Locale.US, "%.1f GB", gib)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImagePreviewDialog(
-    file: File,
+    images: List<File>,
+    initialFile: File,
     onDismiss: () -> Unit,
-    onSetWallpaper: () -> Unit,
-    onRemove: () -> Unit,
-    onSaveToGallery: () -> Unit = {}
+    onSetWallpaper: (File) -> Unit,
+    onRemove: (File) -> Unit,
+    onSaveToGallery: (File) -> Unit = {}
 ) {
+    val initialPage = remember(images, initialFile.absolutePath) {
+        images.indexOfFirst { it.absolutePath == initialFile.absolutePath }
+            .takeIf { it >= 0 }
+            ?: 0
+    }
+    val pagerState = rememberPagerState(initialPage = initialPage) { images.size }
+    val currentFile by remember(images, pagerState) {
+        derivedStateOf { images.getOrNull(pagerState.currentPage) }
+    }
+
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+        scale = nextScale
+        offset = if (nextScale > 1f) offset + (panChange * nextScale) else Offset.Zero
+    }
+
+    LaunchedEffect(images.size, pagerState.currentPage) {
+        if (images.isEmpty()) {
+            onDismiss()
+            return@LaunchedEffect
+        }
+        if (pagerState.currentPage > images.lastIndex) {
+            pagerState.scrollToPage(images.lastIndex)
+        }
+    }
+
+    LaunchedEffect(currentFile?.absolutePath) {
+        scale = 1f
+        offset = Offset.Zero
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -571,14 +664,34 @@ private fun ImagePreviewDialog(
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            AsyncImage(
-                model = file,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-            )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = scale == 1f,
+                beyondViewportPageCount = 1
+            ) { page ->
+                val pageFile = images.getOrNull(page) ?: return@HorizontalPager
+                val isCurrentPage = page == pagerState.currentPage
 
-            // Close button
+                AsyncImage(
+                    model = pageFile,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = if (isCurrentPage) scale else 1f
+                            scaleY = if (isCurrentPage) scale else 1f
+                            translationX = if (isCurrentPage) offset.x else 0f
+                            translationY = if (isCurrentPage) offset.y else 0f
+                        }
+                        .transformable(
+                            state = transformState,
+                            enabled = isCurrentPage
+                        )
+                )
+            }
+
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier
@@ -590,36 +703,37 @@ private fun ImagePreviewDialog(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = Color.White)
             }
 
-            // Bottom actions
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)))
-                    )
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                OutlinedButton(
-                    onClick = onRemove,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+            currentFile?.let { file ->
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)))
+                        )
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Remove")
-                }
-                OutlinedButton(onClick = onSaveToGallery) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Save to Gallery")
-                }
-                Button(onClick = onSetWallpaper) {
-                    Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Set as Wallpaper")
+                    OutlinedButton(
+                        onClick = { onRemove(file) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Remove")
+                    }
+                    OutlinedButton(onClick = { onSaveToGallery(file) }) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save to Gallery")
+                    }
+                    Button(onClick = { onSetWallpaper(file) }) {
+                        Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Set as Wallpaper")
+                    }
                 }
             }
         }
