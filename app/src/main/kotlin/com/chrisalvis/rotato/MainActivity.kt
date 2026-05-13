@@ -38,6 +38,7 @@ import com.chrisalvis.rotato.ui.MalViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
 import com.chrisalvis.rotato.ui.ScheduleScreen
 import com.chrisalvis.rotato.ui.SetupScreen
+import com.chrisalvis.rotato.ui.StatsScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 
@@ -91,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                     "discover" -> 0
                     "home" -> 1
                     "browse" -> 2
-                    "settings" -> 3
+                    "settings", "sources", "schedule", "stats" -> 3
                     else -> 0
                 }
 
@@ -210,6 +211,7 @@ class MainActivity : AppCompatActivity() {
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToSources = { navController.navigate("sources") },
                                 onNavigateToSchedule = { navController.navigate("schedule") },
+                                onNavigateToStats = { navController.navigate("stats") },
                             )
                         }
                         composable("sources") {
@@ -217,6 +219,9 @@ class MainActivity : AppCompatActivity() {
                         }
                         composable("schedule") {
                             ScheduleScreen(onNavigateBack = { navController.popBackStack() })
+                        }
+                        composable("stats") {
+                            StatsScreen(onNavigateBack = { navController.popBackStack() })
                         }
                         composable("browse") {
                             BrowseScreen()

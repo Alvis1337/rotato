@@ -9,7 +9,8 @@ data class LocalList(
     /** When true, all wallpapers in this collection auto-download to the Library rotation pool. */
     val useAsRotation: Boolean = false,
     /** When true, the collection is hidden unless unlocked with biometrics this session. */
-    val isLocked: Boolean = false
+    val isLocked: Boolean = false,
+    val coverUrl: String = ""
 )
 
 data class LocalWallpaperEntry(

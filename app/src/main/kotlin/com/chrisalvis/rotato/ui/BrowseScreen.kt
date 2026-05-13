@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
@@ -44,8 +45,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,13 +77,16 @@ fun BrowseScreen() {
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
-    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val collectionSearch by vm.collectionSearch.collectAsStateWithLifecycle()
     val sortOrder by vm.sortOrder.collectAsStateWithLifecycle()
     val brokenEntryIds by vm.brokenEntryIds.collectAsStateWithLifecycle()
     val isCheckingLinks by vm.isCheckingLinks.collectAsStateWithLifecycle()
     val exportProgress by vm.exportProgress.collectAsStateWithLifecycle()
+    val restoreProgress by vm.restoreProgress.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
@@ -89,12 +96,11 @@ fun BrowseScreen() {
 
     var showMoveDialog by remember { mutableStateOf(false) }
     var showSaveRotationDialog by remember { mutableStateOf(false) }
-    var showSearch by remember { mutableStateOf(false) }
     var showRemoveBrokenConfirm by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedList?.id) {
-        showSearch = false
+        vm.setCollectionSearch("")
         showSortMenu = false
     }
     LaunchedEffect(vm, context) {
@@ -106,6 +112,9 @@ fun BrowseScreen() {
         vm.exportCompletion.collectLatest { count ->
             android.widget.Toast.makeText(context, "Exported $count images", android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+    LaunchedEffect(restoreProgress) {
+        restoreProgress?.let { snackbarHostState.showSnackbar(it) }
     }
 
     if (showSaveRotationDialog) {
@@ -135,11 +144,29 @@ fun BrowseScreen() {
         if (!uris.isNullOrEmpty() && listId != null) vm.addLocalImages(listId, uris)
         pickerTargetListId = null
     }
+    val restoreBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) vm.restoreFromBackup(context, uri)
+    }
 
     BackHandler(enabled = selectionMode) { vm.exitSelectionMode() }
     BackHandler(enabled = !selectionMode && selectedList != null) { vm.clearSelection() }
 
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
+
+    fun updateCover(wallpaper: BrowseWallpaper) {
+        val entry = vm.wallpaperEntry(wallpaper.entryId) ?: return
+        vm.setCoverImage(entry)
+        android.widget.Toast.makeText(context, "Cover image updated", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    val selectedWallpapers = remember(selected, wallpapers) {
+        wallpapers.filter { it.entryId in selected }
+    }
+    val singleSelectedWallpaper = remember(selectedWallpapers) {
+        selectedWallpapers.singleOrNull()
+    }
 
     showActionsFor?.let { wp ->
         WallpaperDetailSheet(
@@ -149,6 +176,16 @@ fun BrowseScreen() {
             isBroken = brokenEntryIds.contains(wp.entryId),
             onToggleRotation = { vm.toggleRotation(wp); showActionsFor = null },
             onSaveToGallery = { vm.saveWallpaper(wp); showActionsFor = null },
+            onCopyUrl = {
+                clipboard.setText(AnnotatedString(wp.fullUrl.ifBlank { wp.thumbUrl }))
+                android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
+                showActionsFor = null
+            },
+            onShare = {
+                vm.shareWallpapers(context, listOf(wp.toLocalWallpaperEntry(selectedList?.id.orEmpty())))
+                showActionsFor = null
+            },
+            onSetAsCover = { updateCover(wp); showActionsFor = null },
             onRemoveFromCollection = { if (wp.entryId.isNotBlank()) { vm.removeWallpaper(wp.entryId); showActionsFor = null } },
             onDismiss = { showActionsFor = null }
         )
@@ -179,6 +216,7 @@ fun BrowseScreen() {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -211,15 +249,6 @@ fun BrowseScreen() {
                 },
                 actions = {
                     if (!selectionMode && selectedList != null) {
-                        IconButton(onClick = {
-                            if (showSearch) vm.setSearchQuery("")
-                            showSearch = !showSearch
-                        }) {
-                            Icon(
-                                if (showSearch) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = if (showSearch) "Hide search" else "Search"
-                            )
-                        }
                         if (wallpapers.isNotEmpty()) {
                             IconButton(onClick = { vm.exportCollectionToGallery() }) {
                                 Icon(Icons.Default.Download, contentDescription = "Export to gallery")
@@ -241,6 +270,9 @@ fun BrowseScreen() {
                         IconButton(onClick = { showSaveRotationDialog = true }) {
                             Icon(Icons.Outlined.Wallpaper, contentDescription = "Save rotation as collection")
                         }
+                        IconButton(onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "*/*")) }) {
+                            Icon(Icons.Default.SettingsBackupRestore, contentDescription = "Restore backup")
+                        }
                         IconButton(onClick = { vm.showCreateDialog() }) {
                             Icon(Icons.Default.Add, contentDescription = "New collection")
                         }
@@ -251,7 +283,6 @@ fun BrowseScreen() {
         bottomBar = {
             if (selectionMode && selected.isNotEmpty() && selectedList != null) {
                 BottomAppBar {
-                    Spacer(Modifier.weight(1f))
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -279,7 +310,22 @@ fun BrowseScreen() {
                         Icon(Icons.Default.Download, contentDescription = "Save to gallery")
                         Text("Save", style = MaterialTheme.typography.labelSmall)
                     }
-                    Spacer(Modifier.weight(1f))
+                    if (singleSelectedWallpaper != null) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    updateCover(singleSelectedWallpaper)
+                                    vm.exitSelectionMode()
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Set collection cover")
+                            Text("Set cover", style = MaterialTheme.typography.labelSmall)
+                        }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -452,6 +498,7 @@ private fun WallpaperDetailSheet(
     isBroken: Boolean,
     onToggleRotation: () -> Unit,
     onSaveToGallery: () -> Unit,
+    onSetAsCover: () -> Unit,
     onRemoveFromCollection: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -504,6 +551,11 @@ private fun WallpaperDetailSheet(
                 headlineContent = { Text("Share") },
                 leadingContent = { Icon(Icons.Default.Share, contentDescription = null) },
                 modifier = Modifier.clickable(onClick = { shareWallpaper(context, wallpaper); onDismiss() })
+            )
+            ListItem(
+                headlineContent = { Text("Set as cover") },
+                leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = { onSetAsCover(); onDismiss() })
             )
             ListItem(
                 headlineContent = { Text("Remove from collection", color = MaterialTheme.colorScheme.error) },
@@ -858,7 +910,7 @@ private fun WallpaperGridContent(
                 wallpaper = wp,
                 isInRotation = isInRotation(wp),
                 isDownloading = downloading.contains(wp.sourceId),
-                isSelected = selected.contains(wp.sourceId),
+                isSelected = selected.contains(wp.entryId),
                 isBroken = brokenEntryIds.contains(wp.entryId),
                 selectionMode = selectionMode,
                 onTap = { onTap(wp) },

@@ -72,6 +72,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToSources: () -> Unit = {},
     onNavigateToSchedule: () -> Unit = {},
+    onNavigateToStats: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val malLoggedIn by malViewModel.isLoggedIn.collectAsStateWithLifecycle()
@@ -244,6 +245,17 @@ fun SettingsScreen(
                     Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Manage Schedule")
+                }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Stats") {
+                OutlinedButton(
+                    onClick = onNavigateToStats,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("View Stats")
                 }
             }
 
