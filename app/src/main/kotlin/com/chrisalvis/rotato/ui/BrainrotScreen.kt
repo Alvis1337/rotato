@@ -65,6 +65,7 @@ import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
@@ -76,6 +77,11 @@ private fun parseAspectRatio(resolution: String): Float {
     val h = parts[1].trim().toFloatOrNull() ?: return 16f / 9f
     if (w <= 0f || h <= 0f) return 16f / 9f
     return w / h
+}
+
+private fun completeQuery(current: String, tag: String): String {
+    val beforeLastToken = current.trimEnd().substringBeforeLast(' ', missingDelimiterValue = "")
+    return if (beforeLastToken.isBlank()) tag else "$beforeLastToken $tag"
 }
 
 private fun Int.toComposeColor(): Color = Color((this and 0xFFFFFF) or 0xFF000000.toInt())
@@ -113,6 +119,7 @@ fun BrainrotScreen(
     val allSources by vm.allSources.collectAsStateWithLifecycle()
     val discoverMode by vm.discoverMode.collectAsStateWithLifecycle()
     val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
+    val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
     val coroutineScope = rememberCoroutineScope()
@@ -149,7 +156,18 @@ fun BrainrotScreen(
     var showHandsFree by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
-    LaunchedEffect(showSearch) { if (showSearch) searchText = searchQuery.ifBlank { "" } }
+    LaunchedEffect(showSearch) {
+        if (showSearch) {
+            searchText = searchQuery.ifBlank { "" }
+        } else {
+            vm.clearTagSuggestions()
+        }
+    }
+    LaunchedEffect(showSearch, searchText) {
+        if (!showSearch) return@LaunchedEffect
+        delay(300)
+        vm.fetchTagSuggestions(searchText)
+    }
     // Track position in grid while user browses the detail overlay; restore on dismiss
     var restoreScrollIndex by remember { mutableIntStateOf(-1) }
     LaunchedEffect(selectedItem) {
@@ -497,12 +515,18 @@ fun BrainrotScreen(
                                                 query = searchText,
                                                 onQueryChange = { searchText = it },
                                                 onSearch = {
-                                                    vm.setSearchQuery(it.trim())
+                                                    val trimmed = it.trim()
+                                                    searchText = trimmed
+                                                    vm.setSearchQuery(trimmed)
+                                                    vm.clearTagSuggestions()
                                                     showSearch = false
                                                 },
                                                 expanded = true,
                                                 onExpandedChange = { expanded ->
-                                                    if (!expanded) showSearch = false
+                                                    if (!expanded) {
+                                                        vm.clearTagSuggestions()
+                                                        showSearch = false
+                                                    }
                                                 },
                                                 placeholder = { Text("e.g. blue_hair 1girl") },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
@@ -524,7 +548,10 @@ fun BrainrotScreen(
                                         },
                                         expanded = true,
                                         onExpandedChange = { expanded ->
-                                            if (!expanded) showSearch = false
+                                            if (!expanded) {
+                                                vm.clearTagSuggestions()
+                                                showSearch = false
+                                            }
                                         },
                                         modifier = Modifier.align(Alignment.TopCenter)
                                     ) {
@@ -537,6 +564,24 @@ fun BrainrotScreen(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                            if (tagSuggestions.isNotEmpty()) {
+                                                LazyRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    contentPadding = PaddingValues(vertical = 2.dp)
+                                                ) {
+                                                    items(tagSuggestions, key = { it }) { tag ->
+                                                        SuggestionChip(
+                                                            onClick = {
+                                                                val completed = completeQuery(searchText, tag)
+                                                                searchText = completed
+                                                                vm.setSearchQuery(completed)
+                                                                vm.clearTagSuggestions()
+                                                            },
+                                                            label = { Text(tag) }
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             val searchTokens = searchText.split(" ").filter { it.isNotBlank() }
                                             if (danbooruEnabled && searchTokens.size > 2) {
                                                 Text(
@@ -592,6 +637,7 @@ fun BrainrotScreen(
                                                             onClick = {
                                                                 searchText = pinned
                                                                 vm.setSearchQuery(pinned)
+                                                                vm.clearTagSuggestions()
                                                                 showSearch = false
                                                             },
                                                             label = { Text(pinned, style = MaterialTheme.typography.labelSmall) },

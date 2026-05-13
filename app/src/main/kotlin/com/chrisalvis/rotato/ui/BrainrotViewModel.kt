@@ -29,6 +29,7 @@ import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.fetchPageFromSource
+import com.chrisalvis.rotato.data.plugins.http
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
@@ -50,7 +51,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.Request
+import org.json.JSONArray
 import java.io.File
+import java.net.URLEncoder
 
 class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -136,6 +140,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _tagSuggestions = MutableStateFlow<List<String>>(emptyList())
+    val tagSuggestions: StateFlow<List<String>> = _tagSuggestions.asStateFlow()
+
     private val _resetVersion = MutableStateFlow(0)
     val resetVersion: StateFlow<Int> = _resetVersion.asStateFlow()
 
@@ -161,6 +168,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val skipEvent: SharedFlow<Unit> = _skipEvent
 
     private var fetchJob: Job? = null
+    private var tagSuggestionsJob: Job? = null
 
     init {
         viewModelScope.launch { init() }
@@ -176,6 +184,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun init() {
+        displayedKeys.addAll(prefs.seenWallpaperKeys.first())
         val localEnabled = localSources.sources.first().filter { it.enabled }
         if (localEnabled.isEmpty()) {
             _noSources.update { true }
@@ -183,7 +192,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         loadLists()
-        loadMore(reset = true)
+        loadMore(reset = false)
     }
 
     /**
@@ -202,6 +211,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             fetchJob = null
             _gridItems.update { emptyList() }
             displayedKeys.clear()
+            viewModelScope.launch(Dispatchers.IO) { prefs.clearSeenWallpaperKeys() }
             pageCache.clear()
             _endReached.update { false }
             _noResults.update { false }
@@ -315,6 +325,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 consecutiveEmptyFetches = 0
                 _gridItems.update { it + newItems }  // single batch update → one recomposition
+                viewModelScope.launch(Dispatchers.IO) {
+                    prefs.addSeenWallpaperKeys(newItems.map { "${it.source}:${it.id}" }.toSet())
+                }
             }
             } finally {
                 if (isInitial) _loading.update { false } else _loadingMore.update { false }
@@ -559,9 +572,47 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         loadMore(reset = false)
     }
 
+    fun fetchTagSuggestions(query: String) {
+        val token = query.trimEnd().substringAfterLast(' ').trim()
+        if (token.length < 2) {
+            clearTagSuggestions()
+            return
+        }
+        tagSuggestionsJob?.cancel()
+        tagSuggestionsJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val encodedToken = URLEncoder.encode(token, Charsets.UTF_8.name())
+                val url = "https://danbooru.donmai.us/tags.json?search[name_matches]=${encodedToken}*&search[order]=count&limit=8"
+                val req = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Rotato/1.0")
+                    .build()
+                http.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        _tagSuggestions.update { emptyList() }
+                        return@use
+                    }
+                    val arr = JSONArray(resp.body?.string().orEmpty())
+                    val tags = (0 until arr.length()).mapNotNull { index ->
+                        arr.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() }
+                    }
+                    _tagSuggestions.update { tags }
+                }
+            } catch (_: Exception) {
+                _tagSuggestions.update { emptyList() }
+            }
+        }
+    }
+
+    fun clearTagSuggestions() {
+        tagSuggestionsJob?.cancel()
+        _tagSuggestions.update { emptyList() }
+    }
+
     fun setSearchQuery(query: String) {
         if (query == _searchQuery.value) return
         _searchQuery.update { query }
+        clearTagSuggestions()
         loadMore(reset = true)
     }
 

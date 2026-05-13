@@ -48,6 +48,7 @@ class RotatoPreferences(private val context: Context) {
         val ROTATION_ERRORS = stringPreferencesKey("rotation_errors_json")
         val PINNED_SEARCHES = stringPreferencesKey("pinned_searches_json")
         val DISCOVER_MODE = stringPreferencesKey("discover_mode")
+        val SEEN_WALLPAPER_KEYS = stringPreferencesKey("seen_wallpaper_keys_json")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -192,8 +193,40 @@ class RotatoPreferences(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { it[DISCOVER_BATCH_SIZE] ?: 20 }
 
+    val seenWallpaperKeys: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val json = prefs[SEEN_WALLPAPER_KEYS] ?: return@map emptySet()
+            try {
+                val arr = JSONArray(json)
+                (0 until arr.length()).map { arr.getString(it) }.toSet()
+            } catch (_: Exception) {
+                emptySet()
+            }
+        }
+
     suspend fun setDiscoverBatchSize(size: Int) {
         context.dataStore.edit { it[DISCOVER_BATCH_SIZE] = size }
+    }
+
+    suspend fun addSeenWallpaperKeys(keys: Set<String>) {
+        if (keys.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val existing = try {
+                val arr = JSONArray(prefs[SEEN_WALLPAPER_KEYS] ?: "[]")
+                (0 until arr.length()).map { arr.getString(it) }.toMutableSet()
+            } catch (_: Exception) {
+                mutableSetOf()
+            }
+            existing.addAll(keys)
+            val capped = if (existing.size > 2000) existing.toList().takeLast(2000).toSet() else existing
+            val arr = JSONArray().apply { capped.forEach { put(it) } }
+            prefs[SEEN_WALLPAPER_KEYS] = arr.toString()
+        }
+    }
+
+    suspend fun clearSeenWallpaperKeys() {
+        context.dataStore.edit { it.remove(SEEN_WALLPAPER_KEYS) }
     }
 
     // null = DataStore hasn't emitted yet (initialValue in collectAsStateWithLifecycle)
