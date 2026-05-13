@@ -71,6 +71,14 @@
             android:exported="false" />
 
         <receiver
+            android:name=".worker.ChargingReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".worker.RotatoWidgetProvider"
             android:exported="true"
             android:label="Rotato Widget">

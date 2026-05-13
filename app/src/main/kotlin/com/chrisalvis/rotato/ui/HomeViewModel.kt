@@ -36,6 +36,7 @@ import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.historyFromJson
 import kotlinx.coroutines.flow.combine
+import com.chrisalvis.rotato.worker.RotatoWidgetProvider
 import com.chrisalvis.rotato.worker.WallpaperWorker
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.CHAIN_WORK_NAME
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.KEY_INTERVAL_MINUTES
@@ -96,6 +97,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val autoPauseSettings: StateFlow<AutoPauseSettings> = preferences.autoPauseSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoPauseSettings())
+
+    val chargingTriggerEnabled: StateFlow<Boolean> = preferences.chargingTriggerEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val autoFavoriteEnabled: StateFlow<Boolean> = preferences.autoFavoriteEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val autoFavoriteMinutes: StateFlow<Int> = preferences.autoFavoriteMinutes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 120)
+
+    val widgetCollectionId: StateFlow<String> = preferences.widgetCollectionId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     val stats: StateFlow<RotationStats> = combine(
         preferences.totalRotations,
@@ -267,6 +280,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setWidgetCollectionId(listId: String) {
+        viewModelScope.launch {
+            preferences.setWidgetCollectionId(listId)
+            RotatoWidgetProvider.refreshAll(getApplication())
+        }
+    }
+
     fun setAutoPauseNight(enabled: Boolean) {
         viewModelScope.launch { preferences.setAutoPauseNight(enabled) }
     }
@@ -277,6 +297,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAutoPauseCharging(enabled: Boolean) {
         viewModelScope.launch { preferences.setAutoPauseCharging(enabled) }
+    }
+
+    fun setChargingTriggerEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setChargingTriggerEnabled(enabled) }
+    }
+
+    fun setAutoFavoriteEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoFavoriteEnabled(enabled) }
+    }
+
+    fun setAutoFavoriteMinutes(minutes: Int) {
+        viewModelScope.launch { preferences.setAutoFavoriteMinutes(minutes) }
     }
 
     val discoverBatchSize: StateFlow<Int> = preferences.discoverBatchSize
@@ -498,6 +530,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val nsfwMode = preferences.nsfwMode.first()
                 val minRes = preferences.brainrotFilters.first().minResolution
                 val aspectRatio = preferences.brainrotFilters.first().aspectRatio
+                val chargingTriggerEnabled = preferences.chargingTriggerEnabled.first()
+                val autoFavoriteEnabled = preferences.autoFavoriteEnabled.first()
+                val autoFavoriteMinutes = preferences.autoFavoriteMinutes.first()
+                val widgetCollectionId = preferences.widgetCollectionId.first()
                 val malUsername = malPrefs.username.first()
                 val malStatuses = malPrefs.filterStatuses.first()
                 val malMinScore = malPrefs.filterMinScore.first()
@@ -544,7 +580,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 val json = JSONObject().apply {
-                    put("version", 2)
+                    put("version", 3)
                     put("sources", sourcesArr)
                     put("preferences", JSONObject().apply {
                         put("intervalMinutes", prefs.intervalMinutes)
@@ -553,6 +589,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         put("nsfwMode", nsfwMode)
                         put("minResolution", minRes.name)
                         put("aspectRatio", aspectRatio.name)
+                        put("chargingTriggerEnabled", chargingTriggerEnabled)
+                        put("autoFavoriteEnabled", autoFavoriteEnabled)
+                        put("autoFavoriteMinutes", autoFavoriteMinutes)
+                        put("widgetCollectionId", widgetCollectionId)
                     })
                     put("mal", JSONObject().apply {
                         put("username", malUsername)
@@ -601,6 +641,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // Restore preferences
+                var importedWidgetCollectionId: String? = null
                 val prefsObj = json.optJSONObject("preferences")
                 if (prefsObj != null) {
                     preferences.setIntervalMinutes(prefsObj.optInt("intervalMinutes", 60))
@@ -612,6 +653,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         .getOrNull()?.let { preferences.setMinResolution(it) }
                     runCatching { AspectRatio.valueOf(prefsObj.optString("aspectRatio", "ANY")) }
                         .getOrNull()?.let { preferences.setAspectRatio(it) }
+                    preferences.setChargingTriggerEnabled(prefsObj.optBoolean("chargingTriggerEnabled", false))
+                    preferences.setAutoFavoriteEnabled(prefsObj.optBoolean("autoFavoriteEnabled", false))
+                    preferences.setAutoFavoriteMinutes(prefsObj.optInt("autoFavoriteMinutes", 120))
+                    importedWidgetCollectionId = prefsObj.optString("widgetCollectionId", "")
                 }
 
                 // Restore MAL filter preferences (not auth tokens — those expire)
@@ -670,6 +715,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                importedWidgetCollectionId?.let { preferences.setWidgetCollectionId(it) }
+                RotatoWidgetProvider.refreshAll(getApplication())
                 _backupState.update { BackupState.SUCCESS }
             }.onFailure {
                 android.util.Log.e("HomeViewModel", "Import failed", it)

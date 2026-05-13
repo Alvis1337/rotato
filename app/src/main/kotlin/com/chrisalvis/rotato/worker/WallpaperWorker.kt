@@ -74,6 +74,13 @@ class WallpaperWorker(
             )
         }
 
+        val autoFavoriteEnabled = prefs.autoFavoriteEnabled.first()
+        val autoFavoriteMinutes = prefs.autoFavoriteMinutes.first()
+        val lastWallpaperThumbUrl = prefs.lastWallpaperThumbUrl.first()
+        val lastWallpaperFullUrl = prefs.lastWallpaperFullUrl.first()
+        val lastWallpaperSource = prefs.lastWallpaperSource.first()
+        val lastWallpaperSetMs = prefs.lastWallpaperSetMs.first()
+
         // Auto-pause: night window
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         if (autoPause.isInNightWindow(currentHour)) return Result.success()
@@ -138,21 +145,42 @@ class WallpaperWorker(
             try {
                 wallpaperManager.setBitmap(screenBitmap, null, true, flags)
 
+                val now = System.currentTimeMillis()
                 prefs.recordRotationAndIncrement()
 
                 val matchingEntry = scheduledEntry
                     ?: allWallpapers.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
+                maybeAutoFavoritePreviousWallpaper(
+                    listPrefs = listPrefs,
+                    autoFavoriteEnabled = autoFavoriteEnabled,
+                    autoFavoriteMinutes = autoFavoriteMinutes,
+                    lastWallpaperThumbUrl = lastWallpaperThumbUrl,
+                    lastWallpaperFullUrl = lastWallpaperFullUrl,
+                    lastWallpaperSource = lastWallpaperSource,
+                    lastWallpaperSetMs = lastWallpaperSetMs,
+                    now = now,
+                )
+
+                val currentThumbUrl = matchingEntry?.thumbUrl ?: targetFile.absolutePath
+                val currentFullUrl = matchingEntry?.fullUrl ?: targetFile.absolutePath
+                val currentSource = matchingEntry?.source ?: "local"
                 val historyItem = WallpaperHistoryItem(
                     thumbUrl = targetFile.absolutePath,
-                    fullUrl = matchingEntry?.fullUrl ?: targetFile.absolutePath,
-                    source = matchingEntry?.source ?: "local",
-                    timestamp = System.currentTimeMillis(),
+                    fullUrl = currentFullUrl,
+                    source = currentSource,
+                    timestamp = now,
                     tags = matchingEntry?.tags ?: emptyList(),
                     pageUrl = matchingEntry?.pageUrl ?: ""
                 )
                 val updatedHistory = history.toMutableList().apply { add(0, historyItem) }
                 prefs.setHistoryJson(updatedHistory.take(50).toJson())
+                prefs.setLastWallpaperState(
+                    thumbUrl = currentThumbUrl,
+                    fullUrl = currentFullUrl,
+                    source = currentSource,
+                    setMs = now,
+                )
 
                 postWallpaperSetNotification(screenBitmap)
             } finally {
@@ -246,6 +274,28 @@ class WallpaperWorker(
         }
     }
 
+    private suspend fun maybeAutoFavoritePreviousWallpaper(
+        listPrefs: LocalListsPreferences,
+        autoFavoriteEnabled: Boolean,
+        autoFavoriteMinutes: Int,
+        lastWallpaperThumbUrl: String,
+        lastWallpaperFullUrl: String,
+        lastWallpaperSource: String,
+        lastWallpaperSetMs: Long,
+        now: Long,
+    ) {
+        if (!autoFavoriteEnabled || lastWallpaperSetMs <= 0L) return
+        val keepThresholdMs = TimeUnit.MINUTES.toMillis(autoFavoriteMinutes.toLong().coerceAtLeast(1L))
+        if (now - lastWallpaperSetMs < keepThresholdMs) return
+
+        val wallpaper = FavoriteWallpaperReceiver.wallpaperFromUrls(
+            thumbUrl = lastWallpaperThumbUrl,
+            fullUrl = lastWallpaperFullUrl,
+            source = lastWallpaperSource,
+        ) ?: return
+        FavoriteWallpaperReceiver.saveWallpaperToFavorites(listPrefs, wallpaper)
+    }
+
     private fun postWallpaperSetNotification(bitmap: Bitmap) {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         if (!nm.areNotificationsEnabled()) return
@@ -262,7 +312,7 @@ class WallpaperWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val keepIntent = PendingIntent.getBroadcast(
+        val favoriteIntent = PendingIntent.getBroadcast(
             applicationContext, 2,
             Intent(applicationContext, FavoriteWallpaperReceiver::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -278,7 +328,7 @@ class WallpaperWorker(
             .setContentIntent(openIntent)
             .setAutoCancel(true)
             .addAction(0, "Skip", skipIntent)
-            .addAction(0, "Keep", keepIntent)
+            .addAction(0, "⭐ Favorite", favoriteIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 

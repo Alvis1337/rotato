@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chrisalvis.rotato.BuildConfig
 import com.chrisalvis.rotato.data.AutoPauseSettings
+import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotationInterval
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
@@ -75,6 +77,8 @@ fun SettingsScreen(
     onNavigateToStats: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val collections by viewModel.collections.collectAsStateWithLifecycle()
+    val widgetCollectionId by viewModel.widgetCollectionId.collectAsStateWithLifecycle()
     val malLoggedIn by malViewModel.isLoggedIn.collectAsStateWithLifecycle()
     val malUsername by malViewModel.username.collectAsStateWithLifecycle()
     val malAnimeCount by malViewModel.animeCount.collectAsStateWithLifecycle()
@@ -84,6 +88,9 @@ fun SettingsScreen(
     val malFilterMinScore by malViewModel.filterMinScore.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
     val autoPauseSettings by viewModel.autoPauseSettings.collectAsStateWithLifecycle()
+    val chargingTriggerEnabled by viewModel.chargingTriggerEnabled.collectAsStateWithLifecycle()
+    val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
+    val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
@@ -188,6 +195,29 @@ fun SettingsScreen(
                         Text(target.label)
                     }
                 }
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Rotation Triggers") {
+                RotationTriggersSection(
+                    chargingTriggerEnabled = chargingTriggerEnabled,
+                    autoFavoriteEnabled = autoFavoriteEnabled,
+                    autoFavoriteMinutes = autoFavoriteMinutes,
+                    onChargingTriggerToggle = { viewModel.setChargingTriggerEnabled(it) },
+                    onAutoFavoriteToggle = { viewModel.setAutoFavoriteEnabled(it) },
+                    onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) }
+                )
+            }
+
+            HorizontalDivider()
+
+            SettingsSection(title = "Widget") {
+                WidgetCollectionDropdown(
+                    selectedCollectionId = widgetCollectionId,
+                    lists = collections,
+                    onSelect = viewModel::setWidgetCollectionId
+                )
             }
 
             HorizontalDivider()
@@ -473,6 +503,73 @@ private fun SettingsSection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RotationTriggersSection(
+    chargingTriggerEnabled: Boolean,
+    autoFavoriteEnabled: Boolean,
+    autoFavoriteMinutes: Int,
+    onChargingTriggerToggle: (Boolean) -> Unit,
+    onAutoFavoriteToggle: (Boolean) -> Unit,
+    onAutoFavoriteMinutesChange: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Change wallpaper on charge")
+                Text(
+                    "Rotate to next wallpaper when plugged in",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = chargingTriggerEnabled, onCheckedChange = onChargingTriggerToggle)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Auto-favorite long-running wallpapers")
+                Text(
+                    "Save wallpapers that stay on screen past your keep threshold",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = autoFavoriteEnabled, onCheckedChange = onAutoFavoriteToggle)
+        }
+
+        AnimatedVisibility(visible = autoFavoriteEnabled) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Keep threshold (minutes)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(30, 60, 120, 240).forEach { minutes ->
+                        FilterChip(
+                            selected = autoFavoriteMinutes == minutes,
+                            onClick = { onAutoFavoriteMinutesChange(minutes) },
+                            label = { Text("$minutes") }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AutoPauseSection(
@@ -543,6 +640,60 @@ private fun AutoPauseSection(
                 )
             }
             Switch(checked = settings.chargingEnabled, onCheckedChange = onChargingToggle)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WidgetCollectionDropdown(
+    selectedCollectionId: String,
+    lists: List<LocalList>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Main rotation queue"
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Widget collection",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "Choose which collection the home-screen widget previews.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            OutlinedTextField(
+                value = selectedLabel,
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                modifier = Modifier
+                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+                singleLine = true
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Main rotation queue") },
+                    onClick = {
+                        onSelect("")
+                        expanded = false
+                    }
+                )
+                lists.forEach { list ->
+                    DropdownMenuItem(
+                        text = { Text(list.name) },
+                        onClick = {
+                            onSelect(list.id)
+                            expanded = false
+                        }
+                    )
+                }
+            }
         }
     }
 }

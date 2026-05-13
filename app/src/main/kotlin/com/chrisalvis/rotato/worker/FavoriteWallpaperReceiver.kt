@@ -9,9 +9,11 @@ import androidx.core.app.NotificationCompat
 import com.chrisalvis.rotato.MainActivity
 import com.chrisalvis.rotato.R
 import com.chrisalvis.rotato.RotatoApp
+import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
-import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.historyFromJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,41 +30,34 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
             try {
                 val prefs = RotatoPreferences(context)
                 val listsPrefs = LocalListsPreferences(context)
-
                 val history = historyFromJson(prefs.historyJson.first())
-                val current = history.firstOrNull() ?: return@launch
-
-                val lists = listsPrefs.lists.first()
-                val liked = lists.firstOrNull { it.name == LIKED_LIST_NAME }
-                    ?: listsPrefs.createList(LIKED_LIST_NAME)
-
-                val sourceId = if (current.source == "local") {
-                    File(current.fullUrl).nameWithoutExtension
-                } else {
-                    current.fullUrl
-                }
-
-                val alreadySaved = listsPrefs.allWallpapers.first()
-                    .any { it.listId == liked.id && it.sourceId == sourceId }
-                if (alreadySaved) {
-                    postConfirmation(context, "Already in Liked", "This wallpaper is already saved")
-                    return@launch
-                }
-
-                listsPrefs.addWallpaperEntry(
-                    LocalWallpaperEntry(
-                        listId = liked.id,
-                        sourceId = sourceId,
-                        source = current.source,
-                        thumbUrl = current.thumbUrl,
-                        fullUrl = current.fullUrl,
-                        resolution = "",
+                val current = history.firstOrNull()
+                val lastThumbUrl = prefs.lastWallpaperThumbUrl.first()
+                val lastFullUrl = prefs.lastWallpaperFullUrl.first()
+                val lastSource = prefs.lastWallpaperSource.first()
+                val wallpaper = if (current != null) {
+                    wallpaperFromUrls(
+                        thumbUrl = lastThumbUrl.ifBlank { current.thumbUrl },
+                        fullUrl = lastFullUrl.ifBlank { current.fullUrl },
+                        source = lastSource.ifBlank { current.source },
                         pageUrl = current.pageUrl,
-                        tags = current.tags
+                        tags = current.tags,
                     )
-                )
+                } else {
+                    wallpaperFromUrls(
+                        thumbUrl = lastThumbUrl,
+                        fullUrl = lastFullUrl,
+                        source = lastSource,
+                    )
+                }
 
-                postConfirmation(context, "Saved to Liked!", "Added to your Liked collection")
+                when {
+                    wallpaper == null -> postConfirmation(context, "Nothing to save", "Wallpaper details are unavailable")
+                    saveWallpaperToFavorites(listsPrefs, wallpaper) -> {
+                        postConfirmation(context, "Saved to Favorites!", "Added to your Favorites collection")
+                    }
+                    else -> postConfirmation(context, "Already in Favorites", "This wallpaper is already saved")
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -89,7 +84,61 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val LIKED_LIST_NAME = "Liked"
+        const val FAVORITES_LIST_NAME = "Favorites"
         private const val NOTIF_ID_FAVORITED = 1003
+
+        suspend fun saveWallpaperToFavorites(
+            listsPrefs: LocalListsPreferences,
+            wallpaper: BrainrotWallpaper,
+        ): Boolean {
+            val favorites = getOrCreateFavoritesList(listsPrefs)
+            return listsPrefs.addWallpaper(favorites.id, wallpaper)
+        }
+
+        fun wallpaperFromHistory(item: WallpaperHistoryItem): BrainrotWallpaper? = wallpaperFromUrls(
+            thumbUrl = item.thumbUrl,
+            fullUrl = item.fullUrl,
+            source = item.source,
+            pageUrl = item.pageUrl,
+            tags = item.tags,
+        )
+
+        fun wallpaperFromUrls(
+            thumbUrl: String,
+            fullUrl: String,
+            source: String,
+            pageUrl: String = "",
+            tags: List<String> = emptyList(),
+        ): BrainrotWallpaper? {
+            val resolvedFullUrl = fullUrl.ifBlank { thumbUrl }.trim()
+            val resolvedThumbUrl = thumbUrl.ifBlank { resolvedFullUrl }.trim()
+            val resolvedSource = source.ifBlank { "local" }
+            val sourceId = favoriteSourceId(resolvedSource, resolvedFullUrl, resolvedThumbUrl)
+            if (sourceId.isBlank() || resolvedFullUrl.isBlank()) return null
+            return BrainrotWallpaper(
+                id = sourceId,
+                source = resolvedSource,
+                thumbUrl = resolvedThumbUrl,
+                sampleUrl = resolvedThumbUrl,
+                fullUrl = resolvedFullUrl,
+                resolution = "",
+                pageUrl = pageUrl,
+                tags = tags,
+            )
+        }
+
+        private suspend fun getOrCreateFavoritesList(listsPrefs: LocalListsPreferences): LocalList {
+            return listsPrefs.lists.first().firstOrNull { it.name.equals(FAVORITES_LIST_NAME, ignoreCase = true) }
+                ?: listsPrefs.createList(FAVORITES_LIST_NAME)
+        }
+
+        private fun favoriteSourceId(source: String, fullUrl: String, thumbUrl: String): String {
+            val key = fullUrl.ifBlank { thumbUrl }
+            return if (source == "local" || source == "device") {
+                File(key).nameWithoutExtension
+            } else {
+                key
+            }
+        }
     }
 }

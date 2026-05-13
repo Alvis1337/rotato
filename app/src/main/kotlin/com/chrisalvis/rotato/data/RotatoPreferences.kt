@@ -45,10 +45,18 @@ class RotatoPreferences(private val context: Context) {
         val AUTO_PAUSE_START = intPreferencesKey("auto_pause_start_hour")
         val AUTO_PAUSE_END = intPreferencesKey("auto_pause_end_hour")
         val AUTO_PAUSE_CHARGING = booleanPreferencesKey("auto_pause_charging")
+        val CHARGING_TRIGGER_ENABLED = booleanPreferencesKey("charging_trigger_enabled")
+        val AUTO_FAVORITE_ENABLED = booleanPreferencesKey("auto_favorite_enabled")
+        val AUTO_FAVORITE_MINUTES = intPreferencesKey("auto_favorite_minutes")
+        val LAST_WALLPAPER_THUMB_URL = stringPreferencesKey("last_wallpaper_thumb_url")
+        val LAST_WALLPAPER_FULL_URL = stringPreferencesKey("last_wallpaper_full_url")
+        val LAST_WALLPAPER_SOURCE = stringPreferencesKey("last_wallpaper_source")
+        val LAST_WALLPAPER_SET_MS = longPreferencesKey("last_wallpaper_set_ms")
         val TOTAL_ROTATIONS = longPreferencesKey("total_rotations")
         val ROTATION_ERRORS = stringPreferencesKey("rotation_errors_json")
         val PINNED_SEARCHES = stringPreferencesKey("pinned_searches_json")
         val DISCOVER_MODE = stringPreferencesKey("discover_mode")
+        val WIDGET_COLLECTION_ID = stringPreferencesKey("widget_collection_id")
         val SEEN_WALLPAPER_KEYS = stringPreferencesKey("seen_wallpaper_keys_json")
     }
 
@@ -73,6 +81,10 @@ class RotatoPreferences(private val context: Context) {
     val historyJson: Flow<String> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[HISTORY_JSON] ?: "[]" }
+
+    val widgetCollectionId: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[WIDGET_COLLECTION_ID] ?: "" }
 
     suspend fun setEnabled(enabled: Boolean) {
         context.dataStore.edit { it[IS_ENABLED] = enabled }
@@ -103,6 +115,10 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setHistoryJson(json: String) {
         context.dataStore.edit { it[HISTORY_JSON] = json }
+    }
+
+    suspend fun setWidgetCollectionId(id: String) {
+        context.dataStore.edit { it[WIDGET_COLLECTION_ID] = id }
     }
 
     val nsfwMode: Flow<Boolean> = context.dataStore.data
@@ -301,6 +317,60 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setAutoPauseCharging(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_PAUSE_CHARGING] = enabled }
+    }
+
+    val chargingTriggerEnabled: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[CHARGING_TRIGGER_ENABLED] ?: false }
+
+    suspend fun setChargingTriggerEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[CHARGING_TRIGGER_ENABLED] = enabled }
+    }
+
+    val autoFavoriteEnabled: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[AUTO_FAVORITE_ENABLED] ?: false }
+
+    suspend fun setAutoFavoriteEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_FAVORITE_ENABLED] = enabled }
+    }
+
+    val autoFavoriteMinutes: Flow<Int> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[AUTO_FAVORITE_MINUTES] ?: 120 }
+
+    suspend fun setAutoFavoriteMinutes(minutes: Int) {
+        context.dataStore.edit { it[AUTO_FAVORITE_MINUTES] = minutes }
+    }
+
+    val lastWallpaperThumbUrl: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[LAST_WALLPAPER_THUMB_URL] ?: "" }
+
+    val lastWallpaperFullUrl: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[LAST_WALLPAPER_FULL_URL] ?: "" }
+
+    val lastWallpaperSource: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[LAST_WALLPAPER_SOURCE] ?: "" }
+
+    val lastWallpaperSetMs: Flow<Long> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[LAST_WALLPAPER_SET_MS] ?: 0L }
+
+    suspend fun setLastWallpaperState(
+        thumbUrl: String,
+        fullUrl: String,
+        source: String,
+        setMs: Long,
+    ) {
+        context.dataStore.edit {
+            it[LAST_WALLPAPER_THUMB_URL] = thumbUrl
+            it[LAST_WALLPAPER_FULL_URL] = fullUrl
+            it[LAST_WALLPAPER_SOURCE] = source
+            it[LAST_WALLPAPER_SET_MS] = setMs
+        }
     }
 
     val totalRotations: Flow<Long> = context.dataStore.data
