@@ -29,6 +29,7 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
+import com.chrisalvis.rotato.data.fetchFromSource
 import com.chrisalvis.rotato.data.fetchPageFromSource
 import com.chrisalvis.rotato.data.plugins.http
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
@@ -73,6 +74,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Item currently open in fullscreen detail modal (null = no modal) */
     private val _selectedItem = MutableStateFlow<BrainrotWallpaper?>(null)
     val selectedItem: StateFlow<BrainrotWallpaper?> = _selectedItem.asStateFlow()
+
+    private val _gridMode = MutableStateFlow(false)
+    val gridMode: StateFlow<Boolean> = _gridMode.asStateFlow()
 
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
@@ -248,21 +252,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val blacklist = prefs.globalBlacklist.first()
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
-            val malTitles: List<String> =
-                if (explicitQuery.isBlank() && filters.useMalFilter) malPrefs.animeList.first() else emptyList()
-            val localEnabled = localSources.sources.first().filter { it.enabled }
             val batchSize = prefs.discoverBatchSize.first()
             val target = if (isInitial) batchSize * 2 else batchSize
 
             // Compute queries once per source so pre-warm and drain use the same cache keys.
             // queriesFor() shuffles MAL titles — calling it twice would produce different keys.
-            val sourcesWithQueries: List<Pair<LocalSource, List<String>>> = localEnabled.mapNotNull { source ->
-                val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
-                if (plugin.requiresCredentials &&
-                    (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) return@mapNotNull null
-                if (!plugin.canServe(nsfw, source)) return@mapNotNull null
-                source to queriesFor(source, explicitQuery, malTitles)
-            }
+            val sourcesWithQueries = buildDiscoverRequests(nsfw, filters, explicitQuery)
+                .map { it.source to it.queries }
 
             // When a strict aspect-ratio filter is active most fetched items will be discarded
             // by the plugin-side matches() check. Fetch more candidates per call to compensate.
@@ -361,6 +357,35 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         // the plugins can apply per-token normalisation without breaking title lookups.
         malTitles.isNotEmpty() -> malTitles.shuffled().take(3).map { normalizeBooruQuery(it) }
         else -> listOf("")
+    }
+
+    private data class DiscoverRequest(
+        val source: LocalSource,
+        val queries: List<String>,
+    )
+
+    private suspend fun buildDiscoverRequests(
+        nsfw: Boolean,
+        filters: BrainrotFilters,
+        explicitQuery: String,
+    ): List<DiscoverRequest> {
+        val malTitles = if (explicitQuery.isBlank() && filters.useMalFilter) {
+            malPrefs.animeList.first()
+        } else {
+            emptyList()
+        }
+        return localSources.sources.first()
+            .filter { it.enabled }
+            .mapNotNull { source ->
+                val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
+                if (plugin.requiresCredentials &&
+                    (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))
+                ) {
+                    return@mapNotNull null
+                }
+                if (!plugin.canServe(nsfw, source)) return@mapNotNull null
+                DiscoverRequest(source, queriesFor(source, explicitQuery, malTitles))
+            }
     }
 
     /** Pull one unseen item from the in-memory page caches (no network calls). */
@@ -538,6 +563,67 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun retry() {
         loadMore(reset = true)
+    }
+
+    fun toggleGridMode() {
+        _gridMode.update { !it }
+    }
+
+    fun surpriseMe() {
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.update { true }
+            try {
+                val nsfw = prefs.nsfwMode.first()
+                val filters = prefs.brainrotFilters.first()
+                val blacklist = prefs.globalBlacklist.first()
+                val blockedUrls = prefs.blockedUrls.first()
+                val explicitQuery = _searchQuery.value
+                val requests = buildDiscoverRequests(nsfw, filters, explicitQuery)
+                if (requests.isEmpty()) return@launch
+
+                val seenKeys = displayedKeys.toSet()
+                val ctx = getApplication<Application>().applicationContext
+                val freshItems = requests.map { request ->
+                    async(Dispatchers.IO) {
+                        val sourceKey = request.source.type.name.lowercase()
+                        val excludes = seenKeys
+                            .filter { it.startsWith("$sourceKey:") }
+                            .map { it.removePrefix("$sourceKey:") }
+                        request.queries.firstNotNullOfOrNull { query ->
+                            fetchFromSource(request.source, query, excludes, nsfw, filters)
+                        }
+                    }
+                }.awaitAll()
+                    .filterNotNull()
+                    .filter { wp ->
+                        val key = "${wp.source}:${wp.id}"
+                        key !in seenKeys &&
+                            (blacklist.isEmpty() || wp.tags.none { it.lowercase() in blacklist }) &&
+                            (blockedUrls.isEmpty() || wp.fullUrl !in blockedUrls)
+                    }
+                    .distinctBy { "${it.source}:${it.id}" }
+
+                if (freshItems.isEmpty()) return@launch
+
+                freshItems.forEach { wp ->
+                    displayedKeys.add("${wp.source}:${wp.id}")
+                    val url = wp.sampleUrl.ifBlank { wp.fullUrl }
+                    if (url.isNotBlank()) {
+                        ctx.imageLoader.enqueue(
+                            ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
+                        )
+                    }
+                }
+                _gridItems.update { freshItems + it }
+                _noResults.update { false }
+                _endReached.update { false }
+                pageCache.clear()
+                prefs.addSeenWallpaperKeys(freshItems.map { "${it.source}:${it.id}" }.toSet())
+            } finally {
+                _busy.update { false }
+            }
+        }
     }
 
     fun setNsfwMode(enabled: Boolean) {

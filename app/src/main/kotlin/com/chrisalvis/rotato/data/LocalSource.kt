@@ -45,8 +45,20 @@ enum class SourceType(
         needsApiUser = false,
         safeContent = true
     ),
+    ZEROCHAN(
+        displayName = "Zerochan",
+        needsApiKey = false,
+        needsApiUser = false,
+        safeContent = true
+    ),
     YANDERE(
         displayName = "Yande.re",
+        needsApiKey = false,
+        needsApiUser = false,
+        safeContent = false
+    ),
+    RULE34(
+        displayName = "Rule34",
         needsApiKey = false,
         needsApiUser = false,
         safeContent = false

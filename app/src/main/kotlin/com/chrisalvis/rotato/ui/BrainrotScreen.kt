@@ -15,6 +15,12 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.item as gridItem
+import androidx.compose.foundation.lazy.grid.items as gridGridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -102,6 +108,7 @@ fun BrainrotScreen(
     val selectedItem by vm.selectedItem.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
     val noSources by vm.noSources.collectAsStateWithLifecycle()
@@ -124,22 +131,36 @@ fun BrainrotScreen(
     val discoverMode by vm.discoverMode.collectAsStateWithLifecycle()
     val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
+    val gridMode by vm.gridMode.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
+    val compactGridState = rememberLazyGridState()
     val coroutineScope = rememberCoroutineScope()
-    val showScrollTop by remember { derivedStateOf { gridState.firstVisibleItemIndex > 5 } }
-    val shouldLoadMore by remember {
+    val showScrollTop by remember(gridMode) {
         derivedStateOf {
-            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            val total = gridState.layoutInfo.totalItemsCount
-            total > 0 && lastVisible >= total - 4
+            if (gridMode) compactGridState.firstVisibleItemIndex > 8 else gridState.firstVisibleItemIndex > 5
         }
     }
-    LaunchedEffect(shouldLoadMore) {
+    val shouldLoadMore by remember(gridMode) {
+        derivedStateOf {
+            if (gridMode) {
+                val lastVisible = compactGridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                val total = compactGridState.layoutInfo.totalItemsCount
+                total > 0 && lastVisible >= total - 7
+            } else {
+                val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                val total = gridState.layoutInfo.totalItemsCount
+                total > 0 && lastVisible >= total - 4
+            }
+        }
+    }
+    LaunchedEffect(shouldLoadMore, gridMode) {
         if (shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null) vm.loadMore()
     }
-    LaunchedEffect(resetVersion) {
-        if (resetVersion > 0) gridState.scrollToItem(0)
+    LaunchedEffect(resetVersion, gridMode) {
+        if (resetVersion > 0) {
+            if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
+        }
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -178,9 +199,9 @@ fun BrainrotScreen(
     }
     // Track position in grid while user browses the detail overlay; restore on dismiss
     var restoreScrollIndex by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(selectedItem) {
+    LaunchedEffect(selectedItem, gridMode) {
         if (selectedItem == null && restoreScrollIndex >= 0) {
-            gridState.scrollToItem(restoreScrollIndex)
+            if (gridMode) compactGridState.scrollToItem(restoreScrollIndex) else gridState.scrollToItem(restoreScrollIndex)
             restoreScrollIndex = -1
         } else if (selectedItem != null) {
             val idx = gridItems.indexOfFirst { it.id == selectedItem!!.id && it.source == selectedItem!!.source }
@@ -321,7 +342,6 @@ fun BrainrotScreen(
 
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Persistent header: source toggles + discover mode — always visible
                 if (!noSources) {
                     Surface(
                         tonalElevation = 2.dp,
@@ -332,6 +352,42 @@ fun BrainrotScreen(
                                 .statusBarsPadding()
                                 .padding(top = 8.dp, bottom = 6.dp)
                         ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Discover",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilledTonalButton(
+                                    onClick = { vm.surpriseMe() },
+                                    enabled = !busy,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    if (busy) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Surprise Me")
+                                }
+                                IconButton(onClick = { vm.toggleGridMode() }) {
+                                    Icon(
+                                        imageVector = if (gridMode) Icons.Default.ViewAgenda else Icons.Default.GridView,
+                                        contentDescription = if (gridMode) "Card layout" else "Grid layout"
+                                    )
+                                }
+                            }
                             if (allSources.isNotEmpty()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -400,90 +456,154 @@ fun BrainrotScreen(
                         }
                     }
                 }
-            when {
-                noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
-                noResults -> NoResultsState(
-                    searchQuery = searchQuery,
-                    onRetry = { vm.retry() },
-                    onClearSearch = { vm.setSearchQuery("") },
-                    onOpenSearch = { showSearch = true },
-                    onOpenSettings = { showSettings = true }
-                )
-                loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
-                else -> {
-                    val pullRefreshState = rememberPullToRefreshState()
-                                PullToRefreshBox(
-                                    isRefreshing = loading,
-                                    onRefresh = { vm.loadMore(reset = true) },
-                                    state = pullRefreshState,
-                                    modifier = Modifier.fillMaxSize()
+                when {
+                    noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
+                    noResults -> NoResultsState(
+                        searchQuery = searchQuery,
+                        onRetry = { vm.retry() },
+                        onClearSearch = { vm.setSearchQuery("") },
+                        onOpenSearch = { showSearch = true },
+                        onOpenSettings = { showSettings = true }
+                    )
+                    loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                    else -> {
+                        val pullRefreshState = rememberPullToRefreshState()
+                        PullToRefreshBox(
+                            isRefreshing = loading,
+                            onRefresh = { vm.loadMore(reset = true) },
+                            state = pullRefreshState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            if (gridMode) {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(3),
+                                    state = compactGridState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    LazyVerticalStaggeredGrid(
-                                        columns = StaggeredGridCells.Fixed(2),
-                                        state = gridState,
-                                       modifier = Modifier.fillMaxSize(),
-                                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalItemSpacing = 8.dp
-                                    ) {
-                                        if (sessionSaved > 0 || sessionSkipped > 0) {
-                                            item(span = StaggeredGridItemSpan.FullLine) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                                                    if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
-                                                }
+                                    if (sessionSaved > 0 || sessionSkipped > 0) {
+                                        gridItem(span = { GridItemSpan(maxLineSpan) }) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
+                                                if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
                                             }
                                         }
-                                        items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
-                                            DiscoverGridItem(
-                                                wallpaper = wp,
-                                                isDownloading = downloadingIds.contains(wp.id),
-                                                isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
-                                                isSelected = wp.id in batchSelected,
-                                                selectionMode = batchMode,
-                                                onClick = {
-                                                    if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
-                                                },
-                                                onLongPress = { vm.toggleBatchSelect(wp.id) }
-                                            )
-                                        }
-                                        if (loadingMore) {
-                                            item(span = StaggeredGridItemSpan.FullLine) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(16.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                                }
+                                    }
+                                    gridGridItems(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
+                                        DiscoverThumbnailGridItem(
+                                            wallpaper = wp,
+                                            isDownloading = downloadingIds.contains(wp.id),
+                                            isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
+                                            isSelected = wp.id in batchSelected,
+                                            selectionMode = batchMode,
+                                            onClick = {
+                                                if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
+                                            },
+                                            onLongPress = { vm.toggleBatchSelect(wp.id) }
+                                        )
+                                    }
+                                    if (loadingMore) {
+                                        gridItem(span = { GridItemSpan(maxLineSpan) }) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                             }
                                         }
-                                        if (endReached && gridItems.isNotEmpty()) {
-                                            item(span = StaggeredGridItemSpan.FullLine) {
-                                                OutlinedButton(
-                                                    onClick = { vm.forceLoadMore() },
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = 24.dp, vertical = 12.dp)
-                                                ) {
-                                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(Modifier.width(6.dp))
-                                                    Text("Try to load more")
-                                                }
+                                    }
+                                    if (endReached && gridItems.isNotEmpty()) {
+                                        gridItem(span = { GridItemSpan(maxLineSpan) }) {
+                                            OutlinedButton(
+                                                onClick = { vm.forceLoadMore() },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                                            ) {
+                                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Try to load more")
                                             }
                                         }
                                     }
                                 }
-                }  // closes else ->
-            } // closes when
+                            } else {
+                                LazyVerticalStaggeredGrid(
+                                    columns = StaggeredGridCells.Fixed(2),
+                                    state = gridState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalItemSpacing = 8.dp
+                                ) {
+                                    if (sessionSaved > 0 || sessionSkipped > 0) {
+                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
+                                                if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
+                                            }
+                                        }
+                                    }
+                                    items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
+                                        DiscoverGridItem(
+                                            wallpaper = wp,
+                                            isDownloading = downloadingIds.contains(wp.id),
+                                            isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
+                                            isSelected = wp.id in batchSelected,
+                                            selectionMode = batchMode,
+                                            onClick = {
+                                                if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
+                                            },
+                                            onLongPress = { vm.toggleBatchSelect(wp.id) }
+                                        )
+                                    }
+                                    if (loadingMore) {
+                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                            }
+                                        }
+                                    }
+                                    if (endReached && gridItems.isNotEmpty()) {
+                                        item(span = StaggeredGridItemSpan.FullLine) {
+                                            OutlinedButton(
+                                                onClick = { vm.forceLoadMore() },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                                            ) {
+                                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Try to load more")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } // closes Column
             if (!noSources) {
                 if (batchMode) {
@@ -549,7 +669,11 @@ fun BrainrotScreen(
                     ) {
                         if (showScrollTop) {
                             SmallFloatingActionButton(
-                                onClick = { coroutineScope.launch { gridState.scrollToItem(0) } },
+                                onClick = {
+                                    coroutineScope.launch {
+                                        if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
+                                    }
+                                },
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
@@ -806,6 +930,102 @@ fun BrainrotScreen(
                     .padding(bottom = 80.dp)
             )
         }
+}
+
+@Composable
+private fun DiscoverThumbnailGridItem(
+    wallpaper: BrainrotWallpaper,
+    isDownloading: Boolean,
+    isSaved: Boolean,
+    isSelected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit
+) {
+    val context = LocalContext.current
+    val imageUrl = wallpaper.thumbUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl } }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(MaterialTheme.shapes.medium)
+            .pointerInput(wallpaper.id, selectionMode, isSelected) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { onLongPress() }
+                )
+            }
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(imageUrl)
+                .memoryCacheKey(imageUrl)
+                .diskCacheKey(imageUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        if (isSelected) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(4.dp)
+                .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+        ) {
+            Text(
+                wallpaper.source.replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1
+            )
+        }
+
+        if (isSaved) {
+            Icon(
+                Icons.Default.Bookmark,
+                contentDescription = "Saved",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(if (selectionMode) Alignment.TopStart else Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(18.dp)
+            )
+        }
+
+        if (selectionMode) {
+            Icon(
+                imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (isSelected) "Selected" else "Not selected",
+                tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(20.dp)
+                    .background(
+                        if (isSelected) Color.White else Color.Black.copy(alpha = 0.35f),
+                        CircleShape
+                    )
+            )
+        }
+
+        if (isDownloading) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -1400,7 +1620,9 @@ private fun sourceColor(source: String): Color = when (source.lowercase()) {
     "wallhaven" -> Color(0xFF1565C0)
     "konachan"  -> Color(0xFF6A1B9A)
     "danbooru"  -> Color(0xFF2E7D32)
-    else        -> Color(0xFF37474F)
+    "rule34"    -> Color(0xFFAD1457)
+    "zerochan"  -> Color(0xFF00838F)
+    else         -> Color(0xFF37474F)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

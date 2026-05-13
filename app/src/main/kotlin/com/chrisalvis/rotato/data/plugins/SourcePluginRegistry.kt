@@ -12,6 +12,8 @@ object SourcePluginRegistry {
 
     val all: List<SourcePlugin> = listOf(
         SafebooruPlugin,   // free — works without an account, SFW only
+        ZerochanPlugin,    // free — SFW only
+        Rule34Plugin,      // free — NSFW by default
         WallhavenPlugin,   // premium
         DanbooruPlugin,    // premium
         GelbooruPlugin,    // premium
