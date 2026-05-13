@@ -121,6 +121,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     val exportProgress: StateFlow<Pair<Int, Int>?> = _exportProgress.asStateFlow()
     private val _restoreProgress = MutableStateFlow<String?>(null)
     val restoreProgress: StateFlow<String?> = _restoreProgress.asStateFlow()
+    private val _downloadAllProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val downloadAllProgress: StateFlow<Pair<Int, Int>?> = _downloadAllProgress.asStateFlow()
 
     fun setSearchQuery(q: String) { _searchQuery.update { q } }
     fun setCollectionSearch(q: String) { _collectionSearch.update { q } }
@@ -558,25 +560,58 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun addAllToRotation() {
-        val toAdd = wallpapers.value.filter { !isInRotation(it) }
+    fun downloadAllToRotation(listId: String) {
+        if (_downloadAllProgress.value != null) return
         val ctx = app.applicationContext
         viewModelScope.launch {
-            var added = 0
-            toAdd.forEach { wp ->
-                if (_downloading.value.contains(wp.sourceId)) return@forEach
-                val key = sanitize(wp.sourceId)
-                _downloading.update { it + wp.sourceId }
-                val ok = if (wp.source == "device") {
-                    copyLocalToRotation(wp.fullUrl, key)
-                } else {
-                    feedRepo.downloadWallpaper(wp.sourceId, wp.fullUrl, wp.thumbUrl)
-                }
-                if (ok) { _inRotation.update { it + key }; added++ }
-                _downloading.update { it - wp.sourceId }
+            val pending = localLists.wallpapersForList(listId).first()
+                .filterNot { _inRotation.value.contains(sanitize(it.sourceId)) }
+            if (pending.isEmpty()) {
+                Toast.makeText(ctx, "Downloaded 0 images to rotation", Toast.LENGTH_SHORT).show()
+                return@launch
             }
-            Toast.makeText(ctx, "Added $added wallpaper${if (added != 1) "s" else ""} to Library", Toast.LENGTH_SHORT).show()
+
+            var downloaded = 0
+            _downloadAllProgress.update { 0 to pending.size }
+            try {
+                pending.forEachIndexed { index, entry ->
+                    if (_downloading.value.contains(entry.sourceId)) {
+                        _downloadAllProgress.update { (index + 1) to pending.size }
+                        return@forEachIndexed
+                    }
+                    val key = sanitize(entry.sourceId)
+                    val wallpaper = entry.toBrowseWallpaper(app.filesDir)
+                    _downloading.update { it + entry.sourceId }
+                    val ok = try {
+                        if (entry.source == "device") {
+                            copyLocalToRotation(wallpaper.fullUrl, key)
+                        } else {
+                            feedRepo.downloadWallpaper(
+                                sourceId = entry.sourceId,
+                                fullUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl },
+                                fallbackUrl = wallpaper.thumbUrl,
+                            )
+                        }
+                    } finally {
+                        _downloading.update { it - entry.sourceId }
+                    }
+                    if (ok) {
+                        _inRotation.update { it + key }
+                        downloaded++
+                    }
+                    _downloadAllProgress.update { (index + 1) to pending.size }
+                }
+            } finally {
+                _downloadAllProgress.update { null }
+            }
+
+            Toast.makeText(ctx, "Downloaded $downloaded images to rotation", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun addAllToRotation() {
+        val listId = _selectedListId.value ?: return
+        downloadAllToRotation(listId)
     }
 
     fun refreshInRotation() {

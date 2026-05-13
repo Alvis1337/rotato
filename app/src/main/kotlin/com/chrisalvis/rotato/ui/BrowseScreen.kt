@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
@@ -83,6 +84,7 @@ fun BrowseScreen() {
     val isCheckingLinks by vm.isCheckingLinks.collectAsStateWithLifecycle()
     val exportProgress by vm.exportProgress.collectAsStateWithLifecycle()
     val restoreProgress by vm.restoreProgress.collectAsStateWithLifecycle()
+    val downloadAllProgress by vm.downloadAllProgress.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -98,10 +100,12 @@ fun BrowseScreen() {
     var showSaveRotationDialog by remember { mutableStateOf(false) }
     var showRemoveBrokenConfirm by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showCollectionMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedList?.id) {
         vm.setCollectionSearch("")
         showSortMenu = false
+        showCollectionMenu = false
     }
     LaunchedEffect(vm, context) {
         vm.duplicateWarning.collectLatest { message ->
@@ -249,21 +253,39 @@ fun BrowseScreen() {
                 },
                 actions = {
                     if (!selectionMode && selectedList != null) {
-                        if (wallpapers.isNotEmpty()) {
-                            IconButton(onClick = { vm.exportCollectionToGallery() }) {
-                                Icon(Icons.Default.Download, contentDescription = "Export to gallery")
+                        Box {
+                            IconButton(onClick = { showCollectionMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Collection actions")
                             }
-                        }
-                        IconButton(onClick = {
-                            pickerTargetListId = selectedList!!.id
-                            photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }) {
-                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Add from device")
-                        }
-                    }
-                    if (!selectionMode && selectedList != null && wallpapers.isNotEmpty()) {
-                        IconButton(onClick = { vm.addAllToRotation() }) {
-                            Icon(Icons.Default.Wallpaper, contentDescription = "Add all to Library")
+                            DropdownMenu(
+                                expanded = showCollectionMenu,
+                                onDismissRequest = { showCollectionMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Add from device") },
+                                    onClick = {
+                                        pickerTargetListId = selectedList!!.id
+                                        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                        showCollectionMenu = false
+                                    }
+                                )
+                                if (wallpapers.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Download all to Library") },
+                                        onClick = {
+                                            vm.downloadAllToRotation(selectedList!!.id)
+                                            showCollectionMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Export to gallery") },
+                                        onClick = {
+                                            vm.exportCollectionToGallery()
+                                            showCollectionMenu = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                     if (!selectionMode && selectedList == null) {
@@ -438,6 +460,24 @@ fun BrowseScreen() {
                 }
                 if (isCheckingLinks) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                downloadAllProgress?.let { (current, total) ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { if (total == 0) 0f else current.toFloat() / total.toFloat() },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Downloading $current/$total to Library",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 if (brokenEntryIds.isNotEmpty()) {
                     Row(
