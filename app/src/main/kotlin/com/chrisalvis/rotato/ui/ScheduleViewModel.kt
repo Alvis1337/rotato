@@ -44,9 +44,8 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     val triggerResult: SharedFlow<String> = _triggerResult.asSharedFlow()
 
     fun startAdd() {
-        val defaultList = lists.value.firstOrNull()?.id ?: ""
         _editEntry.update {
-            ScheduleEntry(days = setOf(2, 3, 4, 5, 6), startHour = 8, startMinute = 0, listId = defaultList)
+            ScheduleEntry(days = setOf(2, 3, 4, 5, 6), startHour = 8, startMinute = 0)
         }
     }
 

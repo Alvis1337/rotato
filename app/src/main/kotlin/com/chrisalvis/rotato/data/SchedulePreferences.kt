@@ -75,7 +75,7 @@ class SchedulePreferences(private val context: Context) {
                 days = (0 until daysArr.length()).map { daysArr.getInt(it) }.toSet(),
                 startHour = o.getInt("startHour"),
                 startMinute = o.getInt("startMinute"),
-                listId = o.getString("listId"),
+                listId = o.optString("listId", ""),
                 enabled = o.optBoolean("enabled", true),
                 lastLockedMs = o.optLong("lastLockedMs", 0L),
                 lastFiredMs = o.optLong("lastFiredMs", 0L),

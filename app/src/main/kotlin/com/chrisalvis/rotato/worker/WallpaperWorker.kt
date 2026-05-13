@@ -1,6 +1,5 @@
 package com.chrisalvis.rotato.worker
 
-import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.WallpaperManager
@@ -8,10 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.BatteryManager
-import kotlin.math.roundToInt
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -22,20 +18,31 @@ import androidx.work.workDataOf
 import com.chrisalvis.rotato.MainActivity
 import com.chrisalvis.rotato.R
 import com.chrisalvis.rotato.RotatoApp
+import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
+import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.RotationError
 import com.chrisalvis.rotato.data.RotationErrorType
+import com.chrisalvis.rotato.data.ScheduleEntry
+import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.loadScaledBitmap
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.toJson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 class WallpaperWorker(
     context: Context,
@@ -45,23 +52,26 @@ class WallpaperWorker(
     override suspend fun doWork(): Result {
         val repository = ImageRepository(applicationContext)
         val prefs = RotatoPreferences(applicationContext)
+        val listPrefs = LocalListsPreferences(applicationContext)
+        val schedPrefs = SchedulePreferences(applicationContext)
+        val imageDir = File(applicationContext.filesDir, "rotato_images").also { it.mkdirs() }
+        val feedRepository = FeedRepository(imageDir)
 
-        val (settings, autoPause, history) = coroutineScope {
+        val (settings, autoPause, history, allWallpapers, scheduleEntries, lists) = coroutineScope {
             val sDeferred = async { prefs.settings.first() }
             val aDeferred = async { prefs.autoPauseSettings.first() }
             val hDeferred = async { prefs.historyJson.first() }
-            Triple(sDeferred.await(), aDeferred.await(), historyFromJson(hDeferred.await()))
-        }
-
-        val images = repository.getImages()
-        if (images.isEmpty()) {
-            if (settings.isEnabled) {
-                prefs.addRotationError(RotationError(
-                    RotationErrorType.POOL_EMPTY,
-                    "Rotation ran but the library pool is empty — add photos or link a collection"
-                ))
-            }
-            return Result.success()
+            val wDeferred = async { listPrefs.allWallpapers.first() }
+            val eDeferred = async { schedPrefs.entries.first() }
+            val lDeferred = async { listPrefs.lists.first() }
+            Sextuple(
+                sDeferred.await(),
+                aDeferred.await(),
+                historyFromJson(hDeferred.await()),
+                wDeferred.await(),
+                eDeferred.await(),
+                lDeferred.await(),
+            )
         }
 
         // Auto-pause: night window
@@ -74,25 +84,34 @@ class WallpaperWorker(
             if (bm?.isCharging == true) return Result.success()
         }
 
-        // Duplicate guard in shuffle mode: avoid recently shown wallpapers
-        val targetFile = if (settings.shuffleMode) {
-            val recentPaths = history
-                .take((images.size - 1).coerceAtLeast(0).coerceAtMost(10))
-                .map { it.thumbUrl }
-                .toSet()
-            val fresh = images.filter { it.absolutePath !in recentPaths }
-            fresh.ifEmpty { images }.random()
-        } else {
-            val nextIndex = settings.currentIndex % images.size
-            prefs.setCurrentIndex((nextIndex + 1) % images.size)
-            images[nextIndex]
+        val activeScheduledListId = findActiveScheduledListId(scheduleEntries, lists)
+        val scheduledEntry = activeScheduledListId?.let { listId ->
+            val wallpapers = listPrefs.wallpapersForList(listId).first()
+            selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
         }
+
+        var mainQueueCount: Int? = null
+        val targetFile = resolveScheduledTargetFile(scheduledEntry, feedRepository, imageDir)
+            ?: run {
+                val images = withContext(Dispatchers.IO) { repository.getImages() }
+                mainQueueCount = images.size
+                if (images.isEmpty()) {
+                    if (settings.isEnabled) {
+                        prefs.addRotationError(RotationError(
+                            RotationErrorType.POOL_EMPTY,
+                            "Rotation ran but the library pool is empty — add photos or link a collection"
+                        ))
+                    }
+                    return Result.success()
+                }
+                selectMainQueueFile(images, settings.shuffleMode, settings.currentIndex, history, prefs)
+            }
 
         return try {
             val bitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
                 ?: run {
                     val errorType = if (targetFile.exists()) RotationErrorType.IMAGE_CORRUPT
-                                    else RotationErrorType.IMAGE_MISSING
+                    else RotationErrorType.IMAGE_MISSING
                     prefs.addRotationError(RotationError(errorType, "Could not load: ${targetFile.name}"))
                     return Result.failure()
                 }
@@ -121,9 +140,8 @@ class WallpaperWorker(
 
                 prefs.recordRotationAndIncrement()
 
-                // Look up original source info from collections for richer history
-                val allEntries = LocalListsPreferences(applicationContext).allWallpapers.first()
-                val matchingEntry = allEntries.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
+                val matchingEntry = scheduledEntry
+                    ?: allWallpapers.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
                 val historyItem = WallpaperHistoryItem(
                     thumbUrl = targetFile.absolutePath,
@@ -144,9 +162,7 @@ class WallpaperWorker(
 
             RotatoWidgetProvider.refreshAll(applicationContext)
 
-            if (images.size in 1..4) {
-                postLowQueueNotification(images.size)
-            }
+            mainQueueCount?.takeIf { it in 1..4 }?.let { postLowQueueNotification(it) }
 
             val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, 0L)
             if (intervalMinutes in 1..14 && settings.isEnabled) {
@@ -160,6 +176,73 @@ class WallpaperWorker(
                 "Failed to set wallpaper: ${e.localizedMessage ?: e.javaClass.simpleName}"
             ))
             Result.retry()
+        }
+    }
+
+    private fun findActiveScheduledListId(entries: List<ScheduleEntry>, lists: List<LocalList>): String? {
+        val scheduledListIds = entries.asSequence()
+            .filter { it.enabled }
+            .map { it.listId }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (scheduledListIds.isEmpty()) return null
+        return lists.firstOrNull { it.useAsRotation && it.id in scheduledListIds }?.id
+    }
+
+    private suspend fun selectScheduledWallpaper(
+        wallpapers: List<LocalWallpaperEntry>,
+        shuffleMode: Boolean,
+        currentIndex: Int,
+        prefs: RotatoPreferences,
+    ): LocalWallpaperEntry? {
+        if (wallpapers.isEmpty()) return null
+        return if (shuffleMode) {
+            wallpapers.random()
+        } else {
+            val nextIndex = currentIndex % wallpapers.size
+            prefs.setCurrentIndex((nextIndex + 1) % wallpapers.size)
+            wallpapers[nextIndex]
+        }
+    }
+
+    private suspend fun resolveScheduledTargetFile(
+        entry: LocalWallpaperEntry?,
+        feedRepository: FeedRepository,
+        imageDir: File,
+    ): File? {
+        if (entry == null) return null
+        return withContext(Dispatchers.IO) {
+            when {
+                entry.source == "device" && entry.fullUrl.startsWith("list_images/") -> {
+                    File(applicationContext.filesDir, entry.fullUrl).takeIf { it.exists() }
+                }
+                entry.fullUrl.isBlank() -> null
+                !feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl) -> null
+                else -> imageDir.listFiles()?.firstOrNull {
+                    it.isFile && it.nameWithoutExtension == sanitizeFilename(entry.sourceId)
+                }
+            }
+        }
+    }
+
+    private suspend fun selectMainQueueFile(
+        images: List<File>,
+        shuffleMode: Boolean,
+        currentIndex: Int,
+        history: List<WallpaperHistoryItem>,
+        prefs: RotatoPreferences,
+    ): File {
+        return if (shuffleMode) {
+            val recentPaths = history
+                .take((images.size - 1).coerceAtLeast(0).coerceAtMost(10))
+                .map { it.thumbUrl }
+                .toSet()
+            val fresh = images.filter { it.absolutePath !in recentPaths }
+            fresh.ifEmpty { images }.random()
+        } else {
+            val nextIndex = currentIndex % images.size
+            prefs.setCurrentIndex((nextIndex + 1) % images.size)
+            images[nextIndex]
         }
     }
 
@@ -251,3 +334,12 @@ class WallpaperWorker(
         @Volatile private var lastLowQueueNotifCount = Int.MAX_VALUE
     }
 }
+
+private data class Sextuple<A, B, C, D, E, F>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E,
+    val sixth: F,
+)

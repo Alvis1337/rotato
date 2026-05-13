@@ -59,6 +59,7 @@ fun ScheduleScreen(
         ScheduleEditDialog(
             entry = editEntry!!,
             lists = lists,
+            isEditing = entries.any { it.id == editEntry!!.id },
             onSave = { vm.saveEdit(it) },
             onDismiss = { vm.dismissEdit() },
         )
@@ -77,23 +78,12 @@ fun ScheduleScreen(
             )
         },
         floatingActionButton = {
-            if (lists.isNotEmpty()) {
-                FloatingActionButton(onClick = { vm.startAdd() }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add schedule")
-                }
+            FloatingActionButton(onClick = { vm.startAdd() }) {
+                Icon(Icons.Default.Add, contentDescription = "Add schedule")
             }
         },
     ) { padding ->
-        if (lists.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    "Create a collection first, then add it to a schedule.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(32.dp),
-                )
-            }
-        } else if (entries.isEmpty()) {
+        if (entries.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     "No schedules yet.\nTap + to create one.",
@@ -114,8 +104,12 @@ fun ScheduleScreen(
                     val targetList = lists.find { it.id == entry.listId }
                     ScheduleEntryCard(
                         entry = entry,
-                        listName = targetList?.name ?: "Unknown list",
-                        isListLocked = targetList?.isLocked == true,
+                        listName = when {
+                            entry.listId.isBlank() -> "Main rotation queue"
+                            targetList != null -> targetList.name
+                            else -> "Unknown collection"
+                        },
+                        isListLocked = entry.listId.isNotBlank() && targetList?.isLocked == true,
                         wasBlockedByLock = entry.lastLockedMs > 0L,
                         lastFiredMs = entry.lastFiredMs,
                         lastFiredResult = entry.lastFiredResult,
@@ -233,13 +227,14 @@ private fun ScheduleEntryCard(
 private fun ScheduleEditDialog(
     entry: ScheduleEntry,
     lists: List<LocalList>,
+    isEditing: Boolean,
     onSave: (ScheduleEntry) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var days by remember { mutableStateOf(entry.days) }
     var hour by remember { mutableIntStateOf(entry.startHour) }
     var minute by remember { mutableIntStateOf(entry.startMinute) }
-    var selectedListId by remember { mutableStateOf(entry.listId.ifBlank { lists.firstOrNull()?.id ?: "" }) }
+    var selectedListId by remember { mutableStateOf(entry.listId) }
     var showTimePicker by remember { mutableStateOf(false) }
     var expandListDropdown by remember { mutableStateOf(false) }
 
@@ -262,7 +257,7 @@ private fun ScheduleEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (entry.listId.isBlank()) "New Schedule" else "Edit Schedule") },
+        title = { Text(if (isEditing) "Edit Schedule" else "New Schedule") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -292,16 +287,16 @@ private fun ScheduleEditDialog(
                 }
 
                 // List picker dropdown
-                Text("Collection", style = MaterialTheme.typography.labelMedium)
+                Text("Use collection", style = MaterialTheme.typography.labelMedium)
                 ExposedDropdownMenuBox(
                     expanded = expandListDropdown,
                     onExpandedChange = { expandListDropdown = it },
                 ) {
                     OutlinedTextField(
-                        value = lists.find { it.id == selectedListId }?.name ?: "",
+                        value = lists.find { it.id == selectedListId }?.name ?: "Main rotation queue",
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Collection") },
+                        label = { Text("Use collection") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandListDropdown) },
                         modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                     )
@@ -309,6 +304,13 @@ private fun ScheduleEditDialog(
                         expanded = expandListDropdown,
                         onDismissRequest = { expandListDropdown = false },
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Main rotation queue") },
+                            onClick = {
+                                selectedListId = ""
+                                expandListDropdown = false
+                            },
+                        )
                         lists.forEach { list ->
                             DropdownMenuItem(
                                 text = { Text(list.name) },
@@ -325,11 +327,11 @@ private fun ScheduleEditDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (days.isNotEmpty() && selectedListId.isNotBlank()) {
+                    if (days.isNotEmpty()) {
                         onSave(entry.copy(days = days, startHour = hour, startMinute = minute, listId = selectedListId))
                     }
                 },
-                enabled = days.isNotEmpty() && selectedListId.isNotBlank(),
+                enabled = days.isNotEmpty(),
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
