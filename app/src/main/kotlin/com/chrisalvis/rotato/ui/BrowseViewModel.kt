@@ -1,7 +1,11 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.content.ContentValues
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
@@ -17,9 +21,12 @@ import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -41,6 +48,8 @@ import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
 import java.util.UUID
+
+enum class WallpaperSortOrder { DATE_ADDED, SOURCE, RESOLUTION }
 
 class BrowseViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -88,22 +97,33 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedListId = MutableStateFlow<String?>(null)
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private val _sortOrder = MutableStateFlow(WallpaperSortOrder.DATE_ADDED)
+    val sortOrder: StateFlow<WallpaperSortOrder> = _sortOrder.asStateFlow()
+    private val _duplicateWarning = MutableSharedFlow<String>()
+    val duplicateWarning: SharedFlow<String> = _duplicateWarning.asSharedFlow()
+    private val _exportCompletion = MutableSharedFlow<Int>()
+    val exportCompletion: SharedFlow<Int> = _exportCompletion.asSharedFlow()
+    private val _exportProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val exportProgress: StateFlow<Pair<Int, Int>?> = _exportProgress.asStateFlow()
 
     fun setSearchQuery(q: String) { _searchQuery.update { q } }
+    fun setSortOrder(order: WallpaperSortOrder) { _sortOrder.update { order } }
 
     val selectedList: StateFlow<LocalList?> = combine(lists, _selectedListId) { visible, id ->
         visible.find { it.id == id }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val wallpapers: StateFlow<List<BrowseWallpaper>> =
-        combine(localLists.allWallpapers, _selectedListId, lists, _searchQuery) { all, id, visible, query ->
+        combine(localLists.allWallpapers, _selectedListId, lists, _searchQuery, _sortOrder) { all, id, visible, query, sortOrder ->
             if (id == null || visible.none { it.id == id }) return@combine emptyList()
             val listEntries = all.filter { it.listId == id }
             val matched = if (query.isBlank()) listEntries else listEntries.filter { entry ->
                 entry.tags.any { it.contains(query, ignoreCase = true) } ||
                 entry.source.contains(query, ignoreCase = true)
             }
-            matched.map { it.toBrowseWallpaper(app.filesDir) }.reversed()
+            matched
+                .sortedFor(sortOrder)
+                .map { it.toBrowseWallpaper(app.filesDir) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _inRotation = MutableStateFlow<Set<String>>(emptySet())
@@ -571,12 +591,55 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         if (targetListId == currentListId) { exitSelectionMode(); return }
         val selectedIds = _selected.value
         viewModelScope.launch {
-            val all = localLists.allWallpapers.first()
-            all.filter { it.listId == currentListId && it.id in selectedIds }.forEach { entry ->
+            val targetUrls = localLists.wallpapersForList(targetListId).first()
+                .map { it.fullUrl }
+                .toMutableSet()
+            val sourceEntries = localLists.allWallpapers.first()
+                .filter { it.listId == currentListId && it.id in selectedIds }
+            var duplicateFound = false
+            sourceEntries.forEach { entry ->
+                if (!targetUrls.add(entry.fullUrl)) {
+                    duplicateFound = true
+                    return@forEach
+                }
                 localLists.removeWallpaper(entry.id)
                 localLists.addWallpaperEntry(entry.copy(listId = targetListId))
             }
+            if (duplicateFound) _duplicateWarning.emit("Already in collection")
             exitSelectionMode()
+        }
+    }
+
+    fun exportCollectionToGallery() {
+        val listId = _selectedListId.value ?: return
+        if (_exportProgress.value != null) return
+        val ctx = app.applicationContext
+        viewModelScope.launch {
+            val items = localLists.wallpapersForList(listId).first()
+            if (items.isEmpty()) {
+                _exportCompletion.emit(0)
+                return@launch
+            }
+            var exported = 0
+            _exportProgress.update { 0 to items.size }
+            try {
+                items.forEachIndexed { index, entry ->
+                    val wallpaper = entry.toBrowseWallpaper(app.filesDir)
+                    val ok = if (wallpaper.fullUrl.startsWith("file://") || wallpaper.fullUrl.startsWith("/")) {
+                        saveLocalFileToGallery(ctx, File(Uri.parse(wallpaper.fullUrl).path ?: wallpaper.fullUrl))
+                    } else {
+                        _downloading.update { it + wallpaper.sourceId }
+                        val saved = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.thumbUrl)
+                        _downloading.update { it - wallpaper.sourceId }
+                        saved
+                    }
+                    if (ok) exported++
+                    _exportProgress.update { (index + 1) to items.size }
+                }
+            } finally {
+                _exportProgress.update { null }
+            }
+            _exportCompletion.emit(exported)
         }
     }
 
@@ -586,12 +649,62 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun saveLocalFileToGallery(ctx: android.content.Context, file: File): Boolean {
+        if (!file.exists()) return false
+        val ext = file.extension.lowercase()
+        val mimeType = when (ext) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> "image/jpeg"
+        }
+        return try {
+            val bytes = file.readBytes()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Rotato")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = ctx.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } else {
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Rotato")
+                dir.mkdirs()
+                File(dir, file.name).writeBytes(bytes)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun sanitize(s: String) = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
 
     override fun onCleared() {
         super.onCleared()
         ProcessLifecycleOwner.get().lifecycle.removeObserver(processLifecycleObserver)
     }
+}
+
+private fun List<LocalWallpaperEntry>.sortedFor(sortOrder: WallpaperSortOrder): List<LocalWallpaperEntry> =
+    when (sortOrder) {
+        WallpaperSortOrder.DATE_ADDED -> sortedByDescending { it.addedAt }
+        WallpaperSortOrder.SOURCE -> sortedWith(compareBy<LocalWallpaperEntry>({ it.source.lowercase() }, { -it.addedAt }))
+        WallpaperSortOrder.RESOLUTION -> sortedWith(compareByDescending<LocalWallpaperEntry> { it.resolutionArea() }.thenByDescending { it.addedAt })
+    }
+
+private fun LocalWallpaperEntry.resolutionArea(): Long {
+    val parts = resolution.lowercase().split("x")
+    if (parts.size != 2) return -1
+    val width = parts[0].toLongOrNull() ?: return -1
+    val height = parts[1].toLongOrNull() ?: return -1
+    return width * height
 }
 
 private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpaper(

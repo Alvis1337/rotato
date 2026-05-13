@@ -42,8 +42,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +55,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,8 +74,12 @@ fun BrowseScreen() {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val sortOrder by vm.sortOrder.collectAsStateWithLifecycle()
     val brokenEntryIds by vm.brokenEntryIds.collectAsStateWithLifecycle()
     val isCheckingLinks by vm.isCheckingLinks.collectAsStateWithLifecycle()
+    val exportProgress by vm.exportProgress.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
 
     // Keep in-rotation badges in sync with actual filesystem state
     LaunchedEffect(Unit) { vm.refreshInRotation() }
@@ -82,8 +91,22 @@ fun BrowseScreen() {
     var showSaveRotationDialog by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showRemoveBrokenConfirm by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
-    LaunchedEffect(selectedList?.id) { showSearch = false }
+    LaunchedEffect(selectedList?.id) {
+        showSearch = false
+        showSortMenu = false
+    }
+    LaunchedEffect(vm, context) {
+        vm.duplicateWarning.collectLatest { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(vm, context) {
+        vm.exportCompletion.collectLatest { count ->
+            android.widget.Toast.makeText(context, "Exported $count images", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     if (showSaveRotationDialog) {
         SaveRotationDialog(
@@ -138,6 +161,23 @@ fun BrowseScreen() {
         )
     }
 
+    exportProgress?.let { (current, total) ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Exporting collection") },
+            text = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Exporting $current/$total...")
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -179,6 +219,11 @@ fun BrowseScreen() {
                                 if (showSearch) Icons.Default.Close else Icons.Default.Search,
                                 contentDescription = if (showSearch) "Hide search" else "Search"
                             )
+                        }
+                        if (wallpapers.isNotEmpty()) {
+                            IconButton(onClick = { vm.exportCollectionToGallery() }) {
+                                Icon(Icons.Default.Download, contentDescription = "Export to gallery")
+                            }
                         }
                         IconButton(onClick = {
                             pickerTargetListId = selectedList!!.id
@@ -291,6 +336,33 @@ fun BrowseScreen() {
                         shape = MaterialTheme.shapes.medium
                     )
                 }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Box {
+                        AssistChip(
+                            onClick = { showSortMenu = true },
+                            label = { Text("Sort: ${sortOrder.label()}") }
+                        )
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            WallpaperSortOrder.values().forEach { order ->
+                                DropdownMenuItem(
+                                    text = { Text(order.label()) },
+                                    onClick = {
+                                        vm.setSortOrder(order)
+                                        showSortMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
                 if (isCheckingLinks) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
@@ -344,6 +416,7 @@ fun BrowseScreen() {
                 WallpaperGridContent(
                     wallpapers = wallpapers,
                     listId = selectedList?.id,
+                    isCheckingLinks = isCheckingLinks,
                     isInRotation = { vm.isInRotation(it) },
                     downloading = downloading,
                     selectionMode = selectionMode,
@@ -727,6 +800,7 @@ private fun CollectionCard(
 private fun WallpaperGridContent(
     wallpapers: List<BrowseWallpaper>,
     listId: String?,
+    isCheckingLinks: Boolean,
     isInRotation: (BrowseWallpaper) -> Boolean,
     downloading: Set<String>,
     selectionMode: Boolean,
@@ -738,16 +812,37 @@ private fun WallpaperGridContent(
 ) {
     if (wallpapers.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "No wallpapers yet — tap 📷 to add from your device",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (!isCheckingLinks && listId != null) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AddPhotoAlternate,
+                        null,
+                        modifier = Modifier.size(56.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "This collection is empty",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Save images from Discover to fill it up",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
         }
         return
     }
 
     val gridState = rememberLazyGridState()
+    val haptic = LocalHapticFeedback.current
     LaunchedEffect(listId) { gridState.animateScrollToItem(0) }
 
     LazyVerticalGrid(
@@ -767,10 +862,19 @@ private fun WallpaperGridContent(
                 isBroken = brokenEntryIds.contains(wp.entryId),
                 selectionMode = selectionMode,
                 onTap = { onTap(wp) },
-                onLongPress = { onLongPress(wp) }
+                onLongPress = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress(wp)
+                }
             )
         }
     }
+}
+
+private fun WallpaperSortOrder.label(): String = when (this) {
+    WallpaperSortOrder.DATE_ADDED -> "Date added"
+    WallpaperSortOrder.SOURCE -> "Source"
+    WallpaperSortOrder.RESOLUTION -> "Resolution"
 }
 
 @OptIn(ExperimentalFoundationApi::class)
