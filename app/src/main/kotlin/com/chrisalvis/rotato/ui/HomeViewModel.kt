@@ -378,6 +378,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun saveFileToGallery(file: File) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val ok = feedRepo.saveFileToGallery(app, file)
+            android.widget.Toast.makeText(
+                app,
+                if (ok) "Saved to Pictures/Rotato" else "Save failed",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     fun setSpecificWallpaper(file: File) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _setNowState.update { SetNowState.SETTING }

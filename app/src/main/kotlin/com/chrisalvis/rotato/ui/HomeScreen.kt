@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -277,7 +278,8 @@ private fun LibraryContent(
                     onRemove = {
                         viewModel.deleteSelected(setOf(file))
                         selectedFile = null
-                    }
+                    },
+                    onSaveToGallery = { viewModel.saveFileToGallery(file) }
                 )
             }
             LazyVerticalGrid(
@@ -557,7 +559,8 @@ private fun ImagePreviewDialog(
     file: File,
     onDismiss: () -> Unit,
     onSetWallpaper: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onSaveToGallery: () -> Unit = {}
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -607,6 +610,11 @@ private fun ImagePreviewDialog(
                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Remove")
+                }
+                OutlinedButton(onClick = onSaveToGallery) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Save to Gallery")
                 }
                 Button(onClick = onSetWallpaper) {
                     Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))

@@ -112,6 +112,49 @@ class FeedRepository(private val imageDir: File) {
         }
     }
 
+    /** Copies an already-downloaded local [file] into the public Pictures/Rotato gallery folder. */
+    suspend fun saveFileToGallery(context: Context, file: File): Boolean = withContext(Dispatchers.IO) {
+        Log.d(TAG, "saveFileToGallery: ${file.name}")
+        if (!file.exists()) return@withContext false
+        return@withContext try {
+            val bytes = file.readBytes()
+            val mimeType = when (file.extension.lowercase()) {
+                "png"  -> "image/png"
+                "webp" -> "image/webp"
+                "gif"  -> "image/gif"
+                else   -> "image/jpeg"
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Rotato")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: return@withContext false.also { Log.e(TAG, "Failed to insert uri") }
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: return@withContext false.also { resolver.delete(uri, null, null) }
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } else {
+                val dir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "Rotato"
+                )
+                dir.mkdirs()
+                File(dir, file.name).writeBytes(bytes)
+            }
+            Log.d(TAG, "saveFileToGallery success: ${file.name}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "saveFileToGallery failed for ${file.name}", e)
+            false
+        }
+    }
+
     /** Returns true if this file starts with known image magic bytes (JPEG, PNG, GIF, WebP). */
     private fun File.isValidImage(): Boolean {
         if (!exists() || length() < 4) return false
