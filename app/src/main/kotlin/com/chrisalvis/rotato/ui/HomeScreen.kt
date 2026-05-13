@@ -213,7 +213,8 @@ fun HomeScreen(
                         photoPicker.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
-                    }
+                        },
+                        onGoToDiscover = onBrowseFeed
                 )
                 1 -> HistoryScreen(modifier = Modifier.fillMaxSize())
                 2 -> StatsContent(stats = stats, modifier = Modifier.fillMaxSize())
@@ -234,7 +235,8 @@ private fun LibraryContent(
     collections: List<LocalList>,
     dragSelectState: DragSelectState<File>,
     inSelectionMode: Boolean,
-    onPhotoPick: () -> Unit
+    onPhotoPick: () -> Unit,
+    onGoToDiscover: () -> Unit = {},
 ) {
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
     val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
