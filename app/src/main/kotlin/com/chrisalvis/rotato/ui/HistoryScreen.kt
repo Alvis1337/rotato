@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -34,6 +35,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import com.chrisalvis.rotato.data.FeedRepository
+import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.historyFromJson
@@ -47,13 +51,18 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 class HistoryViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = RotatoPreferences(app)
+    private val listsPrefs = LocalListsPreferences(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
 
     val history: StateFlow<List<WallpaperHistoryItem>> = prefs.historyJson
         .map { historyFromJson(it).reversed() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val lists: StateFlow<List<LocalList>> = listsPrefs.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _downloading = mutableStateOf<Set<String>>(emptySet())
@@ -97,6 +106,25 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun saveToCollection(item: WallpaperHistoryItem, listId: String) {
+        val ctx = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            val entry = LocalWallpaperEntry(
+                id = UUID.randomUUID().toString(),
+                listId = listId,
+                sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.'),
+                source = item.source,
+                thumbUrl = item.thumbUrl,
+                fullUrl = item.fullUrl,
+                resolution = item.resolution,
+                pageUrl = item.pageUrl,
+                tags = item.tags
+            )
+            listsPrefs.addWallpaperEntry(entry)
+            Toast.makeText(ctx, "Saved to collection", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun saveLocalFileToGallery(ctx: android.content.Context, file: java.io.File): Boolean {
         if (!file.exists()) return false
         val ext = file.extension.lowercase()
@@ -135,8 +163,50 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
 fun HistoryScreen(modifier: Modifier = Modifier) {
     val vm: HistoryViewModel = viewModel()
     val history by vm.history.collectAsStateWithLifecycle()
+    val lists by vm.lists.collectAsStateWithLifecycle()
     val downloading by vm.downloading
     val context = LocalContext.current
+    var saveToCollectionFor by remember { mutableStateOf<WallpaperHistoryItem?>(null) }
+
+    saveToCollectionFor?.let { item ->
+        AlertDialog(
+            onDismissRequest = { saveToCollectionFor = null },
+            title = { Text("Save to collection") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (lists.isEmpty()) {
+                        Text("No collections yet")
+                    } else {
+                        lists.forEach { list ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .clickable {
+                                        vm.saveToCollection(item, list.id)
+                                        saveToCollectionFor = null
+                                    },
+                                shape = MaterialTheme.shapes.medium,
+                                tonalElevation = 1.dp
+                            ) {
+                                Text(
+                                    text = list.name,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { saveToCollectionFor = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     if (history.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -179,6 +249,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 item = item,
                 isDownloading = downloading.contains(item.fullUrl),
                 onDownload = { vm.saveToGallery(item) },
+                onSaveToCollection = { saveToCollectionFor = item },
                 onRemove = { vm.removeItem(item) },
                 onOpenPage = if (openUri != null) ({
                     context.startActivity(Intent(Intent.ACTION_VIEW, openUri.toUri()))
@@ -193,6 +264,7 @@ private fun HistoryCard(
     item: WallpaperHistoryItem,
     isDownloading: Boolean,
     onDownload: () -> Unit,
+    onSaveToCollection: () -> Unit,
     onRemove: () -> Unit,
     onOpenPage: (() -> Unit)?
 ) {
@@ -260,6 +332,9 @@ private fun HistoryCard(
                 } else {
                     IconButton(onClick = onDownload) {
                         Icon(Icons.Default.Download, contentDescription = "Save to gallery")
+                    }
+                    IconButton(onClick = onSaveToCollection) {
+                        Icon(Icons.Default.Bookmark, contentDescription = "Save to collection")
                     }
                 }
                 if (onOpenPage != null && !imageError) {
