@@ -80,6 +80,7 @@ fun BrowseScreen() {
     var showMoveDialog by remember { mutableStateOf(false) }
     var showSaveRotationDialog by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showRemoveBrokenConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedList?.id) { showSearch = false }
 
@@ -312,10 +313,32 @@ fun BrowseScreen() {
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.weight(1f)
                         )
-                        TextButton(onClick = { vm.removeBrokenEntries() }) {
+                        TextButton(onClick = { showRemoveBrokenConfirm = true }) {
                             Text("Remove all", color = MaterialTheme.colorScheme.error)
                         }
                     }
+                }
+                if (showRemoveBrokenConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showRemoveBrokenConfirm = false },
+                        title = { Text("Remove broken links?") },
+                        text = {
+                            Text(
+                                "This will permanently delete ${brokenEntryIds.size} " +
+                                "entr${if (brokenEntryIds.size != 1) "ies" else "y"} from this collection. " +
+                                "This cannot be undone."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                vm.removeBrokenEntries()
+                                showRemoveBrokenConfirm = false
+                            }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showRemoveBrokenConfirm = false }) { Text("Cancel") }
+                        }
+                    )
                 }
                 WallpaperGridContent(
                     wallpapers = wallpapers,

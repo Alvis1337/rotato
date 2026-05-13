@@ -429,15 +429,17 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             coroutineScope {
                 rawEntries.map { entry ->
                     async {
-                        // Resolve the stored URL to its best local-or-remote form
-                        val resolved = resolveEntryUrl(
-                            entry.thumbUrl.ifBlank { entry.fullUrl },
+                        // Check fullUrl first — that's the actual image. thumbUrl is often a CDN
+                        // preview that can 404 even when the full image is alive (e.g. Gelbooru thumbnails).
+                        // Fall back to thumbUrl only when fullUrl is blank.
+                        val urlToCheck = resolveEntryUrl(
+                            entry.fullUrl.ifBlank { entry.thumbUrl },
                             app.filesDir,
                             entry.sourceId
                         )
                         // Local files are always healthy — no HTTP check needed
-                        if (resolved.startsWith("file://")) return@async
-                        val isBroken = semaphore.withPermit { isUrlBroken(resolved) }
+                        if (urlToCheck.startsWith("file://")) return@async
+                        val isBroken = semaphore.withPermit { isUrlBroken(urlToCheck) }
                         if (isBroken) synchronized(broken) { broken.add(entry.id) }
                     }
                 }.awaitAll()
@@ -468,7 +470,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 headResp.code == 401 || headResp.code == 403 -> false // auth required — resource exists, not gone
                 else -> true
             }
-        } catch (_: Exception) { true }
+        } catch (_: java.net.SocketTimeoutException) { false } // timeout = network issue, not a dead link
+        catch (_: java.io.IOException) { false }           // connection error = assume alive
+        catch (_: Exception) { false }                     // any other transport error = assume alive
     }
 
     fun removeBrokenEntries() {
