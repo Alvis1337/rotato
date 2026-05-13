@@ -135,6 +135,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val globalBlacklist: StateFlow<Set<String>> = prefs.globalBlacklist
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    val discoverHintSeen: StateFlow<Boolean> = prefs.discoverHintSeen
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun dismissDiscoverHint() {
+        viewModelScope.launch { prefs.setDiscoverHintSeen() }
+    }
+
     val discoverBatchSize: StateFlow<Int> = prefs.discoverBatchSize
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 20)
 

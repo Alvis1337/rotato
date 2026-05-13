@@ -131,6 +131,7 @@ fun BrainrotScreen(
     val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     val gridMode by vm.gridMode.collectAsStateWithLifecycle()
+    val discoverHintSeen by vm.discoverHintSeen.collectAsStateWithLifecycle()
 
     val gridState = rememberLazyStaggeredGridState()
     val compactGridState = rememberLazyGridState()
@@ -455,7 +456,38 @@ fun BrainrotScreen(
                         }
                     }
                 }
-                when {
+                    if (!discoverHintSeen) {
+                        ElevatedCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Tips for Discover",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    IconButton(
+                                        onClick = { vm.dismissDiscoverHint() },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Dismiss", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                Text("• Tap source chips to toggle which sources appear", style = MaterialTheme.typography.bodySmall)
+                                Text("• Tap ⚙️ (bottom-right) to set NSFW mode, filters & search tags", style = MaterialTheme.typography.bodySmall)
+                                Text("• Tap a card to preview · Long-press to batch-select", style = MaterialTheme.typography.bodySmall)
+                                Text("• Tap the bookmark icon on any image to save it", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    when {
                     noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
                     noResults -> NoResultsState(
                         searchQuery = searchQuery,

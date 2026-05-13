@@ -58,6 +58,7 @@ class RotatoPreferences(private val context: Context) {
         val DISCOVER_MODE = stringPreferencesKey("discover_mode")
         val WIDGET_COLLECTION_ID = stringPreferencesKey("widget_collection_id")
         val SEEN_WALLPAPER_KEYS = stringPreferencesKey("seen_wallpaper_keys_json")
+        val DISCOVER_HINT_SEEN = booleanPreferencesKey("discover_hint_seen")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -283,6 +284,14 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setSetupDone(done: Boolean = true) {
         context.dataStore.edit { it[SETUP_DONE] = done }
+    }
+
+    val discoverHintSeen: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[DISCOVER_HINT_SEEN] ?: false }
+
+    suspend fun setDiscoverHintSeen() {
+        context.dataStore.edit { it[DISCOVER_HINT_SEEN] = true }
     }
 
     val handsFreeInterval: Flow<Int> = context.dataStore.data
