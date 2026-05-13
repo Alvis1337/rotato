@@ -325,13 +325,14 @@ class WallpaperWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val thumb = Bitmap.createScaledBitmap(bitmap, NOTIF_THUMB_W, NOTIF_THUMB_H, true)
+        val thumb = centerCropBitmap(bitmap, NOTIF_THUMB_W, NOTIF_THUMB_H)
+        val bigPicture = centerCropBitmap(bitmap, NOTIF_BIG_W, NOTIF_BIG_H)
         val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WALLPAPER_SET)
             .setContentTitle("Wallpaper changed")
             .setContentText("Tap to open Rotato")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setLargeIcon(thumb)
-            .setStyle(NotificationCompat.BigPictureStyle().bigPicture(thumb))
+            .setStyle(NotificationCompat.BigPictureStyle().bigPicture(bigPicture))
             .setContentIntent(openIntent)
             .setAutoCancel(true)
             .addAction(0, "Skip", skipIntent)
@@ -341,6 +342,7 @@ class WallpaperWorker(
 
         nm.notify(NOTIF_ID_WALLPAPER_SET, notif)
         thumb.recycle()
+        bigPicture.recycle()
     }
 
     private fun postLowQueueNotification(count: Int) {
@@ -387,7 +389,9 @@ class WallpaperWorker(
         private const val NOTIF_ID_WALLPAPER_SET = 1001
         private const val NOTIF_ID_LOW_QUEUE = 1002
         private const val NOTIF_THUMB_W = 128
-        private const val NOTIF_THUMB_H = 72
+        private const val NOTIF_THUMB_H = 128
+        private const val NOTIF_BIG_W = 1024
+        private const val NOTIF_BIG_H = 512
 
         // Only notify once per distinct count so we don't fire every rotation while queue is low.
         @Volatile private var lastLowQueueNotifCount = Int.MAX_VALUE
@@ -399,3 +403,25 @@ private data class Duodecuple<A, B, C, D, E, F, G, H, I, J, K, L>(
     val fifth: E, val sixth: F, val seventh: G, val eighth: H,
     val ninth: I, val tenth: J, val eleventh: K, val twelfth: L,
 )
+
+private fun centerCropBitmap(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+    val srcW = src.width
+    val srcH = src.height
+    val srcRatio = srcW.toFloat() / srcH
+    val dstRatio = targetW.toFloat() / targetH
+    val cropW: Int
+    val cropH: Int
+    if (srcRatio > dstRatio) {
+        cropH = srcH
+        cropW = (srcH * dstRatio).toInt()
+    } else {
+        cropW = srcW
+        cropH = (srcW / dstRatio).toInt()
+    }
+    val x = (srcW - cropW) / 2
+    val y = (srcH - cropH) / 2
+    val cropped = Bitmap.createBitmap(src, x, y, cropW, cropH)
+    val scaled = Bitmap.createScaledBitmap(cropped, targetW, targetH, true)
+    if (cropped !== src) cropped.recycle()
+    return scaled
+}
