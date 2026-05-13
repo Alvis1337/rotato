@@ -1664,7 +1664,6 @@ private fun StatChip(text: String) {
 }
 
 @Composable
-@Composable
 private fun ShimmerBox(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val offset by transition.animateFloat(
