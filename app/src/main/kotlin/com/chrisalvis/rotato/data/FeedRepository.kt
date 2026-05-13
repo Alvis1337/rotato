@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.chrisalvis.rotato.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -17,13 +18,8 @@ private const val TAG = "FeedRepository"
 
 class FeedRepository(private val imageDir: File) {
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
     suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): Boolean = withContext(Dispatchers.IO) {
-        Log.d(TAG, "downloadWallpaper: sourceId=$sourceId, fullUrl=$fullUrl")
+        if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper: sourceId=$sourceId, fullUrl=$fullUrl")
         if (fullUrl.isBlank()) {
             Log.e(TAG, "downloadWallpaper: fullUrl is blank!")
             return@withContext false
@@ -35,13 +31,13 @@ class FeedRepository(private val imageDir: File) {
         return@withContext try {
             var bytes = downloadBytes(fullUrl, authHeader)
             if (bytes == null && fallbackUrl.isNotBlank()) {
-                Log.d(TAG, "downloadWallpaper: primary URL failed, retrying with fallback: $fallbackUrl")
+                if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper: primary URL failed, retrying with fallback: $fallbackUrl")
                 bytes = downloadBytes(fallbackUrl, authHeader)
             }
             bytes ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
             imageDir.mkdirs()
             destFile.writeBytes(bytes)
-            Log.d(TAG, "downloadWallpaper successful: $destFile")
+            if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper successful: $destFile")
             true
         } catch (e: Exception) {
             Log.e(TAG, "downloadWallpaper failed for $fullUrl", e)
@@ -50,7 +46,7 @@ class FeedRepository(private val imageDir: File) {
     }
 
     suspend fun saveToGallery(context: Context, sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): Boolean = withContext(Dispatchers.IO) {
-        Log.d(TAG, "saveToGallery: sourceId=$sourceId, url=$fullUrl")
+        if (BuildConfig.DEBUG) Log.d(TAG, "saveToGallery: sourceId=$sourceId, url=$fullUrl")
         if (fullUrl.isBlank()) {
             Log.e(TAG, "saveToGallery fullUrl is blank!")
             return@withContext false
@@ -60,12 +56,12 @@ class FeedRepository(private val imageDir: File) {
             var bytes = downloadBytes(fullUrl, authHeader)
             var effectiveUrl = fullUrl
             if (bytes == null && fallbackUrl.isNotBlank()) {
-                Log.d(TAG, "saveToGallery: primary URL failed, retrying with fallback: $fallbackUrl")
+                if (BuildConfig.DEBUG) Log.d(TAG, "saveToGallery: primary URL failed, retrying with fallback: $fallbackUrl")
                 bytes = downloadBytes(fallbackUrl, authHeader)
                 if (bytes != null) effectiveUrl = fallbackUrl
             }
             bytes ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
-            Log.d(TAG, "Downloaded ${bytes.size} bytes from $effectiveUrl")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Downloaded ${bytes.size} bytes from $effectiveUrl")
 
             val mimeType = when (effectiveUrl.substringAfterLast('.').substringBefore('?').lowercase().take(5)) {
                 "png"  -> "image/png"
@@ -95,7 +91,7 @@ class FeedRepository(private val imageDir: File) {
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
-                Log.d(TAG, "Saved to gallery: $uri")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Saved to gallery: $uri")
             } else {
                 val dir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
@@ -103,7 +99,7 @@ class FeedRepository(private val imageDir: File) {
                 )
                 dir.mkdirs()
                 File(dir, fileName).writeBytes(bytes)
-                Log.d(TAG, "Saved to file: ${dir.absolutePath}/$fileName")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Saved to file: ${dir.absolutePath}/$fileName")
             }
             true
         } catch (e: Exception) {
@@ -114,7 +110,7 @@ class FeedRepository(private val imageDir: File) {
 
     /** Copies an already-downloaded local [file] into the public Pictures/Rotato gallery folder. */
     suspend fun saveFileToGallery(context: Context, file: File): Boolean = withContext(Dispatchers.IO) {
-        Log.d(TAG, "saveFileToGallery: ${file.name}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "saveFileToGallery: ${file.name}")
         if (!file.exists()) return@withContext false
         return@withContext try {
             val bytes = file.readBytes()
@@ -147,7 +143,7 @@ class FeedRepository(private val imageDir: File) {
                 dir.mkdirs()
                 File(dir, file.name).writeBytes(bytes)
             }
-            Log.d(TAG, "saveFileToGallery success: ${file.name}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "saveFileToGallery success: ${file.name}")
             true
         } catch (e: Exception) {
             Log.e(TAG, "saveFileToGallery failed for ${file.name}", e)
@@ -175,7 +171,7 @@ class FeedRepository(private val imageDir: File) {
     }
 
     private fun downloadBytes(url: String, authHeader: String? = null): ByteArray? = try {
-        Log.d(TAG, "Downloading from: $url")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Downloading from: $url")
         val reqBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -189,20 +185,26 @@ class FeedRepository(private val imageDir: File) {
             reqBuilder.header("Authorization", authHeader)
         }
         httpClient.newCall(reqBuilder.build()).execute().use { resp ->
-            Log.d(TAG, "HTTP ${resp.code} for $url")
-            if (!resp.isSuccessful) { 
-                Log.w(TAG, "HTTP ${resp.code} for $url"); 
-                null 
-            }
-            else {
+            if (BuildConfig.DEBUG) Log.d(TAG, "HTTP ${resp.code} for $url")
+            if (!resp.isSuccessful) {
+                Log.w(TAG, "HTTP ${resp.code} for $url")
+                null
+            } else {
                 val bytes = resp.body?.bytes()
-                Log.d(TAG, "Got ${bytes?.size} bytes")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Got ${bytes?.size} bytes")
                 bytes
             }
         }
-    } catch (e: Exception) { 
+    } catch (e: Exception) {
         Log.e(TAG, "downloadBytes exception for $url", e)
-        null 
+        null
     }
 
+    companion object {
+        // Shared client — reusing thread pool and connection pool across all FeedRepository instances.
+        val httpClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
 }

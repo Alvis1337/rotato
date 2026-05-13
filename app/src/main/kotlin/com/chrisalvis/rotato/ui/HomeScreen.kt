@@ -59,6 +59,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -273,7 +274,7 @@ private fun LibraryContent(
         }
 
         if (images.isEmpty()) {
-            EmptyState(modifier = Modifier.weight(1f))
+            EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onBrowseFeed)
         } else {
             var selectedFile by remember { mutableStateOf<File?>(null) }
             selectedFile?.let { file ->
@@ -741,7 +742,7 @@ private fun ImagePreviewDialog(
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(modifier: Modifier = Modifier, onGoToDiscover: () -> Unit = {}) {
     Box(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
@@ -775,6 +776,10 @@ private fun EmptyState(modifier: Modifier = Modifier) {
                     Text("•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     Text(tip, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
+            }
+            Spacer(Modifier.height(12.dp))
+            FilledTonalButton(onClick = onGoToDiscover) {
+                Text("Browse Discover")
             }
         }
     }

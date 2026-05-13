@@ -57,29 +57,36 @@ class WallpaperWorker(
         val imageDir = File(applicationContext.filesDir, "rotato_images").also { it.mkdirs() }
         val feedRepository = FeedRepository(imageDir)
 
-        val (settings, autoPause, history, allWallpapers, scheduleEntries, lists) = coroutineScope {
-            val sDeferred = async { prefs.settings.first() }
-            val aDeferred = async { prefs.autoPauseSettings.first() }
-            val hDeferred = async { prefs.historyJson.first() }
-            val wDeferred = async { listPrefs.allWallpapers.first() }
-            val eDeferred = async { schedPrefs.entries.first() }
-            val lDeferred = async { listPrefs.lists.first() }
-            Sextuple(
+        val (settings, autoPause, history, allWallpapers, scheduleEntries, lists,
+             autoFavoriteEnabled, autoFavoriteMinutes,
+             lastWallpaperThumbUrl, lastWallpaperFullUrl, lastWallpaperSource, lastWallpaperSetMs) = coroutineScope {
+            val sDeferred  = async { prefs.settings.first() }
+            val aDeferred  = async { prefs.autoPauseSettings.first() }
+            val hDeferred  = async { prefs.historyJson.first() }
+            val wDeferred  = async { listPrefs.allWallpapers.first() }
+            val eDeferred  = async { schedPrefs.entries.first() }
+            val lDeferred  = async { listPrefs.lists.first() }
+            val afEnDeferred  = async { prefs.autoFavoriteEnabled.first() }
+            val afMinDeferred = async { prefs.autoFavoriteMinutes.first() }
+            val twThumbDeferred  = async { prefs.lastWallpaperThumbUrl.first() }
+            val twFullDeferred   = async { prefs.lastWallpaperFullUrl.first() }
+            val twSrcDeferred    = async { prefs.lastWallpaperSource.first() }
+            val twMsDeferred     = async { prefs.lastWallpaperSetMs.first() }
+            Duodecuple(
                 sDeferred.await(),
                 aDeferred.await(),
                 historyFromJson(hDeferred.await()),
                 wDeferred.await(),
                 eDeferred.await(),
                 lDeferred.await(),
+                afEnDeferred.await(),
+                afMinDeferred.await(),
+                twThumbDeferred.await(),
+                twFullDeferred.await(),
+                twSrcDeferred.await(),
+                twMsDeferred.await(),
             )
         }
-
-        val autoFavoriteEnabled = prefs.autoFavoriteEnabled.first()
-        val autoFavoriteMinutes = prefs.autoFavoriteMinutes.first()
-        val lastWallpaperThumbUrl = prefs.lastWallpaperThumbUrl.first()
-        val lastWallpaperFullUrl = prefs.lastWallpaperFullUrl.first()
-        val lastWallpaperSource = prefs.lastWallpaperSource.first()
-        val lastWallpaperSetMs = prefs.lastWallpaperSetMs.first()
 
         // Auto-pause: night window
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -318,7 +325,7 @@ class WallpaperWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val thumb = Bitmap.createScaledBitmap(bitmap, 128, 72, true)
+        val thumb = Bitmap.createScaledBitmap(bitmap, NOTIF_THUMB_W, NOTIF_THUMB_H, true)
         val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WALLPAPER_SET)
             .setContentTitle("Wallpaper changed")
             .setContentText("Tap to open Rotato")
@@ -379,17 +386,16 @@ class WallpaperWorker(
         const val CHAIN_WORK_NAME = "rotato_chain"
         private const val NOTIF_ID_WALLPAPER_SET = 1001
         private const val NOTIF_ID_LOW_QUEUE = 1002
+        private const val NOTIF_THUMB_W = 128
+        private const val NOTIF_THUMB_H = 72
 
         // Only notify once per distinct count so we don't fire every rotation while queue is low.
         @Volatile private var lastLowQueueNotifCount = Int.MAX_VALUE
     }
 }
 
-private data class Sextuple<A, B, C, D, E, F>(
-    val first: A,
-    val second: B,
-    val third: C,
-    val fourth: D,
-    val fifth: E,
-    val sixth: F,
+private data class Duodecuple<A, B, C, D, E, F, G, H, I, J, K, L>(
+    val first: A, val second: B, val third: C, val fourth: D,
+    val fifth: E, val sixth: F, val seventh: G, val eighth: H,
+    val ninth: I, val tenth: J, val eleventh: K, val twelfth: L,
 )

@@ -1,0 +1,141 @@
+Build & Publish Release APK	Build release APK	﻿2026-05-13T02:06:50.1858722Z ##[group]Run ./gradlew assembleRelease --no-daemon
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1859199Z [36;1m./gradlew assembleRelease --no-daemon[0m
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1882620Z shell: /usr/bin/bash -e {0}
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1882918Z env:
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1883278Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.10-7/x64
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1883820Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.10-7/x64
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1884424Z   MAL_CLIENT_ID: ***
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1885152Z   MAL_CLIENT_SECRET: ***
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:50.1885439Z ##[endgroup]
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3948898Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3949539Z Welcome to Gradle 9.3.1!
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3957202Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3957784Z Here are the highlights of this release:
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3958521Z  - Test reporting improvements
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3959350Z  - Error and warning improvements
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3966570Z  - Build authoring improvements
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3967106Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3969839Z For more details see https://docs.gradle.org/9.3.1/release-notes.html
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.3970585Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:52.6949431Z To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.3.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Build & Publish Release APK	Build release APK	2026-05-13T02:06:53.8941909Z Daemon will be stopped at the end of the build 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.4987368Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5001375Z > Configure project :app
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5002498Z WARNING: The option setting 'android.usesSdkInManifest.disallowed=false' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5015662Z The current default is 'true'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5029665Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5032300Z WARNING: The option setting 'android.sdk.defaultTargetSdkToCompileSdkIfUnset=false' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5033887Z The current default is 'true'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5034604Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5035889Z WARNING: The option setting 'android.enableAppCompileTimeRClass=false' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5036862Z The current default is 'true'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5037559Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5038474Z WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5039291Z The current default is 'true'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5039972Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5040854Z WARNING: The option setting 'android.newDsl=false' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5041616Z The current default is 'true'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5042292Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5043298Z WARNING: The option setting 'android.r8.optimizedResourceShrinking=false' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5044225Z The current default is 'true'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5045040Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5046073Z WARNING: The option setting 'android.defaults.buildfeatures.resvalues=true' is deprecated.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5047079Z The current default is 'false'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.5047770Z It will be removed in version 10.0 of the Android Gradle plugin.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.7945527Z WARNING: The property android.dependency.excludeLibraryComponentsFromConstraints improves project import performance for very large projects. It should be enabled to improve performance.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.7948058Z To suppress this warning, add android.generateSyncIssueWhenLibraryConstraintsAreEnabled=false to gradle.properties
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.8949389Z WARNING: The property android.dependency.excludeLibraryComponentsFromConstraints improves project import performance for very large projects. It should be enabled to improve performance.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.8956319Z To suppress this warning, add android.generateSyncIssueWhenLibraryConstraintsAreEnabled=false to gradle.properties
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.9945287Z WARNING: The property android.dependency.excludeLibraryComponentsFromConstraints improves project import performance for very large projects. It should be enabled to improve performance.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.9948806Z To suppress this warning, add android.generateSyncIssueWhenLibraryConstraintsAreEnabled=false to gradle.properties
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.9957393Z WARNING: The property android.dependency.excludeLibraryComponentsFromConstraints improves project import performance for very large projects. It should be enabled to improve performance.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:01.9959715Z To suppress this warning, add android.generateSyncIssueWhenLibraryConstraintsAreEnabled=false to gradle.properties
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:04.3942187Z Configuration 'releaseRuntimeClasspath' was resolved during configuration time.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:04.3950917Z This is a build performance and scalability issue.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:04.3953324Z See https://github.com/gradle/gradle/issues/2298
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:04.3954260Z Run with --info for a stacktrace.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:05.0940557Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:05.0949170Z > Task :app:preBuild UP-TO-DATE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:05.0949960Z > Task :app:preReleaseBuild UP-TO-DATE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:05.2980454Z > Task :app:mergeReleaseJniLibFolders
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:05.7957044Z > Task :app:mergeReleaseNativeLibs
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:05.7960076Z > Task :app:buildKotlinToolingMetadata
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.1975710Z > Task :app:stripReleaseDebugSymbols
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.3943281Z > Task :app:extractReleaseNativeSymbolTables FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.4024140Z > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.4055947Z > Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.4080987Z > Task :app:checkReleaseDuplicateClasses
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.4108733Z > Task :app:generateReleaseBuildConfig
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.5943173Z > Task :app:generateReleaseResValues FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.5948089Z > Task :app:checkReleaseAarMetadata
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.6976064Z > Task :app:collectReleaseDependencies
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.6977102Z > Task :app:releaseOssDependencyTask FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.7947205Z > Task :app:releaseOssLicensesTask FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.7951303Z > Task :app:mapReleaseSourceSetPaths
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.8959360Z > Task :app:processReleaseNavigationResources FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.8960436Z > Task :app:compileReleaseNavigationResources FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:06.8961216Z > Task :app:generateReleaseResources FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.0940713Z > Task :app:mergeReleaseResources FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.0941655Z > Task :app:packageReleaseResources FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.3971222Z > Task :app:parseReleaseLocalResources FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.3995404Z > Task :app:createReleaseCompatibleScreenManifests
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.4006727Z > Task :app:extractDeepLinksRelease FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.6941349Z > Task :app:processReleaseMainManifest
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.7965913Z > Task :app:processReleaseManifest
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.8940769Z > Task :app:javaPreCompileRelease FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.8943546Z > Task :app:processReleaseManifestForPackage
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:07.8944227Z > Task :app:mergeReleaseArtProfile
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.0949568Z > Task :app:extractProguardFiles
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.0981739Z > Task :app:mergeReleaseStartupProfile
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.1003389Z > Task :app:generateReleaseAssets UP-TO-DATE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.1957434Z > Task :app:mergeReleaseAssets
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.1975810Z > Task :app:compressReleaseAssets FROM-CACHE
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.3946002Z > Task :app:extractReleaseVersionControlInfo
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4959396Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4960464Z > Task :app:sdkReleaseDependencyData
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4961639Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.KeyData
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4966882Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4972498Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.Keyset$Key
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4977525Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4982686Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.Keyset
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4987529Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4992115Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.EciesHkdfKemParams
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.4997033Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5001755Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.KeyTemplate
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5006634Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5011657Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.EciesAeadDemParams
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5016968Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5030169Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.EciesAeadHkdfParams
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5035364Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5040225Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.EciesAeadHkdfPublicKey
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5045185Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5049991Z Vulnerable protobuf generated type in use: com.google.crypto.tink.proto.AesGcmKeyFormat
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5054741Z As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5059226Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5059602Z > Task :app:validateSigningRelease
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5060257Z > Task :app:writeReleaseAppMetadata
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.5060943Z > Task :app:writeReleaseSigningConfigVersions
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:08.8963981Z > Task :app:processReleaseResources
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:09.5941599Z > Task :app:optimizeReleaseResources
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:23.9940693Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:23.9953391Z e: file:///home/runner/work/***/***/app/src/main/kotlin/com/chrisalvis/***/ui/SettingsScreen.kt:30:35 Unresolved reference 'ExposedDropdownMenu'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:23.9954561Z > Task :app:compileReleaseKotlin
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.0943016Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.0943065Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.0966281Z FAILURE: Build failed with an exception.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.0968178Z > Task :app:compileReleaseKotlin FAILED
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.0970070Z 38 actionable tasks: 25 executed, 13 from cache
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.0998917Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1004210Z * What went wrong:
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1004993Z Execution failed for task ':app:compileReleaseKotlin'.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1006348Z > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1007561Z    > Compilation error. See log for more details
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1007917Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1008041Z * Try:
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1008432Z > Run with --stacktrace option to get the stack trace.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1009061Z > Run with --info or --debug option to get more log output.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1009819Z > Run with --scan to get full insights from a Build Scan (powered by Develocity).
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1010860Z > Get more help at https://help.gradle.org.
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1011223Z 
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.1011354Z BUILD FAILED in 32s
+Build & Publish Release APK	Build release APK	2026-05-13T02:07:24.5481324Z ##[error]Process completed with exit code 1.

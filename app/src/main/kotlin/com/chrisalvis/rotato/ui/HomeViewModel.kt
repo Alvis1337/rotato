@@ -76,7 +76,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
 
-    private val _images = MutableStateFlow<List<File>>(repository.getImages())
+    private val _images = MutableStateFlow<List<File>>(emptyList())
     val images: StateFlow<List<File>> = _images.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)

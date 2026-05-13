@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class SetupStep { WELCOME }
+enum class SetupStep { WELCOME, DISCOVER, LIBRARY, COLLECTIONS, FINISH }
 
 class SetupViewModel(app: Application) : AndroidViewModel(app) {
 

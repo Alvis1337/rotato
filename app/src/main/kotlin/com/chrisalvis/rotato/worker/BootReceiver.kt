@@ -14,9 +14,9 @@ import androidx.work.WorkManager
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.ui.HomeViewModel
-import com.chrisalvis.rotato.worker.ScheduleManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
@@ -25,43 +25,50 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val prefs = RotatoPreferences(context)
-        CoroutineScope(Dispatchers.IO).launch {
-            val settings = prefs.settings.first()
-            if (!settings.isEnabled) return@launch
+        // goAsync() prevents Android from killing the process when onReceive() returns;
+        // SupervisorJob ensures one child failure doesn't cancel sibling coroutines.
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                val settings = prefs.settings.first()
+                if (!settings.isEnabled) return@launch
 
-            val intervalMinutes = settings.intervalMinutes.toLong()
-            val constraints = Constraints.Builder()
-                .setRequiresBatteryNotLow(true)
-                .setRequiresStorageNotLow(true)
-                .build()
+                val intervalMinutes = settings.intervalMinutes.toLong()
+                val constraints = Constraints.Builder()
+                    .setRequiresBatteryNotLow(true)
+                    .setRequiresStorageNotLow(true)
+                    .build()
 
-            val wm = WorkManager.getInstance(context)
-            if (intervalMinutes < 15) {
-                wm.cancelUniqueWork(HomeViewModel.WORK_NAME)
-                val req = OneTimeWorkRequestBuilder<WallpaperWorker>()
-                    .setInitialDelay(intervalMinutes, TimeUnit.MINUTES)
-                    .setConstraints(constraints)
-                    .setInputData(workDataOf(WallpaperWorker.KEY_INTERVAL_MINUTES to intervalMinutes))
-                    .build()
-                wm.enqueueUniqueWork(WallpaperWorker.CHAIN_WORK_NAME, ExistingWorkPolicy.REPLACE, req)
-            } else {
-                val flexMinutes = (intervalMinutes / 4)
-                    .coerceAtLeast(PeriodicWorkRequest.MIN_PERIODIC_FLEX_MILLIS / 60_000)
-                    .coerceAtMost(15L)
-                val req = PeriodicWorkRequestBuilder<WallpaperWorker>(
-                    intervalMinutes, TimeUnit.MINUTES,
-                    flexMinutes, TimeUnit.MINUTES
-                )
-                    .setConstraints(constraints)
-                    .setInputData(workDataOf(WallpaperWorker.KEY_INTERVAL_MINUTES to intervalMinutes))
-                    .build()
-                wm.cancelUniqueWork(WallpaperWorker.CHAIN_WORK_NAME)
-                wm.enqueueUniquePeriodicWork(HomeViewModel.WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
+                val wm = WorkManager.getInstance(context)
+                if (intervalMinutes < 15) {
+                    wm.cancelUniqueWork(HomeViewModel.WORK_NAME)
+                    val req = OneTimeWorkRequestBuilder<WallpaperWorker>()
+                        .setInitialDelay(intervalMinutes, TimeUnit.MINUTES)
+                        .setConstraints(constraints)
+                        .setInputData(workDataOf(WallpaperWorker.KEY_INTERVAL_MINUTES to intervalMinutes))
+                        .build()
+                    wm.enqueueUniqueWork(WallpaperWorker.CHAIN_WORK_NAME, ExistingWorkPolicy.REPLACE, req)
+                } else {
+                    val flexMinutes = (intervalMinutes / 4)
+                        .coerceAtLeast(PeriodicWorkRequest.MIN_PERIODIC_FLEX_MILLIS / 60_000)
+                        .coerceAtMost(15L)
+                    val req = PeriodicWorkRequestBuilder<WallpaperWorker>(
+                        intervalMinutes, TimeUnit.MINUTES,
+                        flexMinutes, TimeUnit.MINUTES
+                    )
+                        .setConstraints(constraints)
+                        .setInputData(workDataOf(WallpaperWorker.KEY_INTERVAL_MINUTES to intervalMinutes))
+                        .build()
+                    wm.cancelUniqueWork(WallpaperWorker.CHAIN_WORK_NAME)
+                    wm.enqueueUniquePeriodicWork(HomeViewModel.WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
+                }
+
+                // Reschedule any active schedule alarms
+                val schedEntries = SchedulePreferences(context).entries.first()
+                ScheduleManager.scheduleAll(context, schedEntries)
+            } finally {
+                pendingResult.finish()
             }
-
-            // Reschedule any active schedule alarms
-            val schedEntries = SchedulePreferences(context).entries.first()
-            ScheduleManager.scheduleAll(context, schedEntries)
         }
     }
 }
