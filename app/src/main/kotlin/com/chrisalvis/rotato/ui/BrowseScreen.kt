@@ -396,6 +396,7 @@ fun BrowseScreen() {
                 onSelectList = { vm.selectList(it) },
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
+                onSetRotationTarget = { list, target -> vm.setRotationTarget(list, target) },
                 onLockCollection = { vm.lockCollection(it.id) },
                 onUnlockCollection = { list ->
                     BiometricHelper.authenticate(
@@ -731,6 +732,7 @@ private fun ListPickerContent(
     onSelectList: (LocalList) -> Unit,
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
+    onSetRotationTarget: (LocalList, com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
     onLockCollection: (LocalList) -> Unit,
     onUnlockCollection: (LocalList) -> Unit,
     onRelockForSession: (LocalList) -> Unit,
@@ -798,7 +800,7 @@ private fun ListPickerContent(
                     onClick = { onSelectList(list) },
                     onDelete = { listToDelete = list },
                     onToggleRotation = { onToggleRotation(list) },
-                    onSetRotationTarget = { vm.setRotationTarget(list, it) },
+                    onSetRotationTarget = { onSetRotationTarget(list, it) },
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
                     onRelockForSession = { onRelockForSession(list) },
