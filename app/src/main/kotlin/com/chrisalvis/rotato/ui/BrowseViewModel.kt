@@ -88,6 +88,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .map { all -> all.groupBy { it.listId }.mapValues { (_, v) -> v.size } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    val allKnownTags: StateFlow<List<String>> = localLists.allWallpapers
+        .map { all -> all.flatMap { it.tags }.map { it.lowercase() }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val listCovers: StateFlow<Map<String, String?>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
         val wallpapersByList = all.groupBy { it.listId }
         lists.associate { list ->
@@ -187,12 +191,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
         // React to new wallpapers in manual collections and auto-populate smart collections.
         // We only watch non-smart entries so adding to smart collections doesn't re-trigger.
+        // Use Eagerly so the observer stays hot even when no UI subscribers are active.
         viewModelScope.launch {
-            combine(localLists.allWallpapers, _allLists) { allEntries, lists ->
+            combine(localLists.allWallpapers, localLists.lists) { allEntries, lists ->
                 val smartIds = lists.filter { it.isSmartCollection }.map { it.id }.toSet()
-                Pair(allEntries, allEntries.filter { it.listId !in smartIds })
-            }.collect { (allEntries, manualEntries) ->
-                val smartLists = _allLists.value.filter { it.isSmartCollection }
+                Triple(allEntries, lists.filter { it.isSmartCollection }, allEntries.filter { it.listId !in smartIds })
+            }.collect { (allEntries, smartLists, manualEntries) ->
                 if (smartLists.isEmpty()) return@collect
                 for (smartList in smartLists) {
                     val rule = smartList.smartRule ?: continue
@@ -242,17 +246,38 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun populateSmartCollection(listId: String, rule: SmartRule) {
+    private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE) {
         val allEntries = localLists.allWallpapers.first()
-        val smartIds = _allLists.value.filter { it.isSmartCollection }.map { it.id }.toSet()
+        val smartIds = localLists.lists.first().filter { it.isSmartCollection }.map { it.id }.toSet()
+        val alreadyIn = allEntries.filter { it.listId == listId }.map { it.sourceId }.toSet()
         val sourceEntries = allEntries.filter { it.listId !in smartIds }
+        var added = 0
         for (entry in sourceEntries) {
+            if (added >= limit) break
+            if (entry.sourceId in alreadyIn) continue
             if (rule.matches(entry)) {
                 localLists.addWallpaperEntry(entry.copy(
                     id = UUID.randomUUID().toString(),
                     listId = listId,
                 ))
+                added++
             }
+        }
+    }
+
+    fun editSmartRule(list: LocalList, rule: SmartRule?) {
+        viewModelScope.launch {
+            localLists.setSmartRule(list.id, rule)
+            if (rule != null && !rule.isEmpty) {
+                populateSmartCollection(list.id, rule)
+            }
+        }
+    }
+
+    fun autofillSmartCollection(list: LocalList, limit: Int = 25) {
+        val rule = list.smartRule ?: return
+        viewModelScope.launch {
+            populateSmartCollection(list.id, rule, limit)
         }
     }
 

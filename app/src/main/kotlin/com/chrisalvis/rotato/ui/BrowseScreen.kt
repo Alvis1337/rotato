@@ -22,8 +22,10 @@ import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Close
@@ -89,6 +91,7 @@ fun BrowseScreen() {
     val exportProgress by vm.exportProgress.collectAsStateWithLifecycle()
     val restoreProgress by vm.restoreProgress.collectAsStateWithLifecycle()
     val downloadAllProgress by vm.downloadAllProgress.collectAsStateWithLifecycle()
+    val allKnownTags by vm.allKnownTags.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -162,6 +165,7 @@ fun BrowseScreen() {
     BackHandler(enabled = !selectionMode && selectedList != null) { vm.clearSelection() }
 
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
+    var editRulesFor by remember { mutableStateOf<LocalList?>(null) }
 
     fun updateCover(wallpaper: BrowseWallpaper) {
         val entry = vm.wallpaperEntry(wallpaper.entryId) ?: return
@@ -202,7 +206,17 @@ fun BrowseScreen() {
     if (showCreateDialog) {
         CreateListDialog(
             onConfirm = { name, rule -> vm.createList(name, rule) },
-            onDismiss = { vm.dismissCreateDialog() }
+            onDismiss = { vm.dismissCreateDialog() },
+            knownTags = allKnownTags
+        )
+    }
+
+    editRulesFor?.let { list ->
+        EditRulesDialog(
+            list = list,
+            knownTags = allKnownTags,
+            onConfirm = { rule -> vm.editSmartRule(list, rule); editRulesFor = null },
+            onDismiss = { editRulesFor = null }
         )
     }
 
@@ -397,6 +411,8 @@ fun BrowseScreen() {
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
                 onSetRotationTarget = { list, target -> vm.setRotationTarget(list, target) },
+                onEditRules = { editRulesFor = it },
+                onAutofill = { vm.autofillSmartCollection(it) },
                 onLockCollection = { vm.lockCollection(it.id) },
                 onUnlockCollection = { list ->
                     BiometricHelper.authenticate(
@@ -637,7 +653,7 @@ private fun WallpaperDetailSheet(
 }
 
 @Composable
-private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss: () -> Unit) {
+private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss: () -> Unit, knownTags: List<String> = emptyList()) {
     var name by remember { mutableStateOf("") }
     var isSmart by remember { mutableStateOf(false) }
     var requireAllText by remember { mutableStateOf("") }
@@ -674,32 +690,14 @@ private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss:
                     Switch(checked = isSmart, onCheckedChange = { isSmart = it })
                 }
                 if (isSmart) {
-                    OutlinedTextField(
-                        value = requireAllText,
-                        onValueChange = { requireAllText = it },
-                        label = { Text("Must have ALL tags (AND)") },
-                        placeholder = { Text("anime, landscape") },
-                        supportingText = { Text("Comma-separated — all must be present") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = requireAnyText,
-                        onValueChange = { requireAnyText = it },
-                        label = { Text("Must have ANY tag (OR)") },
-                        placeholder = { Text("wallpaper, scenery") },
-                        supportingText = { Text("Comma-separated — at least one must match") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = excludeAnyText,
-                        onValueChange = { excludeAnyText = it },
-                        label = { Text("Must NOT have tags") },
-                        placeholder = { Text("nsfw, gore") },
-                        supportingText = { Text("Comma-separated — none of these can be present") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    TagRuleFields(
+                        requireAllText = requireAllText,
+                        requireAnyText = requireAnyText,
+                        excludeAnyText = excludeAnyText,
+                        onRequireAllChange = { requireAllText = it },
+                        onRequireAnyChange = { requireAnyText = it },
+                        onExcludeAnyChange = { excludeAnyText = it },
+                        knownTags = knownTags,
                     )
                 }
             }
@@ -721,6 +719,96 @@ private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss:
     )
 }
 
+@Composable
+private fun TagRuleFields(
+    requireAllText: String,
+    requireAnyText: String,
+    excludeAnyText: String,
+    onRequireAllChange: (String) -> Unit,
+    onRequireAnyChange: (String) -> Unit,
+    onExcludeAnyChange: (String) -> Unit,
+    knownTags: List<String>,
+) {
+    @Composable
+    fun TagField(value: String, onValueChange: (String) -> Unit, label: String, placeholder: String, supporting: String) {
+        val lastToken = value.substringAfterLast(",").trimStart()
+        val suggestions = if (lastToken.length >= 2) {
+            knownTags.filter { it.startsWith(lastToken.lowercase()) && it != lastToken.lowercase() }.take(5)
+        } else emptyList()
+        Column {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text(label) },
+                placeholder = { Text(placeholder) },
+                supportingText = { Text(supporting) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (suggestions.isNotEmpty()) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    suggestions.forEach { tag ->
+                        SuggestionChip(
+                            onClick = {
+                                val prefix = if (value.contains(",")) value.substringBeforeLast(",") + ", " else ""
+                                onValueChange(prefix + tag + ", ")
+                            },
+                            label = { Text(tag, style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+    TagField(requireAllText, onRequireAllChange, "Must have ALL tags (AND)", "anime, landscape", "Comma-separated — all must be present")
+    TagField(requireAnyText, onRequireAnyChange, "Must have ANY tag (OR)", "wallpaper, scenery", "Comma-separated — at least one must match")
+    TagField(excludeAnyText, onExcludeAnyChange, "Must NOT have tags", "nsfw, gore", "Comma-separated — none of these can be present")
+}
+
+@Composable
+private fun EditRulesDialog(
+    list: LocalList,
+    knownTags: List<String>,
+    onConfirm: (SmartRule?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val existing = list.smartRule
+    var requireAllText by remember { mutableStateOf(existing?.requireAll?.joinToString(", ") ?: "") }
+    var requireAnyText by remember { mutableStateOf(existing?.requireAny?.joinToString(", ") ?: "") }
+    var excludeAnyText by remember { mutableStateOf(existing?.excludeAny?.joinToString(", ") ?: "") }
+
+    fun tagsFromText(text: String) = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Rules — ${list.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TagRuleFields(
+                    requireAllText = requireAllText,
+                    requireAnyText = requireAnyText,
+                    excludeAnyText = excludeAnyText,
+                    onRequireAllChange = { requireAllText = it },
+                    onRequireAnyChange = { requireAnyText = it },
+                    onExcludeAnyChange = { excludeAnyText = it },
+                    knownTags = knownTags,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val rule = SmartRule(
+                    requireAll = tagsFromText(requireAllText),
+                    requireAny = tagsFromText(requireAnyText),
+                    excludeAny = tagsFromText(excludeAnyText),
+                )
+                onConfirm(if (rule.isEmpty) null else rule)
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ListPickerContent(
@@ -733,6 +821,8 @@ private fun ListPickerContent(
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
     onSetRotationTarget: (LocalList, com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
+    onEditRules: (LocalList) -> Unit,
+    onAutofill: (LocalList) -> Unit,
     onLockCollection: (LocalList) -> Unit,
     onUnlockCollection: (LocalList) -> Unit,
     onRelockForSession: (LocalList) -> Unit,
@@ -801,6 +891,8 @@ private fun ListPickerContent(
                     onDelete = { listToDelete = list },
                     onToggleRotation = { onToggleRotation(list) },
                     onSetRotationTarget = { onSetRotationTarget(list, it) },
+                    onEditRules = { onEditRules(list) },
+                    onAutofill = { onAutofill(list) },
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
                     onRelockForSession = { onRelockForSession(list) },
@@ -843,6 +935,8 @@ private fun CollectionCard(
     onDelete: () -> Unit,
     onToggleRotation: () -> Unit,
     onSetRotationTarget: (com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
+    onEditRules: () -> Unit,
+    onAutofill: () -> Unit,
     onLock: () -> Unit,
     onUnlock: () -> Unit,
     onRelockForSession: () -> Unit,
@@ -992,6 +1086,24 @@ private fun CollectionCard(
                                 )
                             }
                         }
+                    }
+                }
+                if (list.isSmartCollection) {
+                    IconButton(onClick = onEditRules, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Edit rules",
+                            tint = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(20.dp).background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                        )
+                    }
+                    IconButton(onClick = onAutofill, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = "Autofill",
+                            tint = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(20.dp).background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                        )
                     }
                 }
                 // Lock toggle: 3 states —
