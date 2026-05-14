@@ -729,8 +729,10 @@ private fun TagRuleFields(
     onExcludeAnyChange: (String) -> Unit,
     knownTags: List<String>,
 ) {
+    var showAdvanced by remember { mutableStateOf(requireAnyText.isNotBlank() || excludeAnyText.isNotBlank()) }
+
     @Composable
-    fun TagField(value: String, onValueChange: (String) -> Unit, label: String, placeholder: String, supporting: String) {
+    fun TagField(value: String, onValueChange: (String) -> Unit, label: String, placeholder: String, supporting: String? = null) {
         val lastToken = value.substringAfterLast(",").trimStart()
         val suggestions = if (lastToken.length >= 2) {
             knownTags.filter { it.startsWith(lastToken.lowercase()) && it != lastToken.lowercase() }.take(5)
@@ -741,7 +743,7 @@ private fun TagRuleFields(
                 onValueChange = onValueChange,
                 label = { Text(label) },
                 placeholder = { Text(placeholder) },
-                supportingText = { Text(supporting) },
+                supportingText = if (supporting != null) ({ Text(supporting) }) else null,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -760,9 +762,22 @@ private fun TagRuleFields(
             }
         }
     }
-    TagField(requireAllText, onRequireAllChange, "Must have ALL tags (AND)", "anime, landscape", "Comma-separated — all must be present")
-    TagField(requireAnyText, onRequireAnyChange, "Must have ANY tag (OR)", "wallpaper, scenery", "Comma-separated — at least one must match")
-    TagField(excludeAnyText, onExcludeAnyChange, "Must NOT have tags", "nsfw, gore", "Comma-separated — none of these can be present")
+
+    TagField(requireAllText, onRequireAllChange, "Tags", "anime, landscape", "Comma-separated — wallpapers must have all of these")
+    TextButton(
+        onClick = { showAdvanced = !showAdvanced },
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+    ) {
+        Text(
+            if (showAdvanced) "▲ Advanced" else "▼ Advanced",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+    if (showAdvanced) {
+        TagField(requireAnyText, onRequireAnyChange, "Match any tag (OR)", "wallpaper, scenery", "At least one must be present")
+        TagField(excludeAnyText, onExcludeAnyChange, "Exclude tags", "nsfw, gore", "None of these can be present")
+    }
 }
 
 @Composable
