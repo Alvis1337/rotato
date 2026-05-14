@@ -2,14 +2,9 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="file" path="datastore" />
-        <exclude domain="file" path="rotato_images" />
-        <exclude domain="file" path="list_images" />
-        <exclude domain="cache" path="." />
     </cloud-backup>
     <device-transfer>
         <include domain="file" path="datastore" />
         <include domain="file" path="list_images" />
-        <exclude domain="file" path="rotato_images" />
-        <exclude domain="cache" path="." />
     </device-transfer>
 </data-extraction-rules>
