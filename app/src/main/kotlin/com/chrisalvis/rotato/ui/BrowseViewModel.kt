@@ -198,12 +198,14 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 Triple(allEntries, lists.filter { it.isSmartCollection }, allEntries.filter { it.listId !in smartIds })
             }.collect { (allEntries, smartLists, manualEntries) ->
                 if (smartLists.isEmpty()) return@collect
+                Log.d("SmartCollection", "observer fired: smartLists=${smartLists.size} manualEntries=${manualEntries.size}")
                 for (smartList in smartLists) {
                     val rule = smartList.smartRule ?: continue
                     val alreadyIn = allEntries.filter { it.listId == smartList.id }.map { it.sourceId }.toSet()
                     for (entry in manualEntries) {
                         if (entry.sourceId in alreadyIn) continue
                         if (rule.matches(entry)) {
+                            Log.d("SmartCollection", "observer match: sourceId=${entry.sourceId} tags=${entry.tags} → adding to ${smartList.id}")
                             localLists.addWallpaperEntry(entry.copy(
                                 id = UUID.randomUUID().toString(),
                                 listId = smartList.id,
@@ -246,10 +248,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE) {
+    private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE): Int {
         val allEntries = localLists.allWallpapers.first()
         val smartIds = localLists.lists.first().filter { it.isSmartCollection }.map { it.id }.toSet()
-        val seenSourceIds = allEntries.filter { it.listId == listId }.map { it.sourceId }.toMutableSet()
+        val alreadyInIds = allEntries.filter { it.listId == listId }.map { it.sourceId }.toSet()
+        val seenSourceIds = alreadyInIds.toMutableSet()
         val sourceEntries = allEntries.filter { it.listId !in smartIds }
         var added = 0
         for (entry in sourceEntries) {
@@ -264,6 +267,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 added++
             }
         }
+        Log.d("SmartCollection", "populate: allEntries=${allEntries.size} smartIds=$smartIds sourceEntries=${sourceEntries.size} alreadyIn=${alreadyInIds.size} added=$added rule=$rule")
+        return added
     }
 
     fun editSmartRule(list: LocalList, rule: SmartRule?) {
@@ -277,8 +282,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun autofillSmartCollection(list: LocalList, limit: Int = 25) {
         val rule = list.smartRule ?: return
+        Log.d("SmartCollection", "autofill triggered: listId=${list.id} rule=$rule limit=$limit")
         viewModelScope.launch {
-            populateSmartCollection(list.id, rule, limit)
+            val added = populateSmartCollection(list.id, rule, limit)
+            val ctx = app.applicationContext
+            withContext(Dispatchers.Main) {
+                Toast.makeText(ctx, if (added > 0) "Autofill added $added image${if (added != 1) "s" else ""}" else "No new matches found", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
