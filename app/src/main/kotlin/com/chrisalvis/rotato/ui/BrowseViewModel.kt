@@ -249,17 +249,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE) {
         val allEntries = localLists.allWallpapers.first()
         val smartIds = localLists.lists.first().filter { it.isSmartCollection }.map { it.id }.toSet()
-        val alreadyIn = allEntries.filter { it.listId == listId }.map { it.sourceId }.toSet()
+        val seenSourceIds = allEntries.filter { it.listId == listId }.map { it.sourceId }.toMutableSet()
         val sourceEntries = allEntries.filter { it.listId !in smartIds }
         var added = 0
         for (entry in sourceEntries) {
             if (added >= limit) break
-            if (entry.sourceId in alreadyIn) continue
+            if (entry.sourceId in seenSourceIds) continue
             if (rule.matches(entry)) {
                 localLists.addWallpaperEntry(entry.copy(
                     id = UUID.randomUUID().toString(),
                     listId = listId,
                 ))
+                seenSourceIds.add(entry.sourceId)
                 added++
             }
         }

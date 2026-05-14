@@ -152,7 +152,7 @@ class LocalListsPreferences(private val context: Context) {
     suspend fun addWallpaperEntry(entry: LocalWallpaperEntry) {
         context.dataStore.edit { prefs ->
             val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            if (current.any { it.id == entry.id }) return@edit
+            if (current.any { it.listId == entry.listId && it.sourceId == entry.sourceId }) return@edit
             prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
         }
     }
