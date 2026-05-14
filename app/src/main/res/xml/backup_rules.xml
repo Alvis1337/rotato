@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="file" path="datastore" />
+    <exclude domain="file" path="rotato_images" />
+    <exclude domain="file" path="list_images" />
+    <exclude domain="cache" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>
