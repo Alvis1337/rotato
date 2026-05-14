@@ -280,6 +280,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setWallpaperFit(fit: com.chrisalvis.rotato.data.WallpaperFit) {
+        viewModelScope.launch { preferences.setWallpaperFit(fit) }
+    }
+
     fun setWidgetCollectionId(listId: String) {
         viewModelScope.launch {
             preferences.setWidgetCollectionId(listId)

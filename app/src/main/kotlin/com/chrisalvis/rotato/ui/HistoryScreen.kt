@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -237,24 +238,53 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
         return
     }
 
+    val today = remember {
+        Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+    }
+    val yesterday = remember { today - 86_400_000L }
+
+    fun dateHeader(ts: Long): String = when {
+        ts >= today -> "Today"
+        ts >= yesterday -> "Yesterday"
+        else -> SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date(ts))
+    }
+
+    fun dayBucket(ts: Long): Long {
+        val cal = Calendar.getInstance().apply { timeInMillis = ts; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+        return cal.timeInMillis
+    }
+
+    val grouped = remember(history) { history.groupBy { dayBucket(it.timestamp) } }
+    val sortedDays = remember(grouped) { grouped.keys.sortedDescending() }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(history, key = { "${it.timestamp}_${it.fullUrl}" }) { item ->
-            val isLocal = item.fullUrl.startsWith("/")
-            val openUri = item.pageUrl.ifBlank { if (!isLocal) item.fullUrl else null }
-            HistoryCard(
-                item = item,
-                isDownloading = downloading.contains(item.fullUrl),
-                onDownload = { vm.saveToGallery(item) },
-                onSaveToCollection = { saveToCollectionFor = item },
-                onRemove = { vm.removeItem(item) },
-                onOpenPage = if (openUri != null) ({
-                    context.startActivity(Intent(Intent.ACTION_VIEW, openUri.toUri()))
-                }) else null
-            )
+        sortedDays.forEach { day ->
+            item(key = "header_$day") {
+                Text(
+                    text = dateHeader(day),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = if (day == sortedDays.first()) 0.dp else 8.dp, bottom = 4.dp)
+                )
+            }
+            items(grouped[day] ?: emptyList(), key = { "${it.timestamp}_${it.fullUrl}" }) { item ->
+                val isLocal = item.fullUrl.startsWith("/")
+                val openUri = item.pageUrl.ifBlank { if (!isLocal) item.fullUrl else null }
+                HistoryCard(
+                    item = item,
+                    isDownloading = downloading.contains(item.fullUrl),
+                    onDownload = { vm.saveToGallery(item) },
+                    onSaveToCollection = { saveToCollectionFor = item },
+                    onRemove = { vm.removeItem(item) },
+                    onOpenPage = if (openUri != null) ({
+                        context.startActivity(Intent(Intent.ACTION_VIEW, openUri.toUri()))
+                    }) else null
+                )
+            }
         }
     }
 }

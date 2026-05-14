@@ -31,6 +31,7 @@ import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.ScreenRotationTarget
+import com.chrisalvis.rotato.data.WallpaperFit
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.loadScaledBitmap
@@ -167,15 +168,31 @@ class WallpaperWorker(
             val screenH = metrics.heightPixels
 
             fun scaleBitmap(bitmap: Bitmap): Bitmap {
-                val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
-                val scaledW = (bitmap.width * scale).roundToInt()
-                val scaledH = (bitmap.height * scale).roundToInt()
-                val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-                val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
-                val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
-                val cropped = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
-                if (scaled != bitmap) scaled.recycle()
-                return cropped
+                return when (settings.wallpaperFit) {
+                    WallpaperFit.STRETCH -> Bitmap.createScaledBitmap(bitmap, screenW, screenH, true)
+                    WallpaperFit.FIT -> {
+                        val scale = minOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
+                        val scaledW = (bitmap.width * scale).roundToInt()
+                        val scaledH = (bitmap.height * scale).roundToInt()
+                        val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                        val result = Bitmap.createBitmap(screenW, screenH, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(result)
+                        canvas.drawBitmap(scaled, ((screenW - scaledW) / 2f), ((screenH - scaledH) / 2f), null)
+                        if (scaled != bitmap) scaled.recycle()
+                        result
+                    }
+                    WallpaperFit.FILL -> {
+                        val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
+                        val scaledW = (bitmap.width * scale).roundToInt()
+                        val scaledH = (bitmap.height * scale).roundToInt()
+                        val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                        val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
+                        val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
+                        val cropped = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
+                        if (scaled != bitmap) scaled.recycle()
+                        cropped
+                    }
+                }
             }
 
             val homeBitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)

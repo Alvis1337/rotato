@@ -6,12 +6,19 @@ enum class WallpaperTarget(val label: String) {
     BOTH("Home & lock screen")
 }
 
+enum class WallpaperFit(val label: String) {
+    FILL("Fill (crop to fit)"),
+    FIT("Fit (letterbox)"),
+    STRETCH("Stretch"),
+}
+
 data class RotatoSettings(
     val isEnabled: Boolean = false,
     val intervalMinutes: Int = 60,
     val shuffleMode: Boolean = true,
     val currentIndex: Int = 0,
-    val wallpaperTarget: WallpaperTarget = WallpaperTarget.BOTH
+    val wallpaperTarget: WallpaperTarget = WallpaperTarget.BOTH,
+    val wallpaperFit: WallpaperFit = WallpaperFit.FILL,
 )
 
 enum class RotationInterval(val minutes: Int, val label: String) {

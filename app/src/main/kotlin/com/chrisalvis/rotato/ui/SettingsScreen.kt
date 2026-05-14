@@ -201,6 +201,24 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
+            SettingsSection(title = "Wallpaper Fit") {
+                com.chrisalvis.rotato.data.WallpaperFit.entries.forEach { fit ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = settings.wallpaperFit == fit,
+                            onClick = { viewModel.setWallpaperFit(fit) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(fit.label)
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
             SettingsSection(title = "Rotation Triggers") {
                 RotationTriggersSection(
                     chargingTriggerEnabled = chargingTriggerEnabled,

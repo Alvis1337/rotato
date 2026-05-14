@@ -61,6 +61,7 @@ class RotatoPreferences(private val context: Context) {
         val SEEN_WALLPAPER_KEYS = stringPreferencesKey("seen_wallpaper_keys_json")
         val DISCOVER_HINT_SEEN = booleanPreferencesKey("discover_hint_seen")
         val GOOGLE_DRIVE_BACKUP_ENABLED = booleanPreferencesKey("google_drive_backup_enabled")
+        val WALLPAPER_FIT = stringPreferencesKey("wallpaper_fit")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -73,7 +74,10 @@ class RotatoPreferences(private val context: Context) {
             currentIndex = prefs[CURRENT_INDEX] ?: 0,
             wallpaperTarget = prefs[WALLPAPER_TARGET]?.let {
                 runCatching { WallpaperTarget.valueOf(it) }.getOrNull()
-            } ?: WallpaperTarget.BOTH
+            } ?: WallpaperTarget.BOTH,
+            wallpaperFit = prefs[WALLPAPER_FIT]?.let {
+                runCatching { WallpaperFit.valueOf(it) }.getOrNull()
+            } ?: WallpaperFit.FILL,
         )
     }
 
@@ -107,6 +111,10 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setWallpaperTarget(target: WallpaperTarget) {
         context.dataStore.edit { it[WALLPAPER_TARGET] = target.name }
+    }
+
+    suspend fun setWallpaperFit(fit: WallpaperFit) {
+        context.dataStore.edit { it[WALLPAPER_FIT] = fit.name }
     }
 
     suspend fun recordRotationAndIncrement() {
