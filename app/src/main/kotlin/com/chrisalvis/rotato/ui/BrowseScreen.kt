@@ -22,7 +22,7 @@ import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
@@ -1057,53 +1057,42 @@ private fun CollectionCard(
                             .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
                     )
                 }
-                if (list.useAsRotation) {
-                    var showTargetMenu by remember { mutableStateOf(false) }
+                if (list.useAsRotation || list.isSmartCollection) {
+                    var showMoreMenu by remember { mutableStateOf(false) }
                     Box {
-                        IconButton(onClick = { showTargetMenu = true }, modifier = Modifier.size(32.dp)) {
-                            val targetIcon = when (list.rotationTarget) {
-                                com.chrisalvis.rotato.data.ScreenRotationTarget.HOME_ONLY -> Icons.Default.Home
-                                com.chrisalvis.rotato.data.ScreenRotationTarget.LOCK_ONLY -> Icons.Default.Lock
-                                com.chrisalvis.rotato.data.ScreenRotationTarget.BOTH -> Icons.Default.Smartphone
-                            }
+                        IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(32.dp)) {
                             Icon(
-                                targetIcon,
-                                contentDescription = "Rotation target: ${list.rotationTarget.label}",
-                                tint = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                                Icons.Default.MoreVert,
+                                contentDescription = "More options",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp).background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
                             )
                         }
-                        DropdownMenu(expanded = showTargetMenu, onDismissRequest = { showTargetMenu = false }) {
-                            com.chrisalvis.rotato.data.ScreenRotationTarget.entries.forEach { target ->
+                        DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                            if (list.useAsRotation) {
+                                com.chrisalvis.rotato.data.ScreenRotationTarget.entries.forEach { target ->
+                                    DropdownMenuItem(
+                                        text = { Text(target.label) },
+                                        onClick = { onSetRotationTarget(target); showMoreMenu = false },
+                                        leadingIcon = {
+                                            if (list.rotationTarget == target) Icon(Icons.Default.Check, contentDescription = null)
+                                        }
+                                    )
+                                }
+                            }
+                            if (list.isSmartCollection) {
                                 DropdownMenuItem(
-                                    text = { Text(target.label) },
-                                    onClick = { onSetRotationTarget(target); showTargetMenu = false },
-                                    leadingIcon = {
-                                        if (list.rotationTarget == target) Icon(Icons.Default.Check, contentDescription = null)
-                                    }
+                                    text = { Text("Edit rules") },
+                                    onClick = { onEditRules(); showMoreMenu = false },
+                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Autofill (25)") },
+                                    onClick = { onAutofill(); showMoreMenu = false },
+                                    leadingIcon = { Icon(Icons.Default.Bolt, contentDescription = null) }
                                 )
                             }
                         }
-                    }
-                }
-                if (list.isSmartCollection) {
-                    IconButton(onClick = onEditRules, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit rules",
-                            tint = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(20.dp).background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
-                        )
-                    }
-                    IconButton(onClick = onAutofill, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = "Autofill",
-                            tint = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(20.dp).background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
-                        )
                     }
                 }
                 // Lock toggle: 3 states —
