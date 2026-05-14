@@ -22,7 +22,8 @@ data class SmartRule(
     val excludeAny: List<String> = emptyList(),
 ) {
     fun matches(entry: LocalWallpaperEntry): Boolean {
-        val entryTags = entry.tags.map { it.lowercase() }
+        // Include source name as a virtual tag so rules can match by source (e.g. "wallhaven", "reddit")
+        val entryTags = (entry.tags + listOf(entry.source)).map { it.lowercase() }.filter { it.isNotBlank() }
         if (requireAll.isNotEmpty() && !requireAll.all { req ->
             entryTags.any { it.contains(req.lowercase()) }
         }) return false

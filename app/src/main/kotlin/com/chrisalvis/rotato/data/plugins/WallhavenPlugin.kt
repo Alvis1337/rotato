@@ -59,12 +59,14 @@ object WallhavenPlugin : SourcePlugin() {
         val tags = post.optJSONArray("tags")?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
         } ?: emptyList()
+        // Wallhaven's search API omits tag objects — fall back to the search query as synthetic tags
+        val effectiveTags = tags.ifEmpty { query.trim().split("\\s+".toRegex()).filter { it.isNotBlank() } }
         BrainrotWallpaper(
             id = id, source = "wallhaven",
             thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
             resolution = post.optString("resolution").ifBlank { "" },
             pageUrl = "https://wallhaven.cc/w/$id",
-            tags = tags
+            tags = effectiveTags
         )
     }
 
@@ -102,12 +104,13 @@ object WallhavenPlugin : SourcePlugin() {
             val tags = post.optJSONArray("tags")?.let { arr ->
                 (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
             } ?: emptyList()
+            val effectiveTags = tags.ifEmpty { query.trim().split("\\s+".toRegex()).filter { it.isNotBlank() } }
             BrainrotWallpaper(
                 id = id, source = "wallhaven",
                 thumbUrl = thumbUrl, sampleUrl = fullUrl, fullUrl = fullUrl,
                 resolution = post.optString("resolution").ifBlank { "" },
                 pageUrl = "https://wallhaven.cc/w/$id",
-                tags = tags
+                tags = effectiveTags
             )
         }
     }
