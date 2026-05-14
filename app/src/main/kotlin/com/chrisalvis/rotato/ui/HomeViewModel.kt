@@ -522,6 +522,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── Backup / Restore ────────────────────────────────────────────────────────
 
+    val googleDriveBackupEnabled: StateFlow<Boolean> = preferences.googleDriveBackupEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setGoogleDriveBackupEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setGoogleDriveBackupEnabled(enabled) }
+    }
+
     private val _backupState = MutableStateFlow(BackupState.IDLE)
     val backupState: StateFlow<BackupState> = _backupState.asStateFlow()
 

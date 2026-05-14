@@ -60,6 +60,7 @@ class RotatoPreferences(private val context: Context) {
         val WIDGET_COLLECTION_ID = stringPreferencesKey("widget_collection_id")
         val SEEN_WALLPAPER_KEYS = stringPreferencesKey("seen_wallpaper_keys_json")
         val DISCOVER_HINT_SEEN = booleanPreferencesKey("discover_hint_seen")
+        val GOOGLE_DRIVE_BACKUP_ENABLED = booleanPreferencesKey("google_drive_backup_enabled")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -444,5 +445,16 @@ class RotatoPreferences(private val context: Context) {
             current.remove(query)
             prefs[PINNED_SEARCHES] = JSONArray(current).toString()
         }
+    }
+
+    val googleDriveBackupEnabled: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[GOOGLE_DRIVE_BACKUP_ENABLED] ?: true }
+
+    suspend fun setGoogleDriveBackupEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[GOOGLE_DRIVE_BACKUP_ENABLED] = enabled }
+        // Mirror to SharedPreferences so RotatoBackupAgent can read it synchronously
+        context.getSharedPreferences("rotato_backup_cfg", Context.MODE_PRIVATE)
+            .edit().putBoolean("google_drive_backup_enabled", enabled).apply()
     }
 }

@@ -95,6 +95,7 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
+    val googleDriveBackupEnabled by viewModel.googleDriveBackupEnabled.collectAsStateWithLifecycle()
 
     val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
     val exportLauncher = rememberLauncherForActivityResult(
@@ -394,6 +395,25 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Google Drive backup", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Automatically back up settings to your Google account",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = googleDriveBackupEnabled,
+                        onCheckedChange = { viewModel.setGoogleDriveBackupEnabled(it) }
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { exportLauncher.launch("rotato-backup-$today.json") },
