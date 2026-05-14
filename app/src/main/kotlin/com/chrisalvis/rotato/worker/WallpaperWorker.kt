@@ -30,6 +30,7 @@ import com.chrisalvis.rotato.data.RotationErrorType
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
+import com.chrisalvis.rotato.data.ScreenRotationTarget
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.loadScaledBitmap
@@ -111,12 +112,37 @@ class WallpaperWorker(
             selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
         }
 
+        val allImages = withContext(Dispatchers.IO) { repository.getImages() }
+
+        // Determine if any rotation collections have per-screen targets.
+        val rotationLists = lists.filter { it.useAsRotation }
+        val hasPerScreen = rotationLists.any { it.rotationTarget != ScreenRotationTarget.BOTH }
+
+        // Build per-screen file sets when per-screen pools are configured and target is BOTH.
+        val homeFiles: List<File>
+        val lockFiles: List<File>
+        if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && scheduledEntry == null) {
+            val homeListIds = rotationLists
+                .filter { it.rotationTarget == ScreenRotationTarget.HOME_ONLY || it.rotationTarget == ScreenRotationTarget.BOTH }
+                .map { it.id }.toSet()
+            val lockListIds = rotationLists
+                .filter { it.rotationTarget == ScreenRotationTarget.LOCK_ONLY || it.rotationTarget == ScreenRotationTarget.BOTH }
+                .map { it.id }.toSet()
+            fun entriesForLists(ids: Set<String>) = allWallpapers
+                .filter { it.listId in ids }
+                .mapNotNull { entry -> allImages.find { it.nameWithoutExtension == sanitizeFilename(entry.sourceId) } }
+            homeFiles = entriesForLists(homeListIds).ifEmpty { allImages }
+            lockFiles = entriesForLists(lockListIds).ifEmpty { allImages }
+        } else {
+            homeFiles = allImages
+            lockFiles = allImages
+        }
+
         var mainQueueCount: Int? = null
         val targetFile = resolveScheduledTargetFile(scheduledEntry, feedRepository, imageDir)
             ?: run {
-                val images = withContext(Dispatchers.IO) { repository.getImages() }
-                mainQueueCount = images.size
-                if (images.isEmpty()) {
+                mainQueueCount = homeFiles.size
+                if (homeFiles.isEmpty()) {
                     if (settings.isEnabled) {
                         prefs.addRotationError(RotationError(
                             RotationErrorType.POOL_EMPTY,
@@ -125,39 +151,62 @@ class WallpaperWorker(
                     }
                     return Result.success()
                 }
-                selectMainQueueFile(images, settings.shuffleMode, settings.currentIndex, history, prefs)
+                selectMainQueueFile(homeFiles, settings.shuffleMode, settings.currentIndex, history, prefs)
             }
+
+        // For per-screen mode, pick a separate lock file (different from home when possible).
+        val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && scheduledEntry == null) {
+            val candidates = lockFiles.filter { it.absolutePath != targetFile.absolutePath }
+            candidates.ifEmpty { lockFiles }.randomOrNull() ?: targetFile
+        } else targetFile
 
         return try {
-            val bitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
-                ?: run {
-                    val errorType = if (targetFile.exists()) RotationErrorType.IMAGE_CORRUPT
-                    else RotationErrorType.IMAGE_MISSING
-                    prefs.addRotationError(RotationError(errorType, "Could not load: ${targetFile.name}"))
-                    return Result.failure()
-                }
-
             val wallpaperManager = WallpaperManager.getInstance(applicationContext)
-            val flags = when (settings.wallpaperTarget) {
-                WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
-                WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
-                WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
-            }
             val metrics = applicationContext.resources.displayMetrics
             val screenW = metrics.widthPixels
             val screenH = metrics.heightPixels
 
-            val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
-            val scaledW = (bitmap.width * scale).roundToInt()
-            val scaledH = (bitmap.height * scale).roundToInt()
-            val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-            val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
-            val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
-            val screenBitmap = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
-            if (scaled != bitmap) scaled.recycle()
+            fun scaleBitmap(bitmap: Bitmap): Bitmap {
+                val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
+                val scaledW = (bitmap.width * scale).roundToInt()
+                val scaledH = (bitmap.height * scale).roundToInt()
+                val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
+                val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
+                val cropped = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
+                if (scaled != bitmap) scaled.recycle()
+                return cropped
+            }
+
+            val homeBitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
+                ?: run {
+                    val errorType = if (targetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
+                    prefs.addRotationError(RotationError(errorType, "Could not load: ${targetFile.name}"))
+                    return Result.failure()
+                }
+
+            val screenBitmap = scaleBitmap(homeBitmap)
+            homeBitmap.recycle()
 
             try {
-                wallpaperManager.setBitmap(screenBitmap, null, true, flags)
+                when (settings.wallpaperTarget) {
+                    WallpaperTarget.HOME_ONLY -> wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                    WallpaperTarget.LOCK_ONLY -> wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                    WallpaperTarget.BOTH -> {
+                        if (hasPerScreen && lockTargetFile != targetFile) {
+                            wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                            val lockBitmap = loadScaledBitmap(applicationContext, lockTargetFile.absolutePath)
+                            if (lockBitmap != null) {
+                                val lockScreenBitmap = scaleBitmap(lockBitmap)
+                                lockBitmap.recycle()
+                                try { wallpaperManager.setBitmap(lockScreenBitmap, null, true, WallpaperManager.FLAG_LOCK) }
+                                finally { lockScreenBitmap.recycle() }
+                            }
+                        } else {
+                            wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                        }
+                    }
+                }
 
                 val now = System.currentTimeMillis()
                 prefs.recordRotationAndIncrement()
@@ -198,7 +247,6 @@ class WallpaperWorker(
 
                 postWallpaperSetNotification(screenBitmap)
             } finally {
-                bitmap.recycle()
                 screenBitmap.recycle()
             }
 

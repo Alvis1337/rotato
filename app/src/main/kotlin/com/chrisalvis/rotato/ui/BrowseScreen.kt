@@ -22,7 +22,10 @@ import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -795,6 +798,7 @@ private fun ListPickerContent(
                     onClick = { onSelectList(list) },
                     onDelete = { listToDelete = list },
                     onToggleRotation = { onToggleRotation(list) },
+                    onSetRotationTarget = { vm.setRotationTarget(list, it) },
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
                     onRelockForSession = { onRelockForSession(list) },
@@ -836,6 +840,7 @@ private fun CollectionCard(
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onToggleRotation: () -> Unit,
+    onSetRotationTarget: (com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
     onLock: () -> Unit,
     onUnlock: () -> Unit,
     onRelockForSession: () -> Unit,
@@ -955,6 +960,37 @@ private fun CollectionCard(
                             .size(20.dp)
                             .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
                     )
+                }
+                if (list.useAsRotation) {
+                    var showTargetMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showTargetMenu = true }, modifier = Modifier.size(32.dp)) {
+                            val targetIcon = when (list.rotationTarget) {
+                                com.chrisalvis.rotato.data.ScreenRotationTarget.HOME_ONLY -> Icons.Default.Home
+                                com.chrisalvis.rotato.data.ScreenRotationTarget.LOCK_ONLY -> Icons.Default.Lock
+                                com.chrisalvis.rotato.data.ScreenRotationTarget.BOTH -> Icons.Default.Smartphone
+                            }
+                            Icon(
+                                targetIcon,
+                                contentDescription = "Rotation target: ${list.rotationTarget.label}",
+                                tint = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                            )
+                        }
+                        DropdownMenu(expanded = showTargetMenu, onDismissRequest = { showTargetMenu = false }) {
+                            com.chrisalvis.rotato.data.ScreenRotationTarget.entries.forEach { target ->
+                                DropdownMenuItem(
+                                    text = { Text(target.label) },
+                                    onClick = { onSetRotationTarget(target); showTargetMenu = false },
+                                    leadingIcon = {
+                                        if (list.rotationTarget == target) Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
                 // Lock toggle: 3 states —
                 //   not locked  → white Lock,     tap to permanently lock

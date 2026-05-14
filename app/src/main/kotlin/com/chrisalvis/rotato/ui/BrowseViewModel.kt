@@ -892,6 +892,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setRotationTarget(list: LocalList, target: com.chrisalvis.rotato.data.ScreenRotationTarget) {
+        viewModelScope.launch {
+            localLists.setRotationTarget(list.id, target)
+        }
+    }
+
     private fun saveLocalFileToGallery(ctx: android.content.Context, file: File): Boolean {
         if (!file.exists()) return false
         val ext = file.extension.lowercase()

@@ -2,6 +2,12 @@ package com.chrisalvis.rotato.data
 
 import java.util.UUID
 
+enum class ScreenRotationTarget(val label: String) {
+    BOTH("Home & Lock"),
+    HOME_ONLY("Home only"),
+    LOCK_ONLY("Lock only"),
+}
+
 /**
  * Tag-based rules for smart/dynamic collections.
  *
@@ -38,6 +44,7 @@ data class LocalList(
     val createdAt: Long = System.currentTimeMillis(),
     /** When true, all wallpapers in this collection auto-download to the Library rotation pool. */
     val useAsRotation: Boolean = false,
+    val rotationTarget: ScreenRotationTarget = ScreenRotationTarget.BOTH,
     /** When true, the collection is hidden unless unlocked with biometrics this session. */
     val isLocked: Boolean = false,
     val coverUrl: String = "",

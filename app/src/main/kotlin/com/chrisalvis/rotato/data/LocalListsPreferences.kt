@@ -92,6 +92,15 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setRotationTarget(listId: String, target: ScreenRotationTarget) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(rotationTarget = target) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
     suspend fun setSmartRule(listId: String, rule: SmartRule?) {
         context.dataStore.edit { prefs ->
             val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
@@ -172,6 +181,7 @@ class LocalListsPreferences(private val context: Context) {
                 name = o.getString("name"),
                 createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                 useAsRotation = o.optBoolean("useAsRotation", false),
+                rotationTarget = runCatching { ScreenRotationTarget.valueOf(o.optString("rotationTarget", "BOTH")) }.getOrDefault(ScreenRotationTarget.BOTH),
                 isLocked = o.optBoolean("isLocked", false),
                 coverUrl = o.optString("coverUrl", ""),
                 smartRule = smartRule,
@@ -187,6 +197,7 @@ class LocalListsPreferences(private val context: Context) {
                     put("name", l.name)
                     put("createdAt", l.createdAt)
                     put("useAsRotation", l.useAsRotation)
+                    put("rotationTarget", l.rotationTarget.name)
                     put("isLocked", l.isLocked)
                     put("coverUrl", l.coverUrl)
                     if (l.smartRule != null && !l.smartRule.isEmpty) {
