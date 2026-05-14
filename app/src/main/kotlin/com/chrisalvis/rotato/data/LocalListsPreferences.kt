@@ -92,6 +92,15 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setSmartRule(listId: String, rule: SmartRule?) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(smartRule = rule) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
     suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
         var added = false
         context.dataStore.edit { prefs ->
@@ -152,13 +161,20 @@ class LocalListsPreferences(private val context: Context) {
         val arr = JSONArray(json)
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
+            val smartRuleObj = o.optJSONObject("smartRule")
+            val smartRule = if (smartRuleObj != null) SmartRule(
+                requireAll = smartRuleObj.optJSONArray("requireAll")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+                requireAny = smartRuleObj.optJSONArray("requireAny")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+                excludeAny = smartRuleObj.optJSONArray("excludeAny")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+            ) else null
             LocalList(
                 id = o.getString("id"),
                 name = o.getString("name"),
                 createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                 useAsRotation = o.optBoolean("useAsRotation", false),
                 isLocked = o.optBoolean("isLocked", false),
-                coverUrl = o.optString("coverUrl", "")
+                coverUrl = o.optString("coverUrl", ""),
+                smartRule = smartRule,
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -173,6 +189,13 @@ class LocalListsPreferences(private val context: Context) {
                     put("useAsRotation", l.useAsRotation)
                     put("isLocked", l.isLocked)
                     put("coverUrl", l.coverUrl)
+                    if (l.smartRule != null && !l.smartRule.isEmpty) {
+                        put("smartRule", JSONObject().apply {
+                            put("requireAll", JSONArray(l.smartRule.requireAll))
+                            put("requireAny", JSONArray(l.smartRule.requireAny))
+                            put("excludeAny", JSONArray(l.smartRule.excludeAny))
+                        })
+                    }
                 })
             }
         }.toString()

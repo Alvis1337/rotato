@@ -60,6 +60,7 @@ import coil.compose.AsyncImage
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.SmartRule
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -197,7 +198,7 @@ fun BrowseScreen() {
 
     if (showCreateDialog) {
         CreateListDialog(
-            onConfirm = { vm.createList(it) },
+            onConfirm = { name, rule -> vm.createList(name, rule) },
             onDismiss = { vm.dismissCreateDialog() }
         )
     }
@@ -632,23 +633,85 @@ private fun WallpaperDetailSheet(
 }
 
 @Composable
-private fun CreateListDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf("") }
+private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var isSmart by remember { mutableStateOf(false) }
+    var requireAllText by remember { mutableStateOf("") }
+    var requireAnyText by remember { mutableStateOf("") }
+    var excludeAnyText by remember { mutableStateOf("") }
+
+    fun tagsFromText(text: String) = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New Collection") },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Name") },
-                singleLine = true
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Smart collection", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Auto-fills with matching wallpapers",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = isSmart, onCheckedChange = { isSmart = it })
+                }
+                if (isSmart) {
+                    OutlinedTextField(
+                        value = requireAllText,
+                        onValueChange = { requireAllText = it },
+                        label = { Text("Must have ALL tags (AND)") },
+                        placeholder = { Text("anime, landscape") },
+                        supportingText = { Text("Comma-separated — all must be present") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = requireAnyText,
+                        onValueChange = { requireAnyText = it },
+                        label = { Text("Must have ANY tag (OR)") },
+                        placeholder = { Text("wallpaper, scenery") },
+                        supportingText = { Text("Comma-separated — at least one must match") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = excludeAnyText,
+                        onValueChange = { excludeAnyText = it },
+                        label = { Text("Must NOT have tags") },
+                        placeholder = { Text("nsfw, gore") },
+                        supportingText = { Text("Comma-separated — none of these can be present") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text) }, enabled = text.isNotBlank()) {
-                Text("Create")
-            }
+            TextButton(
+                onClick = {
+                    val rule = if (isSmart) SmartRule(
+                        requireAll = tagsFromText(requireAllText),
+                        requireAny = tagsFromText(requireAnyText),
+                        excludeAny = tagsFromText(excludeAnyText),
+                    ) else null
+                    onConfirm(name, rule)
+                },
+                enabled = name.isNotBlank()
+            ) { Text("Create") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -832,28 +895,39 @@ private fun CollectionCard(
                 }
             }
 
-            // Rotation badge top-left; lock badge overlaid if locked
-            if (list.useAsRotation) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                ) {
-                    Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+            // Badges top-left: Library, Smart, Lock
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (list.useAsRotation) {
+                    Box(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
-            }
-            if (list.isLocked) {
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = "Locked",
-                    tint = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(if (list.useAsRotation) 40.dp else 8.dp)
-                        .size(18.dp)
-                )
+                if (list.isSmartCollection) {
+                    Box(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text("⚡ Smart", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (list.isLocked) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
 
             // Action icons top-right

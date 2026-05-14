@@ -21,6 +21,7 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.SmartRule
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import kotlinx.coroutines.Dispatchers
@@ -183,6 +184,31 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         // This allows background wallpaper rotation on locked collections without constant re-prompts.
         processLifecycleObserver = object : DefaultLifecycleObserver {}
         ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
+
+        // React to new wallpapers in manual collections and auto-populate smart collections.
+        // We only watch non-smart entries so adding to smart collections doesn't re-trigger.
+        viewModelScope.launch {
+            combine(localLists.allWallpapers, _allLists) { allEntries, lists ->
+                val smartIds = lists.filter { it.isSmartCollection }.map { it.id }.toSet()
+                Pair(allEntries, allEntries.filter { it.listId !in smartIds })
+            }.collect { (allEntries, manualEntries) ->
+                val smartLists = _allLists.value.filter { it.isSmartCollection }
+                if (smartLists.isEmpty()) return@collect
+                for (smartList in smartLists) {
+                    val rule = smartList.smartRule ?: continue
+                    val alreadyIn = allEntries.filter { it.listId == smartList.id }.map { it.sourceId }.toSet()
+                    for (entry in manualEntries) {
+                        if (entry.sourceId in alreadyIn) continue
+                        if (rule.matches(entry)) {
+                            localLists.addWallpaperEntry(entry.copy(
+                                id = UUID.randomUUID().toString(),
+                                listId = smartList.id,
+                            ))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun selectList(list: LocalList) {
@@ -203,12 +229,30 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun showCreateDialog() { _showCreateDialog.update { true } }
     fun dismissCreateDialog() { _showCreateDialog.update { false } }
 
-    fun createList(name: String) {
+    fun createList(name: String, smartRule: SmartRule? = null) {
         if (name.isBlank()) return
         viewModelScope.launch {
             val list = localLists.createList(name)
+            if (smartRule != null && !smartRule.isEmpty) {
+                localLists.setSmartRule(list.id, smartRule)
+                populateSmartCollection(list.id, smartRule)
+            }
             _showCreateDialog.update { false }
             _selectedListId.update { list.id }
+        }
+    }
+
+    private suspend fun populateSmartCollection(listId: String, rule: SmartRule) {
+        val allEntries = localLists.allWallpapers.first()
+        val smartIds = _allLists.value.filter { it.isSmartCollection }.map { it.id }.toSet()
+        val sourceEntries = allEntries.filter { it.listId !in smartIds }
+        for (entry in sourceEntries) {
+            if (rule.matches(entry)) {
+                localLists.addWallpaperEntry(entry.copy(
+                    id = UUID.randomUUID().toString(),
+                    listId = listId,
+                ))
+            }
         }
     }
 
