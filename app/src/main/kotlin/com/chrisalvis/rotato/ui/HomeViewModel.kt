@@ -193,7 +193,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                             }
                         } else {
-                            feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.thumbUrl)
+                            feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
                             changed = true
                         }
                     }
@@ -586,6 +586,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             put("sourceId", e.sourceId)
                             put("source", e.source)
                             put("thumbUrl", e.thumbUrl)
+                            put("sampleUrl", e.sampleUrl)
                             put("fullUrl", e.fullUrl)
                             put("resolution", e.resolution)
                             put("pageUrl", e.pageUrl)
@@ -718,6 +719,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             sourceId = o.optString("sourceId", ""),
                             source = o.optString("source", ""),
                             thumbUrl = o.optString("thumbUrl", ""),
+                            sampleUrl = o.optString("sampleUrl", ""),
                             fullUrl = o.optString("fullUrl", ""),
                             resolution = o.optString("resolution", ""),
                             pageUrl = o.optString("pageUrl", ""),

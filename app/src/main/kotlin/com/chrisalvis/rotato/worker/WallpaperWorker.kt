@@ -246,7 +246,8 @@ class WallpaperWorker(
                 val currentFullUrl = matchingEntry?.fullUrl ?: targetFile.absolutePath
                 val currentSource = matchingEntry?.source ?: "local"
                 val historyItem = WallpaperHistoryItem(
-                    thumbUrl = targetFile.absolutePath,
+                    thumbUrl = currentThumbUrl,
+                    sampleUrl = matchingEntry?.sampleUrl ?: "",
                     fullUrl = currentFullUrl,
                     source = currentSource,
                     timestamp = now,
@@ -324,7 +325,7 @@ class WallpaperWorker(
                     File(applicationContext.filesDir, entry.fullUrl).takeIf { it.exists() }
                 }
                 entry.fullUrl.isBlank() -> null
-                !feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl) -> null
+                !feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }) -> null
                 else -> imageDir.listFiles()?.firstOrNull {
                     it.isFile && it.nameWithoutExtension == sanitizeFilename(entry.sourceId)
                 }

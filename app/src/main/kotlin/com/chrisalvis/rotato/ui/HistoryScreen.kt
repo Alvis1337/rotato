@@ -15,9 +15,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -78,21 +80,29 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun clearAllHistory() {
+        viewModelScope.launch {
+            prefs.setHistoryJson(emptyList<WallpaperHistoryItem>().toJson())
+        }
+    }
+
     fun downloadToRotation(item: WallpaperHistoryItem) {
         if (item.fullUrl.startsWith("/")) return  // local file — already in rotation pool
-        val key = item.fullUrl
+        val key = "rotation:${item.fullUrl}"
         if (_downloading.value.contains(key)) return
+        val ctx = getApplication<Application>().applicationContext
         viewModelScope.launch {
             _downloading.value = _downloading.value + key
             val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            feedRepo.downloadWallpaper(sourceId, item.fullUrl)
+            val ok = feedRepo.downloadWallpaper(sourceId, item.fullUrl, item.sampleUrl.ifBlank { item.thumbUrl })
+            Toast.makeText(ctx, if (ok) "Added to Library" else "Download failed", Toast.LENGTH_SHORT).show()
             _downloading.value = _downloading.value - key
         }
     }
 
     fun saveToGallery(item: WallpaperHistoryItem) {
         val ctx = getApplication<Application>().applicationContext
-        val key = item.fullUrl
+        val key = "gallery:${item.fullUrl}"
         if (_downloading.value.contains(key)) return
         viewModelScope.launch {
             _downloading.value = _downloading.value + key
@@ -100,7 +110,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
                 saveLocalFileToGallery(ctx, java.io.File(item.fullUrl))
             } else {
                 val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                feedRepo.saveToGallery(ctx, sourceId, item.fullUrl)
+                feedRepo.saveToGallery(ctx, sourceId, item.fullUrl, item.sampleUrl.ifBlank { item.thumbUrl })
             }
             Toast.makeText(ctx, if (ok) "Saved to gallery" else "Save failed", Toast.LENGTH_SHORT).show()
             _downloading.value = _downloading.value - key
@@ -116,6 +126,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
                 sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.'),
                 source = item.source,
                 thumbUrl = item.thumbUrl,
+                sampleUrl = item.sampleUrl,
                 fullUrl = item.fullUrl,
                 resolution = "",
                 pageUrl = item.pageUrl,
@@ -124,6 +135,11 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
             listsPrefs.addWallpaperEntry(entry)
             Toast.makeText(ctx, "Saved to collection", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun isDownloading(item: WallpaperHistoryItem): Boolean {
+        val keys = _downloading.value
+        return keys.contains("rotation:${item.fullUrl}") || keys.contains("gallery:${item.fullUrl}")
     }
 
     private fun saveLocalFileToGallery(ctx: android.content.Context, file: java.io.File): Boolean {
@@ -165,9 +181,9 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
     val vm: HistoryViewModel = viewModel()
     val history by vm.history.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
-    val downloading by vm.downloading
     val context = LocalContext.current
     var saveToCollectionFor by remember { mutableStateOf<WallpaperHistoryItem?>(null) }
+    var showClearConfirm by remember { mutableStateOf(false) }
 
     saveToCollectionFor?.let { item ->
         AlertDialog(
@@ -176,7 +192,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (lists.isEmpty()) {
-                        Text("No collections yet")
+                        Text("No collections yet. Create one in the Collections tab.")
                     } else {
                         lists.forEach { list ->
                             Surface(
@@ -205,6 +221,26 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 TextButton(onClick = { saveToCollectionFor = null }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            icon = { Icon(Icons.Default.DeleteSweep, contentDescription = null) },
+            title = { Text("Clear all history?") },
+            text = { Text("This will permanently remove all ${history.size} history items.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.clearAllHistory(); showClearConfirm = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Clear all")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") }
             }
         )
     }
@@ -262,6 +298,27 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item(key = "clear_all_header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "${history.size} items",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(
+                    onClick = { showClearConfirm = true },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Clear all")
+                }
+            }
+        }
         sortedDays.forEach { day ->
             item(key = "header_$day") {
                 Text(
@@ -276,7 +333,8 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 val openUri = item.pageUrl.ifBlank { if (!isLocal) item.fullUrl else null }
                 HistoryCard(
                     item = item,
-                    isDownloading = downloading.contains(item.fullUrl),
+                    isDownloading = vm.isDownloading(item),
+                    onAddToRotation = if (!isLocal) ({ vm.downloadToRotation(item) }) else null,
                     onDownload = { vm.saveToGallery(item) },
                     onSaveToCollection = { saveToCollectionFor = item },
                     onRemove = { vm.removeItem(item) },
@@ -293,6 +351,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
 private fun HistoryCard(
     item: WallpaperHistoryItem,
     isDownloading: Boolean,
+    onAddToRotation: (() -> Unit)?,
     onDownload: () -> Unit,
     onSaveToCollection: () -> Unit,
     onRemove: () -> Unit,
@@ -360,6 +419,11 @@ private fun HistoryCard(
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
                 } else {
+                    if (onAddToRotation != null) {
+                        IconButton(onClick = onAddToRotation) {
+                            Icon(Icons.Outlined.Wallpaper, contentDescription = "Add to Library")
+                        }
+                    }
                     IconButton(onClick = onDownload) {
                         Icon(Icons.Default.Download, contentDescription = "Save to gallery")
                     }

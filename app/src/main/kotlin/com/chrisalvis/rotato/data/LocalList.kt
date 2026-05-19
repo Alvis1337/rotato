@@ -61,6 +61,7 @@ data class LocalWallpaperEntry(
     val sourceId: String,
     val source: String,
     val thumbUrl: String,
+    val sampleUrl: String = "",
     val fullUrl: String,
     val resolution: String,
     val pageUrl: String,

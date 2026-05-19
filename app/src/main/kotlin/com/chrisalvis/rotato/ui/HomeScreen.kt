@@ -703,7 +703,7 @@ private fun ImagePreviewDialog(
                     .padding(8.dp)
                     .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = Color.White)
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
 
             currentFile?.let { file ->

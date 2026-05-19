@@ -76,8 +76,14 @@ import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
+import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** Maps a lowercase source string from BrainrotWallpaper to its plugin display name. */
+private fun sourceDisplayName(source: String): String =
+    SourcePluginRegistry.all.firstOrNull { it.id.equals(source, ignoreCase = true) }
+        ?.displayName ?: source.replaceFirstChar { it.uppercase() }
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
 private fun parseAspectRatio(resolution: String): Float {
@@ -1031,7 +1037,7 @@ private fun DiscoverThumbnailGridItem(
                 .padding(horizontal = 4.dp, vertical = 2.dp)
         ) {
             Text(
-                wallpaper.source.replaceFirstChar { it.uppercase() },
+                sourceDisplayName(wallpaper.source),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -1142,7 +1148,7 @@ private fun DiscoverGridItem(
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
             Text(
-                wallpaper.source.replaceFirstChar { it.uppercase() },
+                sourceDisplayName(wallpaper.source),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -1418,7 +1424,7 @@ private fun WallpaperDetailOverlay(
                     color = sourceColor(wallpaper.source).copy(alpha = 0.85f)
                 ) {
                     Text(
-                        wallpaper.source.replaceFirstChar { it.uppercase() },
+                        sourceDisplayName(wallpaper.source),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -1683,12 +1689,17 @@ private fun ShimmerBox(modifier: Modifier = Modifier) {
 }
 
 private fun sourceColor(source: String): Color = when (source.lowercase()) {
-    "wallhaven" -> Color(0xFF1565C0)
-    "konachan"  -> Color(0xFF6A1B9A)
-    "danbooru"  -> Color(0xFF2E7D32)
-    "rule34"    -> Color(0xFFAD1457)
-    "zerochan"  -> Color(0xFF00838F)
-    else         -> Color(0xFF37474F)
+    "wallhaven"  -> Color(0xFF1565C0)
+    "konachan"   -> Color(0xFF6A1B9A)
+    "danbooru"   -> Color(0xFF2E7D32)
+    "rule34"     -> Color(0xFFAD1457)
+    "zerochan"   -> Color(0xFF00838F)
+    "gelbooru"   -> Color(0xFF880E4F)
+    "safebooru"  -> Color(0xFF1B5E20)
+    "reddit"     -> Color(0xFFBF360C)
+    "yandere"    -> Color(0xFF311B92)
+    "e621"       -> Color(0xFF4A148C)
+    else          -> Color(0xFF37474F)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1878,7 +1889,7 @@ private fun NoSourcesState(onNavigateToSources: () -> Unit) {
             ) {
                 OnboardingStep("1", "Go to Sources and enable one or more image sources")
                 OnboardingStep("2", "Tap any image to open it, zoom in, or save to a collection")
-                OnboardingStep("3", "Use Collections to manage your saved wallpapers and set them as your wallpaper")
+                OnboardingStep("3", "Go to Library → start rotation to have wallpapers change automatically")
             }
             Spacer(Modifier.height(8.dp))
             Button(

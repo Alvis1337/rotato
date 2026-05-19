@@ -438,7 +438,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             toDownload.forEach { wp ->
                 if (_downloading.value.contains(wp.sourceId)) return@forEach
                 _downloading.update { it + wp.sourceId }
-                val ok = feedRepo.saveToGallery(ctx, wp.sourceId, wp.fullUrl, wp.thumbUrl)
+                val ok = feedRepo.saveToGallery(ctx, wp.sourceId, wp.fullUrl, wp.sampleUrl.ifBlank { wp.thumbUrl })
                 if (ok) saved++ else failed++
                 _downloading.update { it - wp.sourceId }
             }
@@ -478,7 +478,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             if (_downloading.value.contains(wallpaper.sourceId)) return@launch
             _downloading.update { it + wallpaper.sourceId }
-            val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.thumbUrl)
+            val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
             _downloading.update { it - wallpaper.sourceId }
             val msg = if (ok) "Saved to Pictures/Rotato" else "Failed to save"
             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
@@ -589,6 +589,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                             sourceId = item.optString("sourceId"),
                             source = item.optString("source"),
                             thumbUrl = item.optString("thumbUrl"),
+                            sampleUrl = item.optString("sampleUrl", ""),
                             fullUrl = item.optString("fullUrl"),
                             resolution = item.optString("resolution"),
                             pageUrl = item.optString("pageUrl"),
@@ -633,7 +634,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             val ok = if (wallpaper.source == "device") {
                 copyLocalToRotation(wallpaper.fullUrl, key)
             } else {
-                feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.thumbUrl)
+                feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
             }
             if (ok) _inRotation.update { it + key }
             _downloading.update { it - wallpaper.sourceId }
@@ -668,8 +669,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         } else {
                             feedRepo.downloadWallpaper(
                                 sourceId = entry.sourceId,
-                                fullUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl },
-                                fallbackUrl = wallpaper.thumbUrl,
+                                fullUrl = wallpaper.fullUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl } },
+                                fallbackUrl = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl },
                             )
                         }
                     } finally {
@@ -908,7 +909,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         saveLocalFileToGallery(ctx, File(Uri.parse(wallpaper.fullUrl).path ?: wallpaper.fullUrl))
                     } else {
                         _downloading.update { it + wallpaper.sourceId }
-                        val saved = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.thumbUrl)
+                        val saved = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
                         _downloading.update { it - wallpaper.sourceId }
                         saved
                     }
@@ -996,6 +997,7 @@ private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpa
     sourceId = sourceId,
     entryId = id,
     fullUrl = resolveEntryUrl(fullUrl, filesDir, sourceId),
+    sampleUrl = sampleUrl,
     thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir, sourceId),
     animeTitle = tags.take(3).joinToString(", "),
     source = source
