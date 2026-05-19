@@ -136,6 +136,7 @@ fun BrowseScreen() {
     var showMoveDialog by remember { mutableStateOf(false) }
     var showSaveRotationDialog by remember { mutableStateOf(false) }
     var showRemoveBrokenConfirm by remember { mutableStateOf(false) }
+    var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showCollectionMenu by remember { mutableStateOf(false) }
 
@@ -376,7 +377,7 @@ fun BrowseScreen() {
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clickable { vm.removeSelected() },
+                            .clickable { showDeleteSelectedConfirm = true },
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
@@ -577,6 +578,23 @@ fun BrowseScreen() {
                         }
                     }
                 }
+                if (showDeleteSelectedConfirm) {
+                    val count = selected.size
+                    AlertDialog(
+                        onDismissRequest = { showDeleteSelectedConfirm = false },
+                        title = { Text("Delete $count item${if (count != 1) "s" else ""}?") },
+                        text = { Text("This will permanently remove $count entr${if (count != 1) "ies" else "y"} from this collection. This cannot be undone.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                vm.removeSelected()
+                                showDeleteSelectedConfirm = false
+                            }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteSelectedConfirm = false }) { Text("Cancel") }
+                        }
+                    )
+                }
                 if (showRemoveBrokenConfirm) {
                     AlertDialog(
                         onDismissRequest = { showRemoveBrokenConfirm = false },
@@ -613,6 +631,12 @@ fun BrowseScreen() {
                         else previewWallpaper = wp
                     },
                     onLongPress = { wp -> vm.enterSelectionMode(wp) },
+                    onPickFromDevice = selectedList?.let { list ->
+                        {
+                            pickerTargetListId = list.id
+                            photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1241,6 +1265,7 @@ private fun WallpaperGridContent(
     brokenEntryIds: Set<String>,
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
+    onPickFromDevice: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (wallpapers.isEmpty()) {
@@ -1268,6 +1293,14 @@ private fun WallpaperGridContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
+                    if (onPickFromDevice != null) {
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedButton(onClick = onPickFromDevice) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add from device")
+                        }
+                    }
                 }
             }
         }

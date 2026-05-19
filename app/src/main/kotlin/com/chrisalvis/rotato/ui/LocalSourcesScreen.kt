@@ -166,6 +166,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     var showDisableAllConfirm by remember { mutableStateOf(false) }
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
+    var confirmRemove by remember { mutableStateOf<Pair<SourceType, String>?>(null) }
 
     if (showAddRedditDialog) {
         val redditFocus = remember { FocusRequester() }
@@ -218,6 +219,22 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
             },
             dismissButton = {
                 TextButton(onClick = { showDisableAllConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+    confirmRemove?.let { (type, instanceId) ->
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text("Remove source?") },
+            text = { Text("Remove this ${type.name.lowercase().replaceFirstChar { it.uppercase() }} source? This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.removeInstance(type, instanceId)
+                    confirmRemove = null
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemove = null }) { Text("Cancel") }
             }
         )
     }
@@ -298,7 +315,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     onSaveWallhavenPurity = {},
                     onValidateWallhavenKey = {},
                     onTest = { vm.testSource(source) },
-                    onRemove = { vm.removeInstance(source.type, source.instanceId) },
+                    onRemove = { confirmRemove = source.type to source.instanceId },
                 )
             }
             item {

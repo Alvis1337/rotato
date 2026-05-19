@@ -115,6 +115,7 @@ fun SettingsScreen(
                     onClick = {
                         viewModel.clearAll()
                         showClearDialog = false
+                        android.widget.Toast.makeText(context, "All photos cleared", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text("Clear", color = MaterialTheme.colorScheme.error)
@@ -358,7 +359,7 @@ fun SettingsScreen(
                         onToggle = { status ->
                             val updated = if (status in malFilterStatuses)
                                 malFilterStatuses - status else malFilterStatuses + status
-                            if (updated.isNotEmpty()) malViewModel.setFilterStatuses(updated)
+                            malViewModel.setFilterStatuses(updated)
                         }
                     )
 
