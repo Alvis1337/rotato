@@ -79,15 +79,18 @@ object RedditPlugin : SourcePlugin() {
             .ifBlank { post.optString("url") }
             .ifBlank { return null }
 
+        // Always use rawUrl (i.redd.it / i.imgur.com) as fullUrl — it's permanent.
+        // preview.redd.it URLs carry time-limited signatures and would break after expiry.
+        val fullUrl = rawUrl
+
         val previewImages = post.optJSONObject("preview")?.optJSONArray("images")
         val previewSource = previewImages?.optJSONObject(0)?.optJSONObject("source")
-        val fullUrl = previewSource?.optString("url")?.unescape()?.ifBlank { null } ?: rawUrl
 
         val resolutions = previewImages?.optJSONObject(0)?.optJSONArray("resolutions")
         val thumbUrl = if (resolutions != null && resolutions.length() > 0) {
             resolutions.optJSONObject(resolutions.length() - 1)
                 ?.optString("url")?.unescape()?.ifBlank { null } ?: fullUrl
-        } else fullUrl
+        } else previewSource?.optString("url")?.unescape()?.ifBlank { null } ?: fullUrl
 
         val width = previewSource?.optInt("width") ?: 0
         val height = previewSource?.optInt("height") ?: 0
