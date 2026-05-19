@@ -1242,6 +1242,7 @@ private fun BrowseWallpaper.toLocalWallpaperEntry(listId: String) = LocalWallpap
     sourceId = sourceId,
     source = source,
     thumbUrl = thumbUrl,
+    sampleUrl = sampleUrl,
     fullUrl = fullUrl,
     resolution = "",
     pageUrl = "",

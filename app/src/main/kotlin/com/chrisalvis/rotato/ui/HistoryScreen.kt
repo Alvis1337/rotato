@@ -94,7 +94,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _downloading.value = _downloading.value + key
             val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            val ok = feedRepo.downloadWallpaper(sourceId, item.fullUrl)
+            val ok = feedRepo.downloadWallpaper(sourceId, item.fullUrl, item.sampleUrl.ifBlank { item.thumbUrl })
             Toast.makeText(ctx, if (ok) "Added to Library" else "Download failed", Toast.LENGTH_SHORT).show()
             _downloading.value = _downloading.value - key
         }
@@ -110,7 +110,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
                 saveLocalFileToGallery(ctx, java.io.File(item.fullUrl))
             } else {
                 val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                feedRepo.saveToGallery(ctx, sourceId, item.fullUrl)
+                feedRepo.saveToGallery(ctx, sourceId, item.fullUrl, item.sampleUrl.ifBlank { item.thumbUrl })
             }
             Toast.makeText(ctx, if (ok) "Saved to gallery" else "Save failed", Toast.LENGTH_SHORT).show()
             _downloading.value = _downloading.value - key
@@ -126,6 +126,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
                 sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.'),
                 source = item.source,
                 thumbUrl = item.thumbUrl,
+                sampleUrl = item.sampleUrl,
                 fullUrl = item.fullUrl,
                 resolution = "",
                 pageUrl = item.pageUrl,

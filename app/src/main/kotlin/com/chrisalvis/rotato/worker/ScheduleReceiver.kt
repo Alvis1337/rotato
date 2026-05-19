@@ -86,7 +86,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                             runCatching { src.copyTo(File(imageDir, "$key.$ext"), overwrite = true) }
                         }
                     }
-                    entry.fullUrl.isNotBlank() -> feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl)
+                    entry.fullUrl.isNotBlank() -> feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
                 }
             }
             // Count only this list's wallpapers that are now present on disk.

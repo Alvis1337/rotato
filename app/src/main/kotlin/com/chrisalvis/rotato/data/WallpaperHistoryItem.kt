@@ -5,6 +5,7 @@ import org.json.JSONObject
 
 data class WallpaperHistoryItem(
     val thumbUrl: String,
+    val sampleUrl: String = "",
     val fullUrl: String,
     val source: String,
     val timestamp: Long,
@@ -16,6 +17,7 @@ fun List<WallpaperHistoryItem>.toJson(): String = JSONArray().also { arr ->
     forEach { item ->
         arr.put(JSONObject().apply {
             put("thumbUrl", item.thumbUrl)
+            put("sampleUrl", item.sampleUrl)
             put("fullUrl", item.fullUrl)
             put("source", item.source)
             put("timestamp", item.timestamp)
@@ -33,6 +35,7 @@ fun historyFromJson(json: String): List<WallpaperHistoryItem> = try {
         val tags = if (tagsArr != null) (0 until tagsArr.length()).map { tagsArr.getString(it) } else emptyList()
         WallpaperHistoryItem(
             thumbUrl = o.optString("thumbUrl"),
+            sampleUrl = o.optString("sampleUrl", ""),
             fullUrl = o.optString("fullUrl"),
             source = o.optString("source"),
             timestamp = o.optLong("timestamp"),

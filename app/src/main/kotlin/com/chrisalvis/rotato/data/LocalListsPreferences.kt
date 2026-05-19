@@ -120,6 +120,7 @@ class LocalListsPreferences(private val context: Context) {
                 sourceId = wallpaper.id,
                 source = wallpaper.source,
                 thumbUrl = wallpaper.thumbUrl,
+                sampleUrl = wallpaper.sampleUrl,
                 fullUrl = wallpaper.fullUrl,
                 resolution = wallpaper.resolution,
                 pageUrl = wallpaper.pageUrl,
@@ -222,6 +223,7 @@ class LocalListsPreferences(private val context: Context) {
                 sourceId = o.getString("sourceId"),
                 source = o.optString("source", ""),
                 thumbUrl = o.optString("thumbUrl", ""),
+                sampleUrl = o.optString("sampleUrl", ""),
                 fullUrl = o.optString("fullUrl", ""),
                 resolution = o.optString("resolution", ""),
                 pageUrl = o.optString("pageUrl", ""),
@@ -240,6 +242,7 @@ class LocalListsPreferences(private val context: Context) {
                     put("sourceId", e.sourceId)
                     put("source", e.source)
                     put("thumbUrl", e.thumbUrl)
+                    put("sampleUrl", e.sampleUrl)
                     put("fullUrl", e.fullUrl)
                     put("resolution", e.resolution)
                     put("pageUrl", e.pageUrl)

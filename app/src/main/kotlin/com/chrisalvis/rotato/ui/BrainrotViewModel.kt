@@ -807,6 +807,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val history = historyFromJson(prefs.historyJson.first()).toMutableList()
                 history.add(0, WallpaperHistoryItem(
                     thumbUrl = wp.thumbUrl,
+                    sampleUrl = wp.sampleUrl,
                     fullUrl = wp.fullUrl,
                     source = wp.source,
                     timestamp = System.currentTimeMillis(),
