@@ -586,6 +586,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             put("sourceId", e.sourceId)
                             put("source", e.source)
                             put("thumbUrl", e.thumbUrl)
+                            put("sampleUrl", e.sampleUrl)
                             put("fullUrl", e.fullUrl)
                             put("resolution", e.resolution)
                             put("pageUrl", e.pageUrl)

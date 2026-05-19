@@ -246,7 +246,7 @@ class WallpaperWorker(
                 val currentFullUrl = matchingEntry?.fullUrl ?: targetFile.absolutePath
                 val currentSource = matchingEntry?.source ?: "local"
                 val historyItem = WallpaperHistoryItem(
-                    thumbUrl = targetFile.absolutePath,
+                    thumbUrl = currentThumbUrl,
                     sampleUrl = matchingEntry?.sampleUrl ?: "",
                     fullUrl = currentFullUrl,
                     source = currentSource,
