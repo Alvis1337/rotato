@@ -187,6 +187,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _skipEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val skipEvent: SharedFlow<Unit> = _skipEvent
 
+    private val _blockEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val blockEvent: SharedFlow<Unit> = _blockEvent
+
     private var fetchJob: Job? = null
     private var tagSuggestionsJob: Job? = null
 
@@ -457,10 +460,17 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val key = "${wp.source}:${wp.id}"
         persistentBlockedKeys.add(key)
         displayedKeys.add(key)
-        removeFromGrid(wp)
+        // If this is the currently selected item, advance to the next one instead of closing overlay
         if (_selectedItem.value?.id == wp.id && _selectedItem.value?.source == wp.source) {
-            _selectedItem.update { null }
+            val items = _gridItems.value
+            val idx = items.indexOfFirst { it.id == wp.id && it.source == wp.source }
+            val next = items.getOrNull(idx + 1) ?: items.getOrNull(idx - 1)
+            removeFromGrid(wp)
+            _selectedItem.update { next }
+        } else {
+            removeFromGrid(wp)
         }
+        _blockEvent.tryEmit(Unit)
         viewModelScope.launch { prefs.addBlockedImageKey(key) }
     }
 

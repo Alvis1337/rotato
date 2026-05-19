@@ -192,6 +192,16 @@ fun BrainrotScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        vm.blockEvent.collect {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(
+                message = "Image blocked — won't appear again",
+                duration = SnackbarDuration.Short
+            )
+        }
+    }
+
     BackHandler(enabled = batchMode && selectedItem == null) {
         vm.clearBatchSelection()
     }
@@ -966,7 +976,6 @@ fun BrainrotScreen(
                             onSetWallpaper = { w -> vm.setWallpaperDirectly(w) },
                             onBlock = { w ->
                                 vm.blockImage(w)
-                                vm.selectItem(null)
                             },
                             onReport = { w ->
                                 reportingWallpaper = w

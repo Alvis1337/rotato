@@ -1000,7 +1000,9 @@ private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpa
     sampleUrl = sampleUrl,
     thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir, sourceId),
     animeTitle = tags.take(3).joinToString(", "),
-    source = source
+    source = source,
+    tags = tags,
+    resolution = resolution
 )
 
 /**

@@ -8,5 +8,7 @@ data class BrowseWallpaper(
     val thumbUrl: String,
     val animeTitle: String,
     /** "device" for locally-uploaded images, otherwise the source plugin name. */
-    val source: String = ""
+    val source: String = "",
+    val tags: List<String> = emptyList(),
+    val resolution: String = ""
 )

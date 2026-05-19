@@ -83,6 +83,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import kotlinx.coroutines.delay
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import android.content.Intent
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -224,7 +237,17 @@ fun BrowseScreen() {
             isInRotation = { vm.isInRotation(it) },
             onToggleRotation = { vm.toggleRotation(it) },
             onSaveToGallery = { vm.saveWallpaper(it) },
-            onMoreActions = { wp -> previewWallpaper = null; showActionsFor = wp },
+            onRemoveFromCollection = { wp ->
+                if (wp.entryId.isNotBlank()) { vm.removeWallpaper(wp.entryId); previewWallpaper = null }
+            },
+            onSetAsCover = { wp -> updateCover(wp) },
+            onCopyUrl = { wp ->
+                clipboard.setText(AnnotatedString(wp.fullUrl))
+                android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
+            },
+            onShare = { wp ->
+                vm.shareWallpapers(context, listOf(wp.toLocalWallpaperEntry(selectedList?.id.orEmpty())))
+            },
             onDismiss = { previewWallpaper = null }
         )
     }
@@ -1294,9 +1317,9 @@ private fun BrowseWallpaper.toLocalWallpaperEntry(listId: String) = LocalWallpap
     thumbUrl = thumbUrl,
     sampleUrl = sampleUrl,
     fullUrl = fullUrl,
-    resolution = "",
+    resolution = resolution,
     pageUrl = "",
-    tags = emptyList()
+    tags = tags
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1451,43 +1474,119 @@ private fun WallpaperUrlPreviewDialog(
     isInRotation: (BrowseWallpaper) -> Boolean,
     onToggleRotation: (BrowseWallpaper) -> Unit,
     onSaveToGallery: (BrowseWallpaper) -> Unit,
-    onMoreActions: (BrowseWallpaper) -> Unit,
+    onRemoveFromCollection: (BrowseWallpaper) -> Unit,
+    onSetAsCover: (BrowseWallpaper) -> Unit,
+    onCopyUrl: (BrowseWallpaper) -> Unit,
+    onShare: (BrowseWallpaper) -> Unit,
     onDismiss: () -> Unit
 ) {
+    BackHandler(onBack = onDismiss)
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
     val initialPage = remember(wallpapers, initialWallpaper.entryId) {
         wallpapers.indexOfFirst { it.entryId == initialWallpaper.entryId }.takeIf { it >= 0 } ?: 0
     }
     val pagerState = rememberPagerState(initialPage = initialPage) { wallpapers.size }
     val currentWallpaper by remember(wallpapers, pagerState) {
-        derivedStateOf { wallpapers.getOrNull(pagerState.currentPage) }
+        derivedStateOf { wallpapers.getOrNull(pagerState.currentPage) ?: wallpapers.getOrNull(initialPage) }
     }
+    var showZoom by remember { mutableStateOf(false) }
+    val offsetY = remember { Animatable(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
 
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
-        scale = nextScale
-        offset = if (nextScale > 1f) offset + (panChange * nextScale) else Offset.Zero
-    }
-
-    LaunchedEffect(pagerState.currentPage) {
-        scale = 1f
-        offset = Offset.Zero
-    }
+    LaunchedEffect(pagerState.currentPage) { showZoom = false }
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationY = offsetY.value
+                    alpha = (1f - (offsetY.value / 600f)).coerceIn(0f, 1f)
+                }
+                .pointerInput(isDismissing, showZoom) {
+                    if (isDismissing || showZoom) return@pointerInput
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            var totalDy = 0f
+                            var totalDx = 0f
+                            var dragActive = false
+                            // Detect drag direction
+                            detect@ while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null || !change.pressed) break
+                                if (event.changes.count { it.pressed } >= 2) {
+                                    coroutineScope.launch { showZoom = true }
+                                    break@detect
+                                }
+                                val delta = change.position - change.previousPosition
+                                totalDy += delta.y
+                                totalDx += delta.x
+                                val absX = kotlin.math.abs(totalDx)
+                                val absY = kotlin.math.abs(totalDy)
+                                if (absY > viewConfiguration.touchSlop && absY > absX && totalDy > 0) {
+                                    change.consume()
+                                    dragActive = true
+                                    coroutineScope.launch { offsetY.snapTo(totalDy.coerceAtLeast(0f)) }
+                                    break@detect
+                                }
+                                if (absX > viewConfiguration.touchSlop) break@detect
+                            }
+                            if (dragActive) {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null || !change.pressed) break
+                                    val dy = (change.position - change.previousPosition).y
+                                    if (dy > 0f || offsetY.value > 0f) {
+                                        change.consume()
+                                        coroutineScope.launch {
+                                            offsetY.snapTo((offsetY.value + dy).coerceAtLeast(0f))
+                                        }
+                                    }
+                                }
+                                coroutineScope.launch {
+                                    if (offsetY.value > swipeThresholdPx) {
+                                        isDismissing = true
+                                        offsetY.animateTo(
+                                            targetValue = 800f,
+                                            animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
+                                        )
+                                        onDismiss()
+                                    } else {
+                                        offsetY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = (1f - (offsetY.value / 600f)).coerceIn(0f, 1f)))
+            )
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = scale == 1f,
                 beyondViewportPageCount = 1
             ) { page ->
                 val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager
-                val isCurrentPage = page == pagerState.currentPage
                 val imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }
                 AsyncImage(
                     model = imageUrl,
@@ -1496,12 +1595,13 @@ private fun WallpaperUrlPreviewDialog(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            scaleX = if (isCurrentPage) scale else 1f
-                            scaleY = if (isCurrentPage) scale else 1f
-                            translationX = if (isCurrentPage) offset.x else 0f
-                            translationY = if (isCurrentPage) offset.y else 0f
+                            val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                            scaleX = shrink
+                            scaleY = shrink
                         }
-                        .transformable(state = transformState, enabled = isCurrentPage)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onDoubleTap = { showZoom = true })
+                        }
                 )
             }
 
@@ -1517,52 +1617,250 @@ private fun WallpaperUrlPreviewDialog(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
 
-            // Bottom action bar
+            // Bottom info + action panel
             currentWallpaper?.let { wp ->
                 val inRotation = isInRotation(wp)
-                Row(
+                Column(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
                         .background(
-                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                0.25f to Color.Black.copy(alpha = 0.55f),
+                                1f to Color.Black.copy(alpha = 0.92f)
+                            )
                         )
                         .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 20.dp, top = 52.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = { onToggleRotation(wp) },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
+                    // Source badge + resolution
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            if (inRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                        if (wp.source.isNotBlank()) {
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = Color.White.copy(alpha = 0.18f)
+                            ) {
+                                Text(
+                                    wp.source.replaceFirstChar { it.uppercase() },
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                        if (wp.resolution.isNotBlank()) {
+                            Text(
+                                wp.resolution,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
+
+                    // Title from tags
+                    val titleText = wp.tags.take(3)
+                        .joinToString("  ·  ") { t ->
+                            t.replace('_', ' ')
+                                .split(" ")
+                                .joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } }
+                        }
+                        .ifBlank { wp.animeTitle }
+                    if (titleText.isNotBlank()) {
+                        Text(
+                            titleText,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (inRotation) "In Library" else "Add to Library")
                     }
-                    OutlinedButton(
-                        onClick = { onSaveToGallery(wp) },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Save")
+
+                    // Tag chips
+                    if (wp.tags.isNotEmpty()) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            contentPadding = PaddingValues(horizontal = 2.dp)
+                        ) {
+                            lazyItems(wp.tags) { tag ->
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = {
+                                        Text(
+                                            tag.replace('_', ' '),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = Color.White.copy(alpha = 0.12f),
+                                        labelColor = Color.White
+                                    ),
+                                    border = SuggestionChipDefaults.suggestionChipBorder(
+                                        enabled = true,
+                                        borderColor = Color.White.copy(alpha = 0.25f),
+                                        disabledBorderColor = Color.White.copy(alpha = 0.1f)
+                                    )
+                                )
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = { onMoreActions(wp) },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
+
+                    // Action row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("More")
+                        // Primary: Add/Remove Library
+                        FilledIconButton(
+                            onClick = { onToggleRotation(wp) },
+                            modifier = Modifier.size(56.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (inRotation) MaterialTheme.colorScheme.primary
+                                else Color.White.copy(alpha = 0.15f)
+                            )
+                        ) {
+                            Icon(
+                                if (inRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
+                                contentDescription = if (inRotation) "Remove from Library" else "Add to Library",
+                                modifier = Modifier.size(26.dp),
+                                tint = Color.White
+                            )
+                        }
+
+                        OutlinedIconButton(
+                            onClick = { onSaveToGallery(wp) },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Save to gallery",
+                                tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+
+                        OutlinedIconButton(
+                            onClick = { onSetAsCover(wp) },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Set as cover",
+                                tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+
+                        // More overflow (copy URL, share)
+                        Box {
+                            OutlinedIconButton(
+                                onClick = { showMoreMenu = true },
+                                modifier = Modifier.size(44.dp),
+                                border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                            ) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More",
+                                    tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Copy URL") },
+                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                                    onClick = { onCopyUrl(wp); showMoreMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Share") },
+                                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                                    onClick = { onShare(wp); showMoreMenu = false }
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.weight(1f))
+
+                        // Destructive: Remove from collection
+                        if (wp.entryId.isNotBlank()) {
+                            OutlinedIconButton(
+                                onClick = { onRemoveFromCollection(wp) },
+                                modifier = Modifier.size(44.dp),
+                                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove from collection",
+                                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
                 }
+            }
+
+            if (showZoom) {
+                currentWallpaper?.let { wp ->
+                    ZoomUrlImageDialog(
+                        imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } },
+                        onDismiss = { showZoom = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoomUrlImageDialog(imageUrl: String, onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
+    var scale by remember { mutableStateOf(1f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val next = (scale * zoomChange).coerceIn(1f, 8f)
+        scale = next
+        panOffset = if (next > 1f) panOffset + panChange * next else Offset.Zero
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = {
+                        if (scale > 1.5f) {
+                            scale = 1f
+                            panOffset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    })
+                }
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = panOffset.x
+                        translationY = panOffset.y
+                    }
+                    .transformable(state = transformState)
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close zoom", tint = Color.White)
             }
         }
     }
