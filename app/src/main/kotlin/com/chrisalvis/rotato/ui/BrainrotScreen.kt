@@ -54,6 +54,8 @@ import android.widget.Toast
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -195,9 +197,12 @@ fun BrainrotScreen(
     var showHandsFree by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
+    val searchFocusRequester = remember { FocusRequester() }
     LaunchedEffect(showSearch) {
         if (showSearch) {
             searchText = searchQuery.ifBlank { "" }
+            delay(100)
+            runCatching { searchFocusRequester.requestFocus() }
         } else {
             vm.clearTagSuggestions()
         }
@@ -811,7 +816,8 @@ fun BrainrotScreen(
                                                             }
                                                         }
                                                     }
-                                                }
+                                                },
+                                                modifier = Modifier.focusRequester(searchFocusRequester)
                                             )
                                         },
                                         expanded = true,
