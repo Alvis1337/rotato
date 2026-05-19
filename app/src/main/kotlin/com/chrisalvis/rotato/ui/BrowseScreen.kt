@@ -1483,6 +1483,7 @@ private fun WallpaperUrlPreviewDialog(
 ) {
     BackHandler(onBack = onDismiss)
     val coroutineScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
     val initialPage = remember(wallpapers, initialWallpaper.entryId) {
@@ -1637,7 +1638,7 @@ private fun WallpaperUrlPreviewDialog(
                         .padding(bottom = 20.dp, top = 52.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Source badge + resolution
+                    // Source badge + resolution + page counter
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1659,6 +1660,13 @@ private fun WallpaperUrlPreviewDialog(
                         if (wp.resolution.isNotBlank()) {
                             Text(
                                 wp.resolution,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                        if (wallpapers.size > 1) {
+                            Text(
+                                "${pagerState.currentPage + 1} / ${wallpapers.size}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White.copy(alpha = 0.55f)
                             )
@@ -1786,7 +1794,10 @@ private fun WallpaperUrlPreviewDialog(
                         // Destructive: Remove from collection
                         if (wp.entryId.isNotBlank()) {
                             OutlinedIconButton(
-                                onClick = { onRemoveFromCollection(wp) },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onRemoveFromCollection(wp)
+                                },
                                 modifier = Modifier.size(44.dp),
                                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
                             ) {

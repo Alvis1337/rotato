@@ -985,10 +985,6 @@ fun BrainrotScreen(
                                 vm.searchByTag(tag)
                                 vm.selectItem(null)
                             },
-                            onMoreLikeThis = { query ->
-                                vm.setSearchQuery(query)
-                                vm.selectItem(null)
-                            },
                             onDismiss = { vm.selectItem(null) }
                         )
                     }
@@ -1240,13 +1236,13 @@ private fun WallpaperDetailOverlay(
     onBlock: (BrainrotWallpaper) -> Unit,
     onReport: (BrainrotWallpaper) -> Unit,
     onTagSearch: (String) -> Unit,
-    onMoreLikeThis: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
     var showZoom by remember { mutableStateOf(false) }
     var showInfoExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
@@ -1465,6 +1461,13 @@ private fun WallpaperDetailOverlay(
                         color = Color.White.copy(alpha = 0.55f)
                     )
                 }
+                if (items.size > 1) {
+                    Text(
+                        "${pagerState.currentPage + 1} / ${items.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.55f)
+                    )
+                }
             }
 
             val titleTags = wallpaper.tags
@@ -1482,50 +1485,10 @@ private fun WallpaperDetailOverlay(
             }
 
             if (wallpaper.tags.isNotEmpty()) {
-                // Generic/meta tags that make poor search terms — skip when picking "more like this"
-                val genericTags = setOf(
-                    "1girl", "1boy", "2girls", "2boys", "multiple_girls", "multiple_boys",
-                    "solo", "duo", "highres", "absurdres", "commentary_request",
-                    "translation_request", "simple_background", "white_background",
-                    "looking_at_viewer", "smile", "blush", "open_mouth",
-                    "long_hair", "short_hair", "medium_hair", "very_long_hair",
-                    "black_hair", "blonde_hair", "brown_hair", "white_hair",
-                    "blue_eyes", "red_eyes", "brown_eyes", "green_eyes", "purple_eyes"
-                )
-                val moreLikeQuery = wallpaper.tags
-                    .filter { it.lowercase() !in genericTags }
-                    .take(2)
-                    .joinToString(" ")
-                    .ifBlank { wallpaper.tags.take(2).joinToString(" ") }
-
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = PaddingValues(horizontal = 2.dp)
                 ) {
-                    if (moreLikeQuery.isNotBlank()) {
-                        item {
-                            AssistChip(
-                                onClick = { onMoreLikeThis(moreLikeQuery) },
-                                label = { Text("More like this", style = MaterialTheme.typography.labelSmall) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                    labelColor = Color.White,
-                                ),
-                                border = AssistChipDefaults.assistChipBorder(
-                                    enabled = true,
-                                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                )
-                            )
-                        }
-                    }
                     items(wallpaper.tags, key = { it }) { tag ->
                         SuggestionChip(
                             onClick = { onTagSearch(tag) },
@@ -1561,6 +1524,7 @@ private fun WallpaperDetailOverlay(
                 Box(modifier = Modifier.weight(1f)) {
                     FilledIconButton(
                         onClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             if (lists.isNotEmpty()) {
                                 showBookmarkMenu = !showBookmarkMenu
                             } else {
@@ -1632,7 +1596,10 @@ private fun WallpaperDetailOverlay(
                 }
 
                 OutlinedIconButton(
-                    onClick = { onBlock(wallpaper) },
+                    onClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onBlock(wallpaper)
+                    },
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
