@@ -90,11 +90,6 @@ private fun sourceDisplayName(source: String): String =
     SourcePluginRegistry.all.firstOrNull { it.id.equals(source, ignoreCase = true) }
         ?.displayName ?: source.replaceFirstChar { it.uppercase() }
 
-/** Maps a lowercase source string from BrainrotWallpaper to its plugin display name. */
-private fun sourceDisplayName(source: String): String =
-    SourcePluginRegistry.all.firstOrNull { it.id.equals(source, ignoreCase = true) }
-        ?.displayName ?: source.replaceFirstChar { it.uppercase() }
-
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
 private fun parseAspectRatio(resolution: String): Float {
     if (resolution.isBlank()) return 16f / 9f
