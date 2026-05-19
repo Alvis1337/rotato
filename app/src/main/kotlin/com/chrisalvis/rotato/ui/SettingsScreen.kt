@@ -129,6 +129,11 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 title = { Text("Settings", fontWeight = FontWeight.Bold) }
             )
         }

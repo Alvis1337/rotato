@@ -143,9 +143,6 @@ fun BrowseScreen() {
         )
     }
 
-    // Keep in-rotation badges in sync with actual filesystem state
-    LaunchedEffect(Unit) { vm.refreshInRotation() }
-
     // Track which collection the picker was launched for
     var pickerTargetListId by remember { mutableStateOf<String?>(null) }
     val photoPickerLauncher = rememberLauncherForActivityResult(
