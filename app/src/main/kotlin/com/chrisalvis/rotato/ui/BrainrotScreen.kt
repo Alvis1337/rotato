@@ -81,6 +81,9 @@ import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 
 /** Maps a lowercase source string from BrainrotWallpaper to its plugin display name. */
 private fun sourceDisplayName(source: String): String =
@@ -230,6 +233,17 @@ fun BrainrotScreen(
 
     if (showCreateListDialog) {
         var newListName by remember { mutableStateOf("") }
+        val createListFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            delay(100)
+            runCatching { createListFocus.requestFocus() }
+        }
+        val doCreate = {
+            if (newListName.isNotBlank()) {
+                vm.createList(newListName)
+                showCreateListDialog = false
+            }
+        }
         AlertDialog(
             onDismissRequest = {
                 showCreateListDialog = false
@@ -242,17 +256,15 @@ fun BrainrotScreen(
                     value = newListName,
                     onValueChange = { newListName = it },
                     label = { Text("Name") },
-                    singleLine = true
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { doCreate() }),
+                    modifier = Modifier.focusRequester(createListFocus)
                 )
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        if (newListName.isNotBlank()) {
-                            vm.createList(newListName)
-                            showCreateListDialog = false
-                        }
-                    },
+                    onClick = doCreate,
                     enabled = newListName.isNotBlank()
                 ) { Text("Create") }
             },

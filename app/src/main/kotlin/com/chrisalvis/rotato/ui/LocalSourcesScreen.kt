@@ -22,6 +22,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -162,6 +168,16 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     var newSubreddit by remember { mutableStateOf("") }
 
     if (showAddRedditDialog) {
+        val redditFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            delay(100)
+            runCatching { redditFocus.requestFocus() }
+        }
+        val doAdd = {
+            vm.addRedditInstance(newSubreddit)
+            showAddRedditDialog = false
+            newSubreddit = ""
+        }
         AlertDialog(
             onDismissRequest = { showAddRedditDialog = false; newSubreddit = "" },
             title = { Text("Add subreddit") },
@@ -173,15 +189,15 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     placeholder = { Text("e.g. wallpapers") },
                     prefix = { Text("r/") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (newSubreddit.trim().isNotBlank()) doAdd() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(redditFocus),
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    vm.addRedditInstance(newSubreddit)
-                    showAddRedditDialog = false
-                    newSubreddit = ""
-                }, enabled = newSubreddit.trim().isNotBlank()) {
+                TextButton(onClick = doAdd, enabled = newSubreddit.trim().isNotBlank()) {
                     Text("Add")
                 }
             },
@@ -511,7 +527,8 @@ private fun SourceCard(
                         placeholder = { Text("e.g. scenery landscape (leave blank for global search)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        supportingText = { Text("Space-separated tags used only for this source") }
+                        supportingText = { Text("Space-separated tags used only for this source") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                     )
                 }
                 if (source.type.needsApiUser) {
@@ -520,7 +537,8 @@ private fun SourceCard(
                         onValueChange = { apiUser = it },
                         label = { Text(source.type.apiUserLabel) },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = if (source.type.needsApiKey) ImeAction.Next else ImeAction.Done)
                     )
                 }
                 if (source.type.needsApiKey) {
@@ -530,6 +548,7 @@ private fun SourceCard(
                         label = { Text(source.type.apiKeyLabel) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                         visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             TextButton(onClick = { showKey = !showKey }) {

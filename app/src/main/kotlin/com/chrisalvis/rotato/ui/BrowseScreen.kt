@@ -67,6 +67,12 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.SmartRule
 import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -447,7 +453,9 @@ fun BrowseScreen() {
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     singleLine = true,
-                    shape = MaterialTheme.shapes.medium
+                    shape = MaterialTheme.shapes.medium,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { vm.setCollectionSearch(collectionSearch) })
                 )
                 Row(
                     modifier = Modifier
@@ -656,6 +664,11 @@ private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss:
     var requireAllText by remember { mutableStateOf("") }
     var requireAnyText by remember { mutableStateOf("") }
     var excludeAnyText by remember { mutableStateOf("") }
+    val nameFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(100)
+        runCatching { nameFocus.requestFocus() }
+    }
 
     fun tagsFromText(text: String) = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
@@ -669,7 +682,20 @@ private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss:
                     onValueChange = { name = it },
                     label = { Text("Name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (name.isNotBlank()) {
+                            val rule = if (isSmart) SmartRule(
+                                requireAll = tagsFromText(requireAllText),
+                                requireAny = tagsFromText(requireAnyText),
+                                excludeAny = tagsFromText(excludeAnyText),
+                            ) else null
+                            onConfirm(name, rule)
+                        }
+                    }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(nameFocus)
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -742,6 +768,7 @@ private fun TagRuleFields(
                 placeholder = { Text(placeholder) },
                 supportingText = if (supporting != null) ({ Text(supporting) }) else null,
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 modifier = Modifier.fillMaxWidth()
             )
             if (suggestions.isNotEmpty()) {
@@ -1365,6 +1392,11 @@ private fun WallpaperThumbnail(
 @Composable
 private fun SaveRotationDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("Rotation ${java.time.LocalDate.now()}") }
+    val saveFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(100)
+        runCatching { saveFocus.requestFocus() }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Save Rotation as Collection") },
@@ -1374,6 +1406,9 @@ private fun SaveRotationDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
                 onValueChange = { text = it },
                 label = { Text("Collection name") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { if (text.isNotBlank()) onConfirm(text.trim()) }),
+                modifier = Modifier.focusRequester(saveFocus)
             )
         },
         confirmButton = {
