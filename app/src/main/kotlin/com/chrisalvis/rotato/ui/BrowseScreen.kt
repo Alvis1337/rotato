@@ -67,6 +67,16 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.SmartRule
 import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
@@ -168,6 +178,7 @@ fun BrowseScreen() {
     BackHandler(enabled = !selectionMode && selectedList != null) { vm.clearSelection() }
 
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
+    var previewWallpaper by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var editRulesFor by remember { mutableStateOf<LocalList?>(null) }
 
     fun updateCover(wallpaper: BrowseWallpaper) {
@@ -203,6 +214,18 @@ fun BrowseScreen() {
             onSetAsCover = { updateCover(wp); showActionsFor = null },
             onRemoveFromCollection = { if (wp.entryId.isNotBlank()) { vm.removeWallpaper(wp.entryId); showActionsFor = null } },
             onDismiss = { showActionsFor = null }
+        )
+    }
+
+    previewWallpaper?.let { initial ->
+        WallpaperUrlPreviewDialog(
+            wallpapers = wallpapers,
+            initialWallpaper = initial,
+            isInRotation = { vm.isInRotation(it) },
+            onToggleRotation = { vm.toggleRotation(it) },
+            onSaveToGallery = { vm.saveWallpaper(it) },
+            onMoreActions = { wp -> previewWallpaper = null; showActionsFor = wp },
+            onDismiss = { previewWallpaper = null }
         )
     }
 
@@ -563,7 +586,7 @@ fun BrowseScreen() {
                     brokenEntryIds = brokenEntryIds,
                     onTap = { wp ->
                         if (selectionMode) vm.toggleSelection(wp)
-                        else showActionsFor = wp
+                        else previewWallpaper = wp
                     },
                     onLongPress = { wp -> vm.enterSelectionMode(wp) },
                     modifier = Modifier.weight(1f)
@@ -1418,6 +1441,131 @@ private fun SaveRotationDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WallpaperUrlPreviewDialog(
+    wallpapers: List<BrowseWallpaper>,
+    initialWallpaper: BrowseWallpaper,
+    isInRotation: (BrowseWallpaper) -> Boolean,
+    onToggleRotation: (BrowseWallpaper) -> Unit,
+    onSaveToGallery: (BrowseWallpaper) -> Unit,
+    onMoreActions: (BrowseWallpaper) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val initialPage = remember(wallpapers, initialWallpaper.entryId) {
+        wallpapers.indexOfFirst { it.entryId == initialWallpaper.entryId }.takeIf { it >= 0 } ?: 0
+    }
+    val pagerState = rememberPagerState(initialPage = initialPage) { wallpapers.size }
+    val currentWallpaper by remember(wallpapers, pagerState) {
+        derivedStateOf { wallpapers.getOrNull(pagerState.currentPage) }
+    }
+
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+        scale = nextScale
+        offset = if (nextScale > 1f) offset + (panChange * nextScale) else Offset.Zero
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        scale = 1f
+        offset = Offset.Zero
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = scale == 1f,
+                beyondViewportPageCount = 1
+            ) { page ->
+                val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager
+                val isCurrentPage = page == pagerState.currentPage
+                val imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = wp.animeTitle.ifBlank { null },
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = if (isCurrentPage) scale else 1f
+                            scaleY = if (isCurrentPage) scale else 1f
+                            translationX = if (isCurrentPage) offset.x else 0f
+                            translationY = if (isCurrentPage) offset.y else 0f
+                        }
+                        .transformable(state = transformState, enabled = isCurrentPage)
+                )
+            }
+
+            // Close button
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+
+            // Bottom action bar
+            currentWallpaper?.let { wp ->
+                val inRotation = isInRotation(wp)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))
+                        )
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    OutlinedButton(
+                        onClick = { onToggleRotation(wp) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
+                    ) {
+                        Icon(
+                            if (inRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (inRotation) "In Library" else "Add to Library")
+                    }
+                    OutlinedButton(
+                        onClick = { onSaveToGallery(wp) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save")
+                    }
+                    OutlinedButton(
+                        onClick = { onMoreActions(wp) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("More")
+                    }
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
