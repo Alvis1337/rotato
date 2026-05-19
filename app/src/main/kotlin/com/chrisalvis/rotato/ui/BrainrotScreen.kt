@@ -54,6 +54,8 @@ import android.widget.Toast
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +81,14 @@ import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+
+/** Maps a lowercase source string from BrainrotWallpaper to its plugin display name. */
+private fun sourceDisplayName(source: String): String =
+    SourcePluginRegistry.all.firstOrNull { it.id.equals(source, ignoreCase = true) }
+        ?.displayName ?: source.replaceFirstChar { it.uppercase() }
 
 /** Maps a lowercase source string from BrainrotWallpaper to its plugin display name. */
 private fun sourceDisplayName(source: String): String =
@@ -195,9 +205,12 @@ fun BrainrotScreen(
     var showHandsFree by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
+    val searchFocusRequester = remember { FocusRequester() }
     LaunchedEffect(showSearch) {
         if (showSearch) {
             searchText = searchQuery.ifBlank { "" }
+            delay(100)
+            runCatching { searchFocusRequester.requestFocus() }
         } else {
             vm.clearTagSuggestions()
         }
@@ -225,6 +238,17 @@ fun BrainrotScreen(
 
     if (showCreateListDialog) {
         var newListName by remember { mutableStateOf("") }
+        val createListFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            delay(100)
+            runCatching { createListFocus.requestFocus() }
+        }
+        val doCreate = {
+            if (newListName.isNotBlank()) {
+                vm.createList(newListName)
+                showCreateListDialog = false
+            }
+        }
         AlertDialog(
             onDismissRequest = {
                 showCreateListDialog = false
@@ -237,17 +261,15 @@ fun BrainrotScreen(
                     value = newListName,
                     onValueChange = { newListName = it },
                     label = { Text("Name") },
-                    singleLine = true
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { doCreate() }),
+                    modifier = Modifier.focusRequester(createListFocus)
                 )
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        if (newListName.isNotBlank()) {
-                            vm.createList(newListName)
-                            showCreateListDialog = false
-                        }
-                    },
+                    onClick = doCreate,
                     enabled = newListName.isNotBlank()
                 ) { Text("Create") }
             },
@@ -811,7 +833,8 @@ fun BrainrotScreen(
                                                             }
                                                         }
                                                     }
-                                                }
+                                                },
+                                                modifier = Modifier.focusRequester(searchFocusRequester)
                                             )
                                         },
                                         expanded = true,
