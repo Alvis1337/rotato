@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -322,444 +323,492 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
+        val discoverBatchSize by viewModel.discoverBatchSize.collectAsStateWithLifecycle()
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SettingsSection(title = "Rotation Interval") {
-                RotationInterval.entries.forEach { interval ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.intervalMinutes == interval.minutes,
-                            onClick = { viewModel.setIntervalMinutes(interval.minutes) }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(interval.label)
-                    }
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Order") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    Column {
-                        Text("Shuffle")
-                        Text(
-                            text = if (settings.shuffleMode) "Photos play in random order"
-                                   else "Photos play in the order they were added",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = settings.shuffleMode,
-                        onCheckedChange = { viewModel.setShuffleMode(it) }
-                    )
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Wallpaper Target") {
-                WallpaperTarget.entries.forEach { target ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.wallpaperTarget == target,
-                            onClick = { viewModel.setWallpaperTarget(target) }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(target.label)
-                    }
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Wallpaper Fit") {
-                com.chrisalvis.rotato.data.WallpaperFit.entries.forEach { fit ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.wallpaperFit == fit,
-                            onClick = { viewModel.setWallpaperFit(fit) }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(fit.label)
-                    }
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Rotation Triggers") {
-                RotationTriggersSection(
-                    chargingTriggerEnabled = chargingTriggerEnabled,
-                    autoFavoriteEnabled = autoFavoriteEnabled,
-                    autoFavoriteMinutes = autoFavoriteMinutes,
-                    onChargingTriggerToggle = { viewModel.setChargingTriggerEnabled(it) },
-                    onAutoFavoriteToggle = { viewModel.setAutoFavoriteEnabled(it) },
-                    onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) }
-                )
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Widget") {
-                WidgetCollectionDropdown(
-                    selectedCollectionId = widgetCollectionId,
-                    lists = collections,
-                    onSelect = viewModel::setWidgetCollectionId
-                )
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Auto-Pause") {
-                AutoPauseSection(
-                    settings = autoPauseSettings,
-                    onNightToggle = { viewModel.setAutoPauseNight(it) },
-                    onNightHoursChange = { start, end -> viewModel.setAutoPauseNightHours(start, end) },
-                    onChargingToggle = { viewModel.setAutoPauseCharging(it) },
-                    onRotateScreenOnToggle = { viewModel.setRotateScreenOn(it) },
-                )
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Sources") {
-                OutlinedButton(
-                    onClick = onNavigateToSources,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Manage Sources")
-                }
-            }
-
-            HorizontalDivider()
-
-            val discoverBatchSize by viewModel.discoverBatchSize.collectAsStateWithLifecycle()
-            SettingsSection(title = "Discover") {
-                Text("Prefetch batch size", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "Images loaded per scroll page. Higher = more data, fewer load pauses.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(10 to "Low", 20 to "Medium", 40 to "High").forEach { (size, label) ->
-                        FilterChip(
-                            selected = discoverBatchSize == size,
-                            onClick = { viewModel.setDiscoverBatchSize(size) },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Schedule") {
-                OutlinedButton(
-                    onClick = onNavigateToSchedule,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Manage Schedule")
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Stats") {
-                OutlinedButton(
-                    onClick = onNavigateToStats,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("View Stats")
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "MyAnimeList") {
-                if (malLoading) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Loading…", style = MaterialTheme.typography.bodySmall)
-                    }
-                } else if (malLoggedIn) {
-                    Text(
-                        "Connected as $malUsername",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (malAnimeCount > 0) {
-                        Text(
-                            "$malAnimeCount anime in filtered list",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (malError != null) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                malError!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                    SettingsSection(title = "Rotation Interval") {
+                        RotationInterval.entries.forEach { interval ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = settings.intervalMinutes == interval.minutes,
+                                    onClick = { viewModel.setIntervalMinutes(interval.minutes) }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(interval.label)
                             }
                         }
                     }
 
-                    MalStatusFilter(
-                        selected = malFilterStatuses,
-                        onToggle = { status ->
-                            val updated = if (status in malFilterStatuses)
-                                malFilterStatuses - status else malFilterStatuses + status
-                            malViewModel.setFilterStatuses(updated)
+                    SettingsSection(title = "Order") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Shuffle")
+                                Text(
+                                    text = if (settings.shuffleMode) "Photos play in random order"
+                                           else "Photos play in the order they were added",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = settings.shuffleMode,
+                                onCheckedChange = { viewModel.setShuffleMode(it) }
+                            )
                         }
-                    )
+                    }
 
-                    MalMinScoreFilter(
-                        minScore = malFilterMinScore,
-                        onSelect = { malViewModel.setFilterMinScore(it) }
-                    )
+                    SettingsSection(title = "Wallpaper Target") {
+                        WallpaperTarget.entries.forEach { target ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = settings.wallpaperTarget == target,
+                                    onClick = { viewModel.setWallpaperTarget(target) }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(target.label)
+                            }
+                        }
+                    }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsSection(title = "Wallpaper Fit") {
+                        com.chrisalvis.rotato.data.WallpaperFit.entries.forEach { fit ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = settings.wallpaperFit == fit,
+                                    onClick = { viewModel.setWallpaperFit(fit) }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(fit.label)
+                            }
+                        }
+                    }
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    SettingsSection(title = "Rotation Triggers") {
+                        RotationTriggersSection(
+                            chargingTriggerEnabled = chargingTriggerEnabled,
+                            autoFavoriteEnabled = autoFavoriteEnabled,
+                            autoFavoriteMinutes = autoFavoriteMinutes,
+                            onChargingTriggerToggle = { viewModel.setChargingTriggerEnabled(it) },
+                            onAutoFavoriteToggle = { viewModel.setAutoFavoriteEnabled(it) },
+                            onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) }
+                        )
+                    }
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    SettingsSection(title = "Schedule") {
                         OutlinedButton(
-                            onClick = { malViewModel.refresh() },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Refresh List") }
+                            onClick = onNavigateToSchedule,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Manage Schedule")
+                        }
+                    }
+
+                    SettingsSection(title = "Auto-Pause") {
+                        AutoPauseSection(
+                            settings = autoPauseSettings,
+                            onNightToggle = { viewModel.setAutoPauseNight(it) },
+                            onNightHoursChange = { start, end -> viewModel.setAutoPauseNightHours(start, end) },
+                            onChargingToggle = { viewModel.setAutoPauseCharging(it) },
+                            onRotateScreenOnToggle = { viewModel.setRotateScreenOn(it) },
+                        )
+                    }
+
+                    SettingsSection(title = "Widget") {
+                        WidgetCollectionDropdown(
+                            selectedCollectionId = widgetCollectionId,
+                            lists = collections,
+                            onSelect = viewModel::setWidgetCollectionId
+                        )
+                    }
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    SettingsSection(title = "Sources") {
                         OutlinedButton(
-                            onClick = { malViewModel.logout() },
-                            modifier = Modifier.weight(1f),
+                            onClick = onNavigateToSources,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Manage Sources")
+                        }
+                    }
+
+                    SettingsSection(title = "Discover") {
+                        Text("Prefetch batch size", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Images loaded per scroll page. Higher = more data, fewer load pauses.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(10 to "Low", 20 to "Medium", 40 to "High").forEach { (size, label) ->
+                                FilterChip(
+                                    selected = discoverBatchSize == size,
+                                    onClick = { viewModel.setDiscoverBatchSize(size) },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    SettingsSection(title = "MyAnimeList") {
+                        if (malLoading) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                            }
+                        } else if (malLoggedIn) {
+                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        "Connected as $malUsername",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    if (malAnimeCount > 0) {
+                                        Text(
+                                            "$malAnimeCount anime in filtered list",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (malError != null) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                malError!!,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
+                                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider()
+
+                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    MalStatusFilter(
+                                        selected = malFilterStatuses,
+                                        onToggle = { status ->
+                                            val updated = if (status in malFilterStatuses)
+                                                malFilterStatuses - status else malFilterStatuses + status
+                                            malViewModel.setFilterStatuses(updated)
+                                        }
+                                    )
+
+                                    MalMinScoreFilter(
+                                        minScore = malFilterMinScore,
+                                        onSelect = { malViewModel.setFilterMinScore(it) }
+                                    )
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = { malViewModel.refresh() },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Refresh List") }
+                                        OutlinedButton(
+                                            onClick = { malViewModel.logout() },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = MaterialTheme.colorScheme.error
+                                            )
+                                        ) { Text("Disconnect") }
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (malError != null) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            malError!!,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
+                                            Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    "Connect your MAL account to use your anime watch list as discover queries.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedButton(
+                                    onClick = { malViewModel.login(context) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Connect MyAnimeList") }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    SettingsSection(title = "Backup & Restore") {
+                        Text(
+                            text = "Export or import your sources, API keys, and preferences. MAL auth tokens are not backed up.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Google Drive backup", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Automatically back up settings to your Google account",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = googleDriveBackupEnabled,
+                                onCheckedChange = { viewModel.setGoogleDriveBackupEnabled(it) }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { exportLauncher.launch("rotato-backup-$today.json") },
+                                enabled = backupState == BackupState.IDLE,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                if (backupState == BackupState.BUSY) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text(if (backupState == BackupState.SUCCESS) "Exported!" else if (backupState == BackupState.ERROR) "Failed" else "Export")
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                                enabled = backupState == BackupState.IDLE,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(if (backupState == BackupState.SUCCESS) "Imported!" else if (backupState == BackupState.ERROR) "Failed" else "Import")
+                            }
+                        }
+                    }
+
+                    SettingsSection(title = "Danger Zone") {
+                        OutlinedButton(
+                            onClick = { showClearDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.error
                             )
-                        ) { Text("Disconnect") }
+                        ) {
+                            Text("Clear All Photos")
+                        }
                     }
-                } else {
-                    if (malError != null) {
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    SettingsSection(title = "Stats") {
+                        OutlinedButton(
+                            onClick = onNavigateToStats,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("View Stats")
+                        }
+                    }
+
+                    SettingsSection(title = "About") {
+                        OutlinedButton(
+                            onClick = onShowOnboarding,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("View App Tour")
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Text("Version", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                malError!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.weight(1f)
+                                "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                            }
                         }
-                    }
-                    Text(
-                        "Connect your MAL account to use your anime watch list as discover queries.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedButton(
-                        onClick = { malViewModel.login(context) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Connect MyAnimeList") }
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Backup & Restore") {
-                Text(
-                    text = "Export or import your sources, API keys, and preferences. MAL auth tokens are not backed up.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Google Drive backup", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Automatically back up settings to your Google account",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = googleDriveBackupEnabled,
-                        onCheckedChange = { viewModel.setGoogleDriveBackupEnabled(it) }
-                    )
-                }
-                Row(modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { exportLauncher.launch("rotato-backup-$today.json") },
-                        enabled = backupState == BackupState.IDLE,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        if (backupState == BackupState.BUSY) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text(if (backupState == BackupState.SUCCESS) "Exported!" else if (backupState == BackupState.ERROR) "Failed" else "Export")
-                        }
-                    }
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
-                        enabled = backupState == BackupState.IDLE,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(if (backupState == BackupState.SUCCESS) "Imported!" else if (backupState == BackupState.ERROR) "Failed" else "Import")
-                    }
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "Danger Zone") {
-                OutlinedButton(
-                    onClick = { showClearDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Clear All Photos")
-                }
-            }
-
-            HorizontalDivider()
-
-            SettingsSection(title = "About") {
-                OutlinedButton(
-                    onClick = onShowOnboarding,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("View App Tour")
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Version", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                // Update checker
-                val updateAvailable = updateCheckState is UpdateCheckResult.UpdateAvailable
-                OutlinedButton(
-                    onClick = {
-                        if (updateAvailable) {
-                            pendingUpdateInfo = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
-                        } else {
-                            updateChecking = true
-                            scope.launch {
-                                val result = UpdateRepository.checkForUpdate()
-                                updateCheckState = result
-                                updateChecking = false
-                                if (result is UpdateCheckResult.UpdateAvailable) {
-                                    pendingUpdateInfo = result.info
-                                } else if (result is UpdateCheckResult.UpToDate) {
-                                    android.widget.Toast.makeText(context, "You're up to date!", android.widget.Toast.LENGTH_SHORT).show()
-                                } else if (result is UpdateCheckResult.Error) {
-                                    android.widget.Toast.makeText(context, "Update check failed: ${result.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        val updateAvailable = updateCheckState is UpdateCheckResult.UpdateAvailable
+                        OutlinedButton(
+                            onClick = {
+                                if (updateAvailable) {
+                                    pendingUpdateInfo = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
+                                } else {
+                                    updateChecking = true
+                                    scope.launch {
+                                        val result = UpdateRepository.checkForUpdate()
+                                        updateCheckState = result
+                                        updateChecking = false
+                                        if (result is UpdateCheckResult.UpdateAvailable) {
+                                            pendingUpdateInfo = result.info
+                                        } else if (result is UpdateCheckResult.UpToDate) {
+                                            android.widget.Toast.makeText(context, "You're up to date!", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else if (result is UpdateCheckResult.Error) {
+                                            android.widget.Toast.makeText(context, "Update check failed: ${result.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !updateChecking
+                        ) {
+                            if (updateChecking) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Checking…")
+                            } else if (updateAvailable) {
+                                Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                val info = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
+                                Text("Update available — v${info.versionName}")
+                            } else {
+                                Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Check for Updates")
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !updateChecking
-                ) {
-                    if (updateChecking) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Checking…")
-                    } else if (updateAvailable) {
-                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        val info = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
-                        Text("Update available — v${info.versionName}")
-                    } else {
-                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Check for Updates")
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(context, OssLicensesMenuActivity::class.java)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Open Source Licenses")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/privacy/"))
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Privacy Policy")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/terms/"))
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Terms of Service")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/"))
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Website")
+                        }
                     }
-                }
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(context, OssLicensesMenuActivity::class.java)
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open Source Licenses")
-                }
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/privacy/"))
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Privacy Policy")
-                }
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/terms/"))
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Terms of Service")
-                }
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/"))
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Website")
                 }
             }
         }
@@ -774,7 +823,7 @@ private fun SettingsSection(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary
         )
