@@ -326,6 +326,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { preferences.setDiscoverBatchSize(size) }
     }
 
+    val wifiOnlyDiscover: StateFlow<Boolean> = preferences.wifiOnlyDiscover
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setWifiOnlyDiscover(enabled: Boolean) {
+        viewModelScope.launch { preferences.setWifiOnlyDiscover(enabled) }
+    }
+
     fun clearAll() {
         viewModelScope.launch {
             cancelRotation()

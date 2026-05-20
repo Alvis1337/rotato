@@ -57,6 +57,9 @@ import okhttp3.Request
 import org.json.JSONArray
 import java.io.File
 import java.net.URLEncoder
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 
 class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -258,6 +261,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (fetchJob?.isActive == true) return
 
         fetchJob = viewModelScope.launch {
+            // Respect "Wi-Fi only for Discover" setting
+            val wifiOnly = prefs.wifiOnlyDiscover.first()
+            if (wifiOnly) {
+                val cm = getApplication<Application>().applicationContext
+                    .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+                val onWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                if (!onWifi) {
+                    _noResults.update { true }
+                    return@launch
+                }
+            }
+
             val isInitial = _gridItems.value.isEmpty()
             if (isInitial) _loading.update { true } else _loadingMore.update { true }
             try {

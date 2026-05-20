@@ -21,9 +21,11 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SmartRule
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
+import com.chrisalvis.rotato.data.dataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -62,6 +64,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     private val app = application
     private val localLists = LocalListsPreferences(application)
+    private val prefs = RotatoPreferences(application)
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
     private lateinit var processLifecycleObserver: DefaultLifecycleObserver
@@ -118,6 +121,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     val collectionSearch: StateFlow<String> = _collectionSearch.asStateFlow()
     private val _sortOrder = MutableStateFlow(WallpaperSortOrder.DATE_ADDED)
     val sortOrder: StateFlow<WallpaperSortOrder> = _sortOrder.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val saved = prefs.collectionSortOrder.first()
+            _sortOrder.update { runCatching { WallpaperSortOrder.valueOf(saved) }.getOrDefault(WallpaperSortOrder.DATE_ADDED) }
+        }
+    }
     private val _duplicateWarning = MutableSharedFlow<String>()
     val duplicateWarning: SharedFlow<String> = _duplicateWarning.asSharedFlow()
     private val _exportCompletion = MutableSharedFlow<Int>()
@@ -131,7 +141,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setSearchQuery(q: String) { _searchQuery.update { q } }
     fun setCollectionSearch(q: String) { _collectionSearch.update { q } }
-    fun setSortOrder(order: WallpaperSortOrder) { _sortOrder.update { order } }
+    fun setSortOrder(order: WallpaperSortOrder) {
+        _sortOrder.update { order }
+        viewModelScope.launch { prefs.setCollectionSortOrder(order.name) }
+    }
 
     val selectedList: StateFlow<LocalList?> = combine(lists, _selectedListId) { visible, id ->
         visible.find { it.id == id }

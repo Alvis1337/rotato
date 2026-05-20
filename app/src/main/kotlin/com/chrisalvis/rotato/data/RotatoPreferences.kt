@@ -63,6 +63,8 @@ class RotatoPreferences(private val context: Context) {
         val GOOGLE_DRIVE_BACKUP_ENABLED = booleanPreferencesKey("google_drive_backup_enabled")
         val WALLPAPER_FIT = stringPreferencesKey("wallpaper_fit")
         val IGNORED_UPDATE_VERSION = intPreferencesKey("ignored_update_version")
+        val COLLECTION_SORT_ORDER = stringPreferencesKey("collection_sort_order")
+        val WIFI_ONLY_DISCOVER = booleanPreferencesKey("wifi_only_discover")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -473,5 +475,21 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setIgnoredUpdateVersion(versionCode: Int) {
         context.dataStore.edit { it[IGNORED_UPDATE_VERSION] = versionCode }
+    }
+
+    val collectionSortOrder: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[COLLECTION_SORT_ORDER] ?: "DATE_ADDED" }
+
+    suspend fun setCollectionSortOrder(order: String) {
+        context.dataStore.edit { it[COLLECTION_SORT_ORDER] = order }
+    }
+
+    val wifiOnlyDiscover: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[WIFI_ONLY_DISCOVER] ?: false }
+
+    suspend fun setWifiOnlyDiscover(enabled: Boolean) {
+        context.dataStore.edit { it[WIFI_ONLY_DISCOVER] = enabled }
     }
 }

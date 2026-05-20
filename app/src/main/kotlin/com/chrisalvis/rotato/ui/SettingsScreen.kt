@@ -324,6 +324,7 @@ fun SettingsScreen(
         }
     ) { padding ->
         val discoverBatchSize by viewModel.discoverBatchSize.collectAsStateWithLifecycle()
+        val wifiOnlyDiscover by viewModel.wifiOnlyDiscover.collectAsStateWithLifecycle()
 
         Column(
             modifier = Modifier
@@ -503,6 +504,24 @@ fun SettingsScreen(
                                     label = { Text(label) }
                                 )
                             }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Wi-Fi only", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Only load Discover images on Wi-Fi",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = wifiOnlyDiscover,
+                                onCheckedChange = { viewModel.setWifiOnlyDiscover(it) }
+                            )
                         }
                     }
                 }

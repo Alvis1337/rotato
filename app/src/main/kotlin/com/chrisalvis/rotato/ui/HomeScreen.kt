@@ -14,6 +14,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -58,6 +60,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -283,6 +287,7 @@ private fun LibraryContent(
             EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onGoToDiscover, onAddPhotos = onPhotoPick)
         } else {
             var selectedFile by remember { mutableStateOf<File?>(null) }
+            var contextMenuFile by remember { mutableStateOf<File?>(null) }
             selectedFile?.let { file ->
                 ImagePreviewDialog(
                     images = images,
@@ -311,12 +316,47 @@ private fun LibraryContent(
             ) {
                 items(images, key = { it.absolutePath }) { file ->
                     val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
-                    ImageThumbnail(
-                        file = file,
-                        isSelected = isSelected,
-                        inSelectionMode = inSelectionMode,
-                        onClick = { if (!inSelectionMode) selectedFile = file }
-                    )
+                    Box {
+                        ImageThumbnail(
+                            file = file,
+                            isSelected = isSelected,
+                            inSelectionMode = inSelectionMode,
+                            onClick = { if (!inSelectionMode) selectedFile = file },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                contextMenuFile = file
+                            }
+                        )
+                        DropdownMenu(
+                            expanded = contextMenuFile == file,
+                            onDismissRequest = { contextMenuFile = null }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Set as wallpaper") },
+                                leadingIcon = { Icon(Icons.Filled.Wallpaper, null) },
+                                onClick = {
+                                    contextMenuFile = null
+                                    viewModel.setSpecificWallpaper(file)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Save to gallery") },
+                                leadingIcon = { Icon(Icons.Filled.SaveAlt, null) },
+                                onClick = {
+                                    contextMenuFile = null
+                                    viewModel.saveFileToGallery(file)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    contextMenuFile = null
+                                    viewModel.removeImage(file)
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -550,7 +590,8 @@ private fun ImageThumbnail(
     file: File,
     isSelected: Boolean,
     inSelectionMode: Boolean,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null
 ) {
     val badgeInfo = remember(file.absolutePath, file.length(), file.lastModified()) {
         readImageBadgeInfo(file)
@@ -564,7 +605,12 @@ private fun ImageThumbnail(
                 if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 else Modifier
             )
-            .then(if (!inSelectionMode) Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick) else Modifier)
+            .then(
+                if (!inSelectionMode) Modifier.combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick
+                ) else Modifier
+            )
     ) {
         AsyncImage(
             model = file,
