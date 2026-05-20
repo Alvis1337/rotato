@@ -533,19 +533,26 @@ fun BrainrotScreen(
                         onOpenSearch = { showSearch = true },
                         onOpenSettings = { showSettings = true }
                     )
-                    loading && gridItems.isEmpty() -> LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize()
+                    loading && gridItems.isEmpty() -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        gridGridItems(12) {
-                            ShimmerBox(
-                                Modifier
-                                    .aspectRatio(1f)
-                                    .clip(MaterialTheme.shapes.medium)
-                            )
+                        repeat(4) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                repeat(3) {
+                                    ShimmerBox(
+                                        Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .clip(MaterialTheme.shapes.medium)
+                                    )
+                                }
+                            }
                         }
                     }
                     else -> {
