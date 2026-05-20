@@ -374,6 +374,7 @@ fun BrowseScreen() {
         bottomBar = {
             if (selectionMode && selected.isNotEmpty() && selectedList != null) {
                 BottomAppBar {
+                    // Primary actions always visible
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -395,55 +396,62 @@ fun BrowseScreen() {
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clickable {
-                                val urls = selectedWallpapers.joinToString("\n") { it.fullUrl }
-                                if (urls.isNotBlank()) {
-                                    clipboard.setText(AnnotatedString(urls))
-                                    android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
-                        Text("Copy URL", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                vm.shareWallpapers(
-                                    context,
-                                    selectedWallpapers.map { it.toLocalWallpaperEntry(selectedList?.id.orEmpty()) }
-                                )
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Share")
-                        Text("Share", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
                             .clickable { vm.downloadSelected() },
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(Icons.Default.Download, contentDescription = "Save to gallery")
                         Text("Save", style = MaterialTheme.typography.labelSmall)
                     }
-                    if (singleSelectedWallpaper != null) {
+                    // Overflow for secondary actions
+                    var showSelectionOverflow by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    singleSelectedWallpaper?.let {
-                                        updateCover(it)
-                                        vm.exitSelectionMode()
-                                    }
-                                },
+                            modifier = Modifier.clickable { showSelectionOverflow = true },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = "Set collection cover")
-                            Text("Set cover", style = MaterialTheme.typography.labelSmall)
+                            Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                            Text("More", style = MaterialTheme.typography.labelSmall)
+                        }
+                        DropdownMenu(
+                            expanded = showSelectionOverflow,
+                            onDismissRequest = { showSelectionOverflow = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Share") },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                                onClick = {
+                                    showSelectionOverflow = false
+                                    vm.shareWallpapers(
+                                        context,
+                                        selectedWallpapers.map { it.toLocalWallpaperEntry(selectedList?.id.orEmpty()) }
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy URL") },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                                onClick = {
+                                    showSelectionOverflow = false
+                                    val urls = selectedWallpapers.joinToString("\n") { it.fullUrl }
+                                    if (urls.isNotBlank()) {
+                                        clipboard.setText(AnnotatedString(urls))
+                                        android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                            if (singleSelectedWallpaper != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Set as cover") },
+                                    leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                                    onClick = {
+                                        showSelectionOverflow = false
+                                        singleSelectedWallpaper?.let {
+                                            updateCover(it)
+                                            vm.exitSelectionMode()
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }

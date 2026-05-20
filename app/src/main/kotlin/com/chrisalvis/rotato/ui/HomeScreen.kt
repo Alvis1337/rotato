@@ -280,7 +280,7 @@ private fun LibraryContent(
         }
 
         if (images.isEmpty()) {
-            EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onGoToDiscover)
+            EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onGoToDiscover, onAddPhotos = onPhotoPick)
         } else {
             var selectedFile by remember { mutableStateOf<File?>(null) }
             selectedFile?.let { file ->
@@ -772,7 +772,7 @@ private fun ImagePreviewDialog(
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier, onGoToDiscover: () -> Unit = {}) {
+private fun EmptyState(modifier: Modifier = Modifier, onGoToDiscover: () -> Unit = {}, onAddPhotos: () -> Unit = {}) {
     Box(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
@@ -789,27 +789,23 @@ private fun EmptyState(modifier: Modifier = Modifier, onGoToDiscover: () -> Unit
                 tint = MaterialTheme.colorScheme.outline
             )
             Text(
-                text = "Your rotation pool is empty",
+                text = "Your library is empty",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Text(
+                text = "Add wallpapers to start rotating",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
             Spacer(Modifier.height(4.dp))
-            listOf(
-                "Tap \"Add Photos\" to import from your gallery",
-                "Swipe right on Discover to save wallpapers",
-                "Open Collections → tap ⊞ to sync a whole collection"
-            ).forEach { tip ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text(tip, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
             FilledTonalButton(onClick = onGoToDiscover) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
                 Text("Browse Discover")
+            }
+            OutlinedButton(onClick = onAddPhotos) {
+                Text("Add from Photos")
             }
         }
     }
