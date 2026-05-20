@@ -134,7 +134,6 @@ fun HomeScreen(
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
-    val haptic = LocalHapticFeedback.current
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -244,6 +243,7 @@ private fun LibraryContent(
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
     val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
 
     if (showSaveToListDialog) {
         SaveToCollectionDialog(
