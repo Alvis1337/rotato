@@ -210,16 +210,31 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Box(
+                            Column(
                                 modifier = Modifier
                                     .heightIn(max = 260.dp)
-                                    .verticalScroll(rememberScrollState())
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                Text(
-                                    text = formatChangelog(info.releaseNotes),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                formatChangelogLines(info.releaseNotes).forEach { (text, isHeader) ->
+                                    if (text.isBlank()) {
+                                        Spacer(Modifier.size(4.dp))
+                                    } else if (isHeader) {
+                                        Text(
+                                            text = text,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(top = 6.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = text,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1099,3 +1114,19 @@ private fun formatChangelog(raw: String): String = raw.lines()
     .replace(Regex("`(.*?)`"), "$1")
     .trimStart('\n')
     .trim()
+
+/** Returns pairs of (displayText, isHeader) for richer rendering in the changelog dialog. */
+private fun formatChangelogLines(raw: String): List<Pair<String, Boolean>> =
+    raw.lines().map { line ->
+        val t = line.trim()
+            .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+            .replace(Regex("\\*(.*?)\\*"), "$1")
+            .replace(Regex("`(.*?)`"), "$1")
+        when {
+            t.startsWith("### ") -> t.removePrefix("### ") to true
+            t.startsWith("## ")  -> t.removePrefix("## ")  to true
+            t.startsWith("# ")   -> t.removePrefix("# ")   to true
+            t.startsWith("- ") || t.startsWith("* ") -> "• ${t.drop(2)}" to false
+            else -> t to false
+        }
+    }

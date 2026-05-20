@@ -73,10 +73,59 @@ jobs:
           echo "path=$DEST" >> $GITHUB_OUTPUT
           echo "name=rotato-${{ steps.tag.outputs.name }}.apk" >> $GITHUB_OUTPUT
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          # Find the previous release tag (exclude the current one if it already exists)
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            # No previous tag — use all commits
+            COMMITS=$(git log --pretty=format:"%s" | grep -v "^Merge ")
+          else
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s" | grep -v "^Merge " | grep -v "^Co-authored")
+          fi
+
+          # Group by prefix: feat / fix / other
+          FEATS=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^feat[^:]*: //')
+          FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^fix[^:]*: //')
+          OTHER=$(echo "$COMMITS" | grep -vE "^feat|^fix|^chore|^ci|^docs|^style|^refactor|^test" | grep -v "^$")
+
+          BODY=""
+          if [ -n "$FEATS" ]; then
+            BODY="${BODY}### ✨ What's new\n"
+            while IFS= read -r line; do
+              [ -n "$line" ] && BODY="${BODY}- ${line}\n"
+            done <<< "$FEATS"
+            BODY="${BODY}\n"
+          fi
+          if [ -n "$FIXES" ]; then
+            BODY="${BODY}### 🐛 Bug fixes\n"
+            while IFS= read -r line; do
+              [ -n "$line" ] && BODY="${BODY}- ${line}\n"
+            done <<< "$FIXES"
+            BODY="${BODY}\n"
+          fi
+          if [ -n "$OTHER" ]; then
+            BODY="${BODY}### 🔧 Other changes\n"
+            while IFS= read -r line; do
+              [ -n "$line" ] && BODY="${BODY}- ${line}\n"
+            done <<< "$OTHER"
+            BODY="${BODY}\n"
+          fi
+
+          if [ -z "$BODY" ]; then
+            BODY="No notable changes."
+          fi
+
+          # Write to file to preserve newlines
+          printf "%b" "$BODY" > /tmp/release_notes.md
+          echo "notes_file=/tmp/release_notes.md" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           name: rotato ${{ steps.tag.outputs.name }}
-          generate_release_notes: true
+          body_path: ${{ steps.changelog.outputs.notes_file }}
           files: ${{ steps.apk.outputs.path }}
