@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridS
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -471,7 +472,7 @@ fun BrainrotScreen(
                                         val missingCreds = src.type.needsApiKey && src.apiKey.isBlank()
                                         val hasCreds = src.type.needsApiKey && src.apiKey.isNotBlank()
                                         val nsfwIcon = when (src.nsfwEnabled) {
-                                            null -> Icons.Outlined.LockOpen
+                                            null -> Icons.Outlined.Visibility
                                             true -> Icons.Default.Visibility
                                             false -> Icons.Default.VisibilityOff
                                         }

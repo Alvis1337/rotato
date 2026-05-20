@@ -635,7 +635,6 @@ private fun RotationStatusCard(
 }
 
 @Composable
-@Composable
 private fun ImageThumbnail(
     file: File,
     rating: Int = 0,
