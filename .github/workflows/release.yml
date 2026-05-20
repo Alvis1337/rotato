@@ -81,15 +81,15 @@ jobs:
           PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
           if [ -z "$PREV_TAG" ]; then
             # No previous tag — use all commits
-            COMMITS=$(git log --pretty=format:"%s" | grep -v "^Merge ")
+            COMMITS=$(git log --pretty=format:"%s" | grep -v "^Merge " || true)
           else
-            COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s" | grep -v "^Merge " | grep -v "^Co-authored")
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s" | grep -v "^Merge " | grep -v "^Co-authored" || true)
           fi
 
-          # Group by prefix: feat / fix / other
-          FEATS=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^feat[^:]*: //')
-          FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^fix[^:]*: //')
-          OTHER=$(echo "$COMMITS" | grep -vE "^feat|^fix|^chore|^ci|^docs|^style|^refactor|^test" | grep -v "^$")
+          # Group by prefix: feat / fix / other (|| true so grep exit 1 on no-match doesn't abort)
+          FEATS=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^feat[^:]*: //' || true)
+          FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^fix[^:]*: //' || true)
+          OTHER=$(echo "$COMMITS" | grep -vE "^feat|^fix|^chore|^ci|^docs|^style|^refactor|^test" | grep -v "^$" || true)
 
           BODY=""
           if [ -n "$FEATS" ]; then
