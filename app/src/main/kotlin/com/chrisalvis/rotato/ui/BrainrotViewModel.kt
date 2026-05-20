@@ -26,15 +26,13 @@ import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.MalRepository
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
-import com.chrisalvis.rotato.data.SourceHealthTracker
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
-import com.chrisalvis.rotato.data.fetchFromSource
-import com.chrisalvis.rotato.data.fetchPageFromSource
+import com.chrisalvis.rotato.data.plugins.PluginEntitlement
+import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import com.chrisalvis.rotato.data.plugins.http
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.data.historyFromJson
-import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
 import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -60,6 +58,16 @@ import java.net.URLEncoder
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+
+data class SourceHealth(
+    val sourceId: String,
+    val sourceName: String,
+    val lastSuccess: Long = 0L,
+    val lastError: String? = null,
+    val totalFetches: Int = 0,
+    val successCount: Int = 0,
+    val isTesting: Boolean = false,
+)
 
 class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -134,6 +142,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         .map { it.discoverMode }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverMode.RANDOM)
 
+    val sources: StateFlow<List<LocalSource>> = localSources.sources
+        .map { configured -> configured.filter { it.enabled } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val allSources: StateFlow<List<LocalSource>> = localSources.sources
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -156,7 +168,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val handsFreeInterval: StateFlow<Int> = prefs.handsFreeInterval
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 5)
 
-    val sourceHealth = SourceHealthTracker.health
+    private val _sourceHealth = MutableStateFlow<Map<String, SourceHealth>>(emptyMap())
+    val sourceHealth: StateFlow<Map<String, SourceHealth>> = _sourceHealth.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -204,8 +217,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch { init() }
         viewModelScope.launch {
-            localSources.sources.collect { sources ->
-                if (_noSources.value && sources.any { it.enabled }) {
+            sources.collect { activeSources ->
+                val activeIds = activeSources.map(::sourceKey).toSet()
+                _sourceHealth.update { health -> health.filterKeys { it in activeIds } }
+                if (_noSources.value && activeSources.isNotEmpty()) {
                     _noSources.update { false }
                     loadLists()
                     loadMore(reset = true)
@@ -219,7 +234,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         persistentBlockedKeys.addAll(prefs.blockedImageKeys.first())
         displayedKeys.addAll(persistentBlockedKeys)
         displayedKeys.addAll(prefs.seenWallpaperKeys.first())
-        val localEnabled = localSources.sources.first().filter { it.enabled }
+        val localEnabled = sources.first()
         if (localEnabled.isEmpty()) {
             _noSources.update { true }
             _loading.update { false }
@@ -289,7 +304,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             // Compute queries once per source so pre-warm and drain use the same cache keys.
             // queriesFor() shuffles MAL titles — calling it twice would produce different keys.
             val sourcesWithQueries = buildDiscoverRequests(nsfw, filters, explicitQuery)
-                .map { it.source to it.queries }
 
             // When a strict aspect-ratio filter is active most fetched items will be discarded
             // by the plugin-side matches() check. Fetch more candidates per call to compensate.
@@ -303,7 +317,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             while (newItems.size < target && round < 3) {
             // Step 1: fetch pages from ALL sources in parallel (network bound)
             val seenKeys = displayedKeys.toSet()
-            sourcesWithQueries.mapNotNull { (source, queries) ->
+            sourcesWithQueries.mapNotNull { request ->
+                val source = request.source
+                val queries = request.queries
                 if (queries.all { q -> pageCache[cacheKey(source, q)]?.isNotEmpty() == true }) return@mapNotNull null
                 val sourceKey = source.type.name.lowercase()
                 async(Dispatchers.IO) {
@@ -313,12 +329,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         val excludes = seenKeys
                             .filter { it.startsWith("$sourceKey:") }
                             .map { it.removePrefix("$sourceKey:") }
-                        val page = try {
-                            fetchPageFromSource(source, q, excludes, nsfw, filters, fetchLimit)
-                        } catch (e: Exception) {
-                            Log.e("DiscoverFetch", "${source.type.name} q=$q exception: ${e.message}", e)
-                            emptyList()
-                        }
+                        val page = fetchPageForSource(source, q, excludes, request.effectiveNsfw, filters, fetchLimit)
                         Log.d("DiscoverFetch", "${source.type.name} q=$q → ${page.size} items after filter (r${round+1})")
                         if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
                     }
@@ -394,6 +405,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private data class DiscoverRequest(
         val source: LocalSource,
         val queries: List<String>,
+        val effectiveNsfw: Boolean,
     )
 
     private suspend fun buildDiscoverRequests(
@@ -406,8 +418,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             emptyList()
         }
-        return localSources.sources.first()
-            .filter { it.enabled }
+        return sources.first()
             .mapNotNull { source ->
                 val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
                 if (plugin.requiresCredentials &&
@@ -415,16 +426,114 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 ) {
                     return@mapNotNull null
                 }
-                if (!plugin.canServe(nsfw, source)) return@mapNotNull null
-                DiscoverRequest(source, queriesFor(source, explicitQuery, malTitles))
+                val effectiveNsfw = source.nsfwEnabled ?: nsfw
+                if (!plugin.canServe(effectiveNsfw, source)) return@mapNotNull null
+                DiscoverRequest(
+                    source = source,
+                    queries = queriesFor(source, explicitQuery, malTitles),
+                    effectiveNsfw = effectiveNsfw,
+                )
             }
     }
 
+    private fun sourceKey(source: LocalSource): String =
+        if (source.instanceId.isBlank()) source.type.name else "${source.type.name}:${source.instanceId}"
+
+    private fun sourceLabel(source: LocalSource): String =
+        if (source.type == SourceType.REDDIT && source.instanceId.isNotBlank()) {
+            "r/${source.instanceId}"
+        } else {
+            source.type.displayName
+        }
+
+    private fun updateSourceHealth(source: LocalSource, transform: (SourceHealth) -> SourceHealth) {
+        val sourceId = sourceKey(source)
+        val sourceName = sourceLabel(source)
+        _sourceHealth.update { health ->
+            val current = health[sourceId] ?: SourceHealth(sourceId = sourceId, sourceName = sourceName)
+            health + (sourceId to transform(current.copy(sourceName = sourceName)))
+        }
+    }
+
+    private fun markSourceTesting(source: LocalSource, isTesting: Boolean) {
+        updateSourceHealth(source) { it.copy(isTesting = isTesting) }
+    }
+
+    private fun recordSourceSuccess(source: LocalSource) {
+        val now = System.currentTimeMillis()
+        updateSourceHealth(source) {
+            it.copy(
+                lastSuccess = now,
+                totalFetches = it.totalFetches + 1,
+                successCount = it.successCount + 1,
+                isTesting = false,
+            )
+        }
+    }
+
+    private fun recordSourceError(source: LocalSource, message: String) {
+        updateSourceHealth(source) {
+            it.copy(
+                lastError = message,
+                totalFetches = it.totalFetches + 1,
+                isTesting = false,
+            )
+        }
+    }
+
+    private suspend fun fetchPageForSource(
+        source: LocalSource,
+        query: String,
+        exclude: List<String>,
+        nsfw: Boolean,
+        filters: BrainrotFilters,
+        limit: Int,
+    ): List<BrainrotWallpaper> {
+        val plugin = SourcePluginRegistry.forType(source.type)
+        if (plugin == null) {
+            recordSourceError(source, "No plugin registered")
+            return emptyList()
+        }
+        if (!PluginEntitlement.isUnlocked(plugin)) return emptyList()
+        return try {
+            plugin.fetchPage(source, query, exclude, nsfw, filters, limit).also {
+                recordSourceSuccess(source)
+            }
+        } catch (e: Exception) {
+            recordSourceError(source, e.message ?: "Unknown error")
+            Log.e("DiscoverFetch", "${source.type.name} q=$query exception: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchSingleForSource(
+        source: LocalSource,
+        query: String,
+        exclude: List<String>,
+        nsfw: Boolean,
+        filters: BrainrotFilters,
+    ): BrainrotWallpaper? {
+        val plugin = SourcePluginRegistry.forType(source.type)
+        if (plugin == null) {
+            recordSourceError(source, "No plugin registered")
+            return null
+        }
+        if (!PluginEntitlement.isUnlocked(plugin)) return null
+        return try {
+            plugin.fetch(source, query, exclude, nsfw, filters).also {
+                recordSourceSuccess(source)
+            }
+        } catch (e: Exception) {
+            recordSourceError(source, e.message ?: "Unknown error")
+            null
+        }
+    }
+
     /** Pull one unseen item from the in-memory page caches (no network calls). */
-    private fun drainOne(sourcesWithQueries: List<Pair<LocalSource, List<String>>>): BrainrotWallpaper? {
-        for ((source, queries) in sourcesWithQueries.shuffled()) {
-            for (q in queries) {
-                val cached = pageCache[cacheKey(source, q)] ?: continue
+    private fun drainOne(sourcesWithQueries: List<DiscoverRequest>): BrainrotWallpaper? {
+        for (request in sourcesWithQueries.shuffled()) {
+            for (q in request.queries) {
+                val cached = pageCache[cacheKey(request.source, q)] ?: continue
                 while (cached.isNotEmpty()) {
                     val wp = cached.removeFirst()
                     if ("${wp.source}:${wp.id}" !in displayedKeys) return wp
@@ -631,6 +740,33 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         loadMore(reset = true)
     }
 
+    fun testSource(sourceId: String) {
+        val source = sources.value.firstOrNull { sourceKey(it) == sourceId } ?: return
+        viewModelScope.launch {
+            markSourceTesting(source, true)
+            try {
+                val nsfw = prefs.nsfwMode.first()
+                val filters = prefs.brainrotFilters.first()
+                val explicitQuery = _searchQuery.value
+                val request = buildDiscoverRequests(nsfw, filters, explicitQuery)
+                    .firstOrNull { sourceKey(it.source) == sourceId }
+                if (request == null) {
+                    recordSourceError(source, "Source is unavailable with the current settings")
+                    return@launch
+                }
+                fetchSingleForSource(
+                    source = request.source,
+                    query = request.queries.firstOrNull().orEmpty(),
+                    exclude = emptyList(),
+                    nsfw = nsfw,
+                    filters = filters,
+                )
+            } finally {
+                markSourceTesting(source, false)
+            }
+        }
+    }
+
     fun toggleGridMode() {
         _gridMode.update { !it }
     }
@@ -657,7 +793,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                             .filter { it.startsWith("$sourceKey:") }
                             .map { it.removePrefix("$sourceKey:") }
                         request.queries.firstNotNullOfOrNull { query ->
-                            fetchFromSource(request.source, query, excludes, nsfw, filters)
+                            fetchSingleForSource(request.source, query, excludes, request.effectiveNsfw, filters)
                         }
                     }
                 }.awaitAll()
@@ -779,6 +915,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleSource(source: LocalSource) {
         viewModelScope.launch {
             localSources.update(source.type, source.instanceId, enabled = !source.enabled)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setSourceNsfw(sourceId: String, instanceId: String, nsfwEnabled: Boolean?) {
+        viewModelScope.launch {
+            localSources.updateSourceNsfw(sourceId, instanceId, nsfwEnabled)
             loadMore(reset = true)
         }
     }

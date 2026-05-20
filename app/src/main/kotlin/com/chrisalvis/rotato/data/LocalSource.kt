@@ -88,6 +88,7 @@ data class LocalSource(
     val apiUser: String = "",
     val tags: String = "",
     /** Wallhaven only — purity bitmask string: "1" = SFW, "10" = Sketchy, "100" = NSFW, combined e.g. "110" */
-    val wallhavenPurity: String = "110"
+    val wallhavenPurity: String = "110",
+    val nsfwEnabled: Boolean? = null,
 )
 

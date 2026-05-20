@@ -95,6 +95,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val lastRotationMs: StateFlow<Long> = preferences.lastRotationMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
+    val wallpaperRatings: StateFlow<Map<String, Int>> = preferences.wallpaperRatings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val autoPauseSettings: StateFlow<AutoPauseSettings> = preferences.autoPauseSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoPauseSettings())
 
@@ -155,9 +158,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun refreshImages() {
+    fun refreshImages() {
         viewModelScope.launch {
+            _isLoading.update { true }
             _images.update { repository.getImages() }
+            _isLoading.update { false }
         }
     }
 
@@ -246,6 +251,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 setRotationEnabled(false)
             }
         }
+    }
+
+    fun setRating(file: File, rating: Int) {
+        viewModelScope.launch { preferences.setWallpaperRating(file.name, rating) }
     }
 
     fun setRotationEnabled(enabled: Boolean) {

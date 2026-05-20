@@ -90,6 +90,7 @@ fun SettingsScreen(
     onNavigateToSources: () -> Unit = {},
     onNavigateToSchedule: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
+    onNavigateToSourceHealth: () -> Unit = {},
     onShowOnboarding: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -718,6 +719,15 @@ fun SettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
+                    SettingsSection(title = "Diagnostics") {
+                        OutlinedButton(
+                            onClick = onNavigateToSourceHealth,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Source Health")
+                        }
+                    }
+
                     SettingsSection(title = "Stats") {
                         OutlinedButton(
                             onClick = onNavigateToStats,

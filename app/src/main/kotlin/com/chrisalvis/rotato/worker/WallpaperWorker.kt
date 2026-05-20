@@ -341,12 +341,21 @@ class WallpaperWorker(
         prefs: RotatoPreferences,
     ): File {
         return if (shuffleMode) {
-            val recentPaths = history
-                .take((images.size - 1).coerceAtLeast(0).coerceAtMost(10))
-                .map { it.thumbUrl }
-                .toSet()
-            val fresh = images.filter { it.absolutePath !in recentPaths }
-            fresh.ifEmpty { images }.random()
+            val wallpaperRatings = prefs.wallpaperRatings.first()
+            val weightedImages = buildList {
+                images.forEach { file ->
+                    val weight = when ((wallpaperRatings[file.name] ?: 0).coerceIn(0, 5)) {
+                        5 -> 5
+                        4 -> 4
+                        3 -> 3
+                        2 -> 2
+                        1 -> 1
+                        else -> 2
+                    }
+                    repeat(weight) { add(file) }
+                }
+            }
+            weightedImages.random()
         } else {
             val nextIndex = currentIndex % images.size
             prefs.setCurrentIndex((nextIndex + 1) % images.size)

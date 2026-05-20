@@ -52,9 +52,12 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -71,6 +74,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -104,10 +113,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoSettings
@@ -247,6 +258,7 @@ private fun LibraryContent(
 ) {
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
     val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
+    val wallpaperRatings by viewModel.wallpaperRatings.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
@@ -283,78 +295,143 @@ private fun LibraryContent(
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        if (images.isEmpty()) {
-            EmptyState(modifier = Modifier.weight(1f), onGoToDiscover = onGoToDiscover, onAddPhotos = onPhotoPick)
-        } else {
-            var selectedFile by remember { mutableStateOf<File?>(null) }
-            var contextMenuFile by remember { mutableStateOf<File?>(null) }
-            selectedFile?.let { file ->
-                ImagePreviewDialog(
-                    images = images,
-                    initialFile = file,
-                    onDismiss = { selectedFile = null },
-                    onSetWallpaper = { currentFile ->
-                        viewModel.setSpecificWallpaper(currentFile)
-                        selectedFile = null
-                    },
-                    onRemove = { currentFile ->
-                        viewModel.removeImage(currentFile)
-                        if (images.size == 1) selectedFile = null
-                    },
-                    onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) }
+        var selectedFile by remember { mutableStateOf<File?>(null) }
+        var contextMenuFile by remember { mutableStateOf<File?>(null) }
+        var ratingDialogFile by remember { mutableStateOf<File?>(null) }
+        val pullRefreshState = rememberPullToRefreshState()
+
+        ratingDialogFile?.let { file ->
+            WallpaperRatingDialog(
+                filename = file.name,
+                currentRating = wallpaperRatings[file.name] ?: 0,
+                onDismiss = { ratingDialogFile = null },
+                onSelect = { rating ->
+                    viewModel.setRating(file, rating)
+                    ratingDialogFile = null
+                }
+            )
+        }
+
+        selectedFile?.takeIf { images.isNotEmpty() }?.let { file ->
+            ImagePreviewDialog(
+                images = images,
+                initialFile = file,
+                onDismiss = { selectedFile = null },
+                onSetWallpaper = { currentFile ->
+                    viewModel.setSpecificWallpaper(currentFile)
+                    selectedFile = null
+                },
+                onRemove = { currentFile ->
+                    viewModel.removeImage(currentFile)
+                    if (images.size == 1) selectedFile = null
+                },
+                onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) }
+            )
+        }
+
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = viewModel::refreshImages,
+            state = pullRefreshState,
+            modifier = Modifier.weight(1f)
+        ) {
+            if (images.isEmpty()) {
+                EmptyState(
+                    modifier = Modifier.fillMaxSize(),
+                    onGoToDiscover = onGoToDiscover,
+                    onAddPhotos = onPhotoPick
                 )
-            }
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                state = dragSelectState.gridState,
-                modifier = Modifier
-                    .weight(1f)
-                    .gridDragSelect(items = images, state = dragSelectState),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(images, key = { it.absolutePath }) { file ->
-                    val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
-                    Box {
-                        ImageThumbnail(
-                            file = file,
-                            isSelected = isSelected,
-                            inSelectionMode = inSelectionMode,
-                            onClick = { if (!inSelectionMode) selectedFile = file },
-                            onLongClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                contextMenuFile = file
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    state = dragSelectState.gridState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .gridDragSelect(items = images, state = dragSelectState),
+                    contentPadding = PaddingValues(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(images, key = { it.absolutePath }) { file ->
+                        val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
+                        val thumbnailContent: @Composable () -> Unit = {
+                            Box {
+                                ImageThumbnail(
+                                    file = file,
+                                    rating = wallpaperRatings[file.name] ?: 0,
+                                    isSelected = isSelected,
+                                    inSelectionMode = inSelectionMode,
+                                    onClick = { if (!inSelectionMode) selectedFile = file },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        contextMenuFile = file
+                                    }
+                                )
+                                DropdownMenu(
+                                    expanded = contextMenuFile == file,
+                                    onDismissRequest = { contextMenuFile = null }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Set as wallpaper") },
+                                        leadingIcon = { Icon(Icons.Filled.Wallpaper, null) },
+                                        onClick = {
+                                            contextMenuFile = null
+                                            viewModel.setSpecificWallpaper(file)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Save to gallery") },
+                                        leadingIcon = { Icon(Icons.Filled.SaveAlt, null) },
+                                        onClick = {
+                                            contextMenuFile = null
+                                            viewModel.saveFileToGallery(file)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Rate") },
+                                        leadingIcon = { Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC107)) },
+                                        onClick = {
+                                            contextMenuFile = null
+                                            ratingDialogFile = file
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Remove", color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            contextMenuFile = null
+                                            viewModel.removeImage(file)
+                                        }
+                                    )
+                                }
                             }
-                        )
-                        DropdownMenu(
-                            expanded = contextMenuFile == file,
-                            onDismissRequest = { contextMenuFile = null }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Set as wallpaper") },
-                                leadingIcon = { Icon(Icons.Filled.Wallpaper, null) },
-                                onClick = {
-                                    contextMenuFile = null
-                                    viewModel.setSpecificWallpaper(file)
+                        }
+
+                        if (inSelectionMode) {
+                            thumbnailContent()
+                        } else {
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                confirmValueChange = { value ->
+                                    if (value == SwipeToDismissBoxValue.EndToStart) {
+                                        contextMenuFile = null
+                                        viewModel.removeImage(file)
+                                    }
+                                    true
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Save to gallery") },
-                                leadingIcon = { Icon(Icons.Filled.SaveAlt, null) },
-                                onClick = {
-                                    contextMenuFile = null
-                                    viewModel.saveFileToGallery(file)
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromStartToEnd = false,
+                                enableDismissFromEndToStart = true,
+                                backgroundContent = {
+                                    DeleteSwipeBackground(
+                                        visible = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart ||
+                                            dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
+                                    )
                                 }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Remove", color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    contextMenuFile = null
-                                    viewModel.removeImage(file)
-                                }
-                            )
+                            ) {
+                                thumbnailContent()
+                            }
                         }
                     }
                 }
@@ -586,13 +663,33 @@ private fun RotationStatusCard(
 }
 
 @Composable
+private fun DeleteSwipeBackground(visible: Boolean) {
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (visible) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.error.copy(alpha = 0.9f))
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        Icon(
+            imageVector = Icons.Default.Delete,
+            contentDescription = null,
+            tint = Color.White
+        )
+    }
+}
+
+@Composable
 private fun ImageThumbnail(
     file: File,
+    rating: Int = 0,
     isSelected: Boolean,
     inSelectionMode: Boolean,
     onClick: () -> Unit = {},
     onLongClick: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val badgeInfo = remember(file.absolutePath, file.length(), file.lastModified()) {
         readImageBadgeInfo(file)
     }
@@ -613,7 +710,10 @@ private fun ImageThumbnail(
             )
     ) {
         AsyncImage(
-            model = file,
+            model = ImageRequest.Builder(context)
+                .data(file)
+                .crossfade(300)
+                .build(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -644,6 +744,31 @@ private fun ImageThumbnail(
             }
         }
 
+        if (rating > 0) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Star,
+                    contentDescription = null,
+                    tint = Color(0xFFFFC107),
+                    modifier = Modifier.size(12.dp)
+                )
+                Text(
+                    text = rating.toString(),
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    maxLines = 1
+                )
+            }
+        }
+
         if (inSelectionMode) {
             Icon(
                 imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
@@ -660,6 +785,46 @@ private fun ImageThumbnail(
             )
         }
     }
+}
+
+@Composable
+private fun WallpaperRatingDialog(
+    filename: String,
+    currentRating: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rate wallpaper") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = filename,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..5).forEach { rating ->
+                        IconButton(onClick = { onSelect(rating) }) {
+                            Icon(
+                                imageVector = if (rating <= currentRating) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                                contentDescription = "$rating stars",
+                                tint = Color(0xFFFFC107),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSelect(0) }) { Text("Clear") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 private data class ImageBadgeInfo(

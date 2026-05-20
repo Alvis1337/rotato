@@ -75,6 +75,17 @@ class LocalSourcesPreferences(private val context: Context) {
         }
     }
 
+    suspend fun updateSourceNsfw(sourceId: String, instanceId: String, nsfwEnabled: Boolean?) {
+        val type = runCatching { SourceType.valueOf(sourceId) }.getOrNull() ?: return
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
+            val idx = current.indexOfFirst { it.type == type && it.instanceId == instanceId }
+            if (idx == -1) return@edit
+            current[idx] = current[idx].copy(nsfwEnabled = nsfwEnabled)
+            prefs[SOURCES_KEY] = serialize(current)
+        }
+    }
+
     private fun parse(json: String): List<LocalSource> = try {
         val arr = JSONArray(json)
         val result = mutableListOf<LocalSource>()
@@ -89,6 +100,9 @@ class LocalSourcesPreferences(private val context: Context) {
                 apiUser = o.optString("apiUser", ""),
                 tags = o.optString("tags", ""),
                 wallhavenPurity = o.optString("wallhavenPurity", "110"),
+                nsfwEnabled = o.optString("nsfwEnabled", "")
+                    .takeUnless { it.isBlank() || it == "null" }
+                    ?.toBooleanStrictOrNull(),
             ))
         }
         // Backfill any missing non-Reddit source types with defaults
@@ -109,6 +123,7 @@ class LocalSourcesPreferences(private val context: Context) {
                     put("apiUser", s.apiUser)
                     put("tags", s.tags)
                     put("wallhavenPurity", s.wallhavenPurity)
+                    put("nsfwEnabled", s.nsfwEnabled ?: JSONObject.NULL)
                 })
             }
         }.toString()

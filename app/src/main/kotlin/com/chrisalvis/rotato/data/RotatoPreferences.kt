@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
+import org.json.JSONObject
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "rotato_prefs")
 
@@ -62,6 +63,7 @@ class RotatoPreferences(private val context: Context) {
         val DISCOVER_HINT_SEEN = booleanPreferencesKey("discover_hint_seen")
         val GOOGLE_DRIVE_BACKUP_ENABLED = booleanPreferencesKey("google_drive_backup_enabled")
         val WALLPAPER_FIT = stringPreferencesKey("wallpaper_fit")
+        val WALLPAPER_RATINGS = stringPreferencesKey("wallpaper_ratings")
         val IGNORED_UPDATE_VERSION = intPreferencesKey("ignored_update_version")
         val COLLECTION_SORT_ORDER = stringPreferencesKey("collection_sort_order")
         val WIFI_ONLY_DISCOVER = booleanPreferencesKey("wifi_only_discover")
@@ -91,6 +93,24 @@ class RotatoPreferences(private val context: Context) {
     val historyJson: Flow<String> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[HISTORY_JSON] ?: "[]" }
+
+    val wallpaperRatings: Flow<Map<String, Int>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val json = prefs[WALLPAPER_RATINGS] ?: return@map emptyMap()
+            try {
+                val obj = JSONObject(json)
+                buildMap {
+                    val keys = obj.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        put(key, obj.optInt(key, 0).coerceIn(0, 5))
+                    }
+                }.filterValues { it in 1..5 }
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
 
     val widgetCollectionId: Flow<String> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
@@ -129,6 +149,23 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setHistoryJson(json: String) {
         context.dataStore.edit { it[HISTORY_JSON] = json }
+    }
+
+    suspend fun setWallpaperRating(filename: String, rating: Int) {
+        if (filename.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val obj = try {
+                JSONObject(prefs[WALLPAPER_RATINGS] ?: "{}")
+            } catch (_: Exception) {
+                JSONObject()
+            }
+            if (rating == 0) {
+                obj.remove(filename)
+            } else {
+                obj.put(filename, rating.coerceIn(1, 5))
+            }
+            prefs[WALLPAPER_RATINGS] = obj.toString()
+        }
     }
 
     suspend fun setWidgetCollectionId(id: String) {

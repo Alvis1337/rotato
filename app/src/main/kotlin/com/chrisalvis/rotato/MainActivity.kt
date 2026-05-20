@@ -42,6 +42,7 @@ import com.chrisalvis.rotato.ui.MalViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
 import com.chrisalvis.rotato.ui.ScheduleScreen
 import com.chrisalvis.rotato.ui.SetupScreen
+import com.chrisalvis.rotato.ui.SourceHealthScreen
 import com.chrisalvis.rotato.ui.StatsScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 import com.chrisalvis.rotato.worker.ScheduleReceiver
@@ -110,11 +111,11 @@ class MainActivity : AppCompatActivity() {
                     "discover" -> 0
                     "home" -> 1
                     "browse" -> 2
-                    "settings", "sources", "schedule", "stats" -> 3
+                    "settings", "sources", "schedule", "stats", "source_health" -> 3
                     else -> 0
                 }
 
-                val showBottomBar = currentRoute !in setOf("sources", "setup", "onboarding")
+                val showBottomBar = currentRoute !in setOf("sources", "source_health", "setup", "onboarding")
                     && brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null
 
                 // Handle navigation from notifications, shortcuts, or schedule receiver
@@ -236,6 +237,7 @@ class MainActivity : AppCompatActivity() {
                                 onNavigateToSources = { navController.navigate("sources") },
                                 onNavigateToSchedule = { navController.navigate("schedule") },
                                 onNavigateToStats = { navController.navigate("stats") },
+                                onNavigateToSourceHealth = { navController.navigate("source_health") },
                                 onShowOnboarding = { navController.navigate("onboarding") },
                             )
                         }
@@ -247,6 +249,12 @@ class MainActivity : AppCompatActivity() {
                         }
                         composable("stats") {
                             StatsScreen(onNavigateBack = { navController.popBackStack() })
+                        }
+                        composable("source_health") {
+                            SourceHealthScreen(
+                                brainrotViewModel = brainrotViewModel,
+                                onBack = { navController.popBackStack() },
+                            )
                         }
                         composable("browse") {
                             BrowseScreen()

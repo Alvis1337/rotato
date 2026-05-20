@@ -13,6 +13,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -107,6 +108,33 @@ private fun completeQuery(current: String, tag: String): String {
 }
 
 private fun Int.toComposeColor(): Color = Color((this and 0xFFFFFF) or 0xFF000000.toInt())
+
+private fun nextSourceNsfw(current: Boolean?): Boolean? = when (current) {
+    null -> true
+    true -> false
+    false -> null
+}
+
+@Composable
+private fun LoadingMoreIndicator(modifier: Modifier = Modifier) {
+    OutlinedCard(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = "Loading more...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -439,17 +467,64 @@ fun BrainrotScreen(
                                     contentPadding = PaddingValues(start = 12.dp, end = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    items(allSources, key = { it.type.name }) { src ->
+                                    items(allSources, key = { "${it.type.name}:${it.instanceId}" }) { src ->
                                         val missingCreds = src.type.needsApiKey && src.apiKey.isBlank()
                                         val hasCreds = src.type.needsApiKey && src.apiKey.isNotBlank()
+                                        val nsfwIcon = when (src.nsfwEnabled) {
+                                            null -> Icons.Outlined.LockOpen
+                                            true -> Icons.Default.Visibility
+                                            false -> Icons.Default.VisibilityOff
+                                        }
+                                        val nsfwDescription = when (src.nsfwEnabled) {
+                                            null -> "Inherit global NSFW"
+                                            true -> "NSFW enabled for this source"
+                                            false -> "NSFW disabled for this source"
+                                        }
                                         FilterChip(
                                             selected = src.enabled,
                                             onClick = { vm.toggleSource(src) },
                                             label = { Text(src.type.displayName, style = MaterialTheme.typography.labelSmall) },
-                                            trailingIcon = when {
-                                                missingCreds -> {{ Icon(Icons.Default.Warning, contentDescription = "API key missing", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.error) }}
-                                                hasCreds -> {{ Icon(Icons.Default.VpnKey, contentDescription = "API key set", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }}
-                                                else -> null
+                                            trailingIcon = if (missingCreds || hasCreds || nsfwMode) {
+                                                {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                    ) {
+                                                        when {
+                                                            missingCreds -> Icon(
+                                                                Icons.Default.Warning,
+                                                                contentDescription = "API key missing",
+                                                                modifier = Modifier.size(12.dp),
+                                                                tint = MaterialTheme.colorScheme.error,
+                                                            )
+                                                            hasCreds -> Icon(
+                                                                Icons.Default.VpnKey,
+                                                                contentDescription = "API key set",
+                                                                modifier = Modifier.size(12.dp),
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                            )
+                                                        }
+                                                        if (nsfwMode) {
+                                                            Icon(
+                                                                imageVector = nsfwIcon,
+                                                                contentDescription = nsfwDescription,
+                                                                modifier = Modifier
+                                                                    .size(14.dp)
+                                                                    .clip(CircleShape)
+                                                                    .clickable {
+                                                                        vm.setSourceNsfw(
+                                                                            src.type.name,
+                                                                            src.instanceId,
+                                                                            nextSourceNsfw(src.nsfwEnabled),
+                                                                        )
+                                                                    },
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                null
                                             }
                                         )
                                     }
@@ -608,14 +683,11 @@ fun BrainrotScreen(
                                             key = { it },
                                             span = { GridItemSpan(maxLineSpan) },
                                         ) {
-                                            Box(
+                                            LoadingMoreIndicator(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(16.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                            }
+                                                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                                            )
                                         }
                                     }
                                     if (endReached && gridItems.isNotEmpty()) {
@@ -674,14 +746,11 @@ fun BrainrotScreen(
                                     }
                                     if (loadingMore) {
                                         items(listOf("loading-more"), span = { StaggeredGridItemSpan.FullLine }) {
-                                            Box(
+                                            LoadingMoreIndicator(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(16.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                            }
+                                                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                                            )
                                         }
                                     }
                                     if (endReached && gridItems.isNotEmpty()) {
