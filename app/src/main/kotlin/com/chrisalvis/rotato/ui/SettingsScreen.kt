@@ -26,12 +26,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -50,9 +52,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,10 +65,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chrisalvis.rotato.BuildConfig
 import com.chrisalvis.rotato.data.AutoPauseSettings
+import com.chrisalvis.rotato.data.DownloadState
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotationInterval
+import com.chrisalvis.rotato.data.UpdateCheckResult
+import com.chrisalvis.rotato.data.UpdateInfo
+import com.chrisalvis.rotato.data.UpdateRepository
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,9 +102,22 @@ fun SettingsScreen(
     val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
     val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val googleDriveBackupEnabled by viewModel.googleDriveBackupEnabled.collectAsStateWithLifecycle()
+
+    // Update checker state
+    var updateCheckState by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    var updateChecking by remember { mutableStateOf(false) }
+    var pendingUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
+
+    // Auto-check on open (silent — no UI change if up to date)
+    LaunchedEffect(Unit) {
+        val result = UpdateRepository.checkForUpdate()
+        if (result is UpdateCheckResult.UpdateAvailable) updateCheckState = result
+    }
 
     val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
     val exportLauncher = rememberLauncherForActivityResult(
@@ -127,7 +149,71 @@ fun SettingsScreen(
         )
     }
 
-    Scaffold(
+    // Update available / download dialog
+    pendingUpdateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = {
+                if (downloadState !is DownloadState.Progress) pendingUpdateInfo = null
+            },
+            title = { Text("Update available — v${info.versionName}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (info.releaseNotes.isNotEmpty()) {
+                        Text(info.releaseNotes, style = MaterialTheme.typography.bodySmall)
+                    }
+                    when (val ds = downloadState) {
+                        is DownloadState.Progress -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Downloading… ${ds.percent}%", style = MaterialTheme.typography.bodySmall)
+                                LinearProgressIndicator(
+                                    progress = { ds.percent / 100f },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                        is DownloadState.Installing -> {
+                            Text("Opening installer…", style = MaterialTheme.typography.bodySmall)
+                        }
+                        is DownloadState.Failed -> {
+                            Text("Failed: ${ds.message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                        else -> {}
+                    }
+                }
+            },
+            confirmButton = {
+                val downloading = downloadState is DownloadState.Progress || downloadState is DownloadState.Installing
+                TextButton(
+                    enabled = !downloading,
+                    onClick = {
+                        scope.launch {
+                            UpdateRepository.downloadAndInstall(context, info) { state ->
+                                downloadState = state
+                                if (state is DownloadState.Installing) {
+                                    pendingUpdateInfo = null
+                                    downloadState = DownloadState.Idle
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    if (downloadState is DownloadState.Progress) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Download & Install")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = downloadState !is DownloadState.Progress,
+                    onClick = { pendingUpdateInfo = null; downloadState = DownloadState.Idle }
+                ) { Text("Later") }
+            }
+        )
+    }
+
+
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -488,7 +574,8 @@ fun SettingsScreen(
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Version", style = MaterialTheme.typography.bodyMedium)
                     Text(
@@ -496,6 +583,46 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                // Update checker
+                val updateAvailable = updateCheckState is UpdateCheckResult.UpdateAvailable
+                OutlinedButton(
+                    onClick = {
+                        if (updateAvailable) {
+                            pendingUpdateInfo = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
+                        } else {
+                            updateChecking = true
+                            scope.launch {
+                                val result = UpdateRepository.checkForUpdate()
+                                updateCheckState = result
+                                updateChecking = false
+                                if (result is UpdateCheckResult.UpdateAvailable) {
+                                    pendingUpdateInfo = result.info
+                                } else if (result is UpdateCheckResult.UpToDate) {
+                                    android.widget.Toast.makeText(context, "You're up to date!", android.widget.Toast.LENGTH_SHORT).show()
+                                } else if (result is UpdateCheckResult.Error) {
+                                    android.widget.Toast.makeText(context, "Update check failed: ${result.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !updateChecking
+                ) {
+                    if (updateChecking) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Checking…")
+                    } else if (updateAvailable) {
+                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        val info = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
+                        Text("Update available — v${info.versionName}")
+                    } else {
+                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Check for Updates")
+                    }
                 }
                 OutlinedButton(
                     onClick = {
