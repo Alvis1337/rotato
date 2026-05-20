@@ -126,6 +126,21 @@ import com.dragselectcompose.core.gridDragSelect
 import com.dragselectcompose.core.rememberDragSelectState
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.ui.platform.LocalDensity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -322,7 +337,9 @@ private fun LibraryContent(
                     viewModel.removeImage(currentFile)
                     if (images.size == 1) selectedFile = null
                 },
-                onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) }
+                onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) },
+                wallpaperRatings = wallpaperRatings,
+                onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) }
             )
         }
 
@@ -816,25 +833,26 @@ private fun ImagePreviewDialog(
     onDismiss: () -> Unit,
     onSetWallpaper: (File) -> Unit,
     onRemove: (File) -> Unit,
-    onSaveToGallery: (File) -> Unit = {}
+    onSaveToGallery: (File) -> Unit = {},
+    wallpaperRatings: Map<String, Int> = emptyMap(),
+    onSetRating: (File, Int) -> Unit = { _, _ -> }
 ) {
+    BackHandler(onBack = onDismiss)
+    val coroutineScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
     val initialPage = remember(images, initialFile.absolutePath) {
         images.indexOfFirst { it.absolutePath == initialFile.absolutePath }
-            .takeIf { it >= 0 }
-            ?: 0
+            .takeIf { it >= 0 } ?: 0
     }
     val pagerState = rememberPagerState(initialPage = initialPage) { images.size }
     val currentFile by remember(images, pagerState) {
         derivedStateOf { images.getOrNull(pagerState.currentPage) }
     }
-
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
-        scale = nextScale
-        offset = if (nextScale > 1f) offset + (panChange * nextScale) else Offset.Zero
-    }
+    var showZoom by remember { mutableStateOf(false) }
+    val offsetY = remember { Animatable(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
 
     LaunchedEffect(images.size, pagerState.currentPage) {
         if (images.isEmpty()) {
@@ -846,10 +864,7 @@ private fun ImagePreviewDialog(
         }
     }
 
-    LaunchedEffect(currentFile?.absolutePath) {
-        scale = 1f
-        offset = Offset.Zero
-    }
+    LaunchedEffect(pagerState.currentPage) { showZoom = false }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -858,36 +873,100 @@ private fun ImagePreviewDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .graphicsLayer {
+                    translationY = offsetY.value
+                    alpha = (1f - (offsetY.value / 600f)).coerceIn(0f, 1f)
+                }
+                .pointerInput(isDismissing, showZoom) {
+                    if (isDismissing || showZoom) return@pointerInput
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            var totalDy = 0f
+                            var totalDx = 0f
+                            var dragActive = false
+                            detect@ while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null || !change.pressed) break
+                                if (event.changes.count { it.pressed } >= 2) {
+                                    coroutineScope.launch { showZoom = true }
+                                    break@detect
+                                }
+                                val delta = change.position - change.previousPosition
+                                totalDy += delta.y
+                                totalDx += delta.x
+                                val absX = kotlin.math.abs(totalDx)
+                                val absY = kotlin.math.abs(totalDy)
+                                if (absY > viewConfiguration.touchSlop && absY > absX && totalDy > 0) {
+                                    change.consume()
+                                    dragActive = true
+                                    coroutineScope.launch { offsetY.snapTo(totalDy.coerceAtLeast(0f)) }
+                                    break@detect
+                                }
+                                if (absX > viewConfiguration.touchSlop) break@detect
+                            }
+                            if (dragActive) {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null || !change.pressed) break
+                                    val dy = (change.position - change.previousPosition).y
+                                    if (dy > 0f || offsetY.value > 0f) {
+                                        change.consume()
+                                        coroutineScope.launch {
+                                            offsetY.snapTo((offsetY.value + dy).coerceAtLeast(0f))
+                                        }
+                                    }
+                                }
+                                coroutineScope.launch {
+                                    if (offsetY.value > swipeThresholdPx) {
+                                        isDismissing = true
+                                        offsetY.animateTo(
+                                            targetValue = 800f,
+                                            animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
+                                        )
+                                        onDismiss()
+                                    } else {
+                                        offsetY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = (1f - (offsetY.value / 600f)).coerceIn(0f, 1f)))
+            )
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = scale == 1f,
                 beyondViewportPageCount = 1
             ) { page ->
                 val pageFile = images.getOrNull(page) ?: return@HorizontalPager
-                val isCurrentPage = page == pagerState.currentPage
-
                 AsyncImage(
                     model = pageFile,
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = if (isCurrentPage) scale else 1f
-                            scaleY = if (isCurrentPage) scale else 1f
-                            translationX = if (isCurrentPage) offset.x else 0f
-                            translationY = if (isCurrentPage) offset.y else 0f
+                        .pointerInput(Unit) {
+                            detectTapGestures(onDoubleTap = { showZoom = true })
                         }
-                        .transformable(
-                            state = transformState,
-                            enabled = isCurrentPage
-                        )
                 )
             }
 
+            // Close button
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier
@@ -899,38 +978,205 @@ private fun ImagePreviewDialog(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
 
+            // Page counter
+            if (images.size > 1) {
+                Text(
+                    "${pagerState.currentPage + 1} / ${images.size}",
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .statusBarsPadding()
+                        .padding(12.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White
+                )
+            }
+
+            // Bottom gradient panel
             currentFile?.let { file ->
-                Row(
+                val fileSize = remember(file) { "%.1f MB".format(file.length() / 1_048_576.0) }
+                val imageDimens = remember(file) {
+                    try {
+                        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(file.absolutePath, opts)
+                        if (opts.outWidth > 0) "${opts.outWidth}×${opts.outHeight}" else null
+                    } catch (_: Exception) { null }
+                }
+                val currentRating = wallpaperRatings[file.name] ?: 0
+
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .background(
-                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)))
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
                         )
                         .navigationBarsPadding()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 40.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = { onRemove(file) },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    // Metadata badges
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Remove")
+                        imageDimens?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier
+                                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                        Text(
+                            fileSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
                     }
-                    OutlinedButton(onClick = { onSaveToGallery(file) }) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Save to Gallery")
+
+                    // Star rating
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        (1..5).forEach { star ->
+                            Icon(
+                                imageVector = if (star <= currentRating) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                                contentDescription = "Rate $star",
+                                tint = if (star <= currentRating) Color(0xFFFFD700) else Color.White.copy(alpha = 0.35f),
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clickable { onSetRating(file, star) }
+                            )
+                        }
                     }
-                    Button(onClick = { onSetWallpaper(file) }) {
-                        Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Set as Wallpaper")
+
+                    // Action row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledIconButton(
+                            onClick = { onSetWallpaper(file) },
+                            modifier = Modifier.size(56.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Wallpaper,
+                                contentDescription = "Set as Wallpaper",
+                                modifier = Modifier.size(26.dp),
+                                tint = Color.White
+                            )
+                        }
+
+                        OutlinedIconButton(
+                            onClick = { onSaveToGallery(file) },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(
+                                Icons.Default.SaveAlt,
+                                contentDescription = "Save to gallery",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        Spacer(Modifier.weight(1f))
+
+                        OutlinedIconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onRemove(file)
+                            },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Remove",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
+            }
+
+            if (showZoom) {
+                currentFile?.let { file ->
+                    ZoomFileImageDialog(file = file, onDismiss = { showZoom = false })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoomFileImageDialog(file: File, onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
+    var scale by remember { mutableStateOf(1f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val next = (scale * zoomChange).coerceIn(1f, 8f)
+        scale = next
+        panOffset = if (next > 1f) panOffset + panChange * next else Offset.Zero
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = {
+                        if (scale > 1.5f) {
+                            scale = 1f
+                            panOffset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    })
+                }
+        ) {
+            AsyncImage(
+                model = file,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = panOffset.x
+                        translationY = panOffset.y
+                    }
+                    .transformable(state = transformState)
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close zoom", tint = Color.White)
             }
         }
     }
