@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +36,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Card
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -67,12 +70,14 @@ import com.chrisalvis.rotato.BuildConfig
 import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.DownloadState
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.RotationInterval
 import com.chrisalvis.rotato.data.UpdateCheckResult
 import com.chrisalvis.rotato.data.UpdateInfo
 import com.chrisalvis.rotato.data.UpdateRepository
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,6 +108,7 @@ fun SettingsScreen(
     val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val rotatoPrefs = remember { RotatoPreferences(context) }
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val googleDriveBackupEnabled by viewModel.googleDriveBackupEnabled.collectAsStateWithLifecycle()
@@ -113,10 +119,15 @@ fun SettingsScreen(
     var pendingUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
 
-    // Auto-check on open (silent — no UI change if up to date)
+    // Auto-check on open — popup if update available and not ignored
     LaunchedEffect(Unit) {
+        val ignoredVersion = rotatoPrefs.ignoredUpdateVersion.first()
         val result = UpdateRepository.checkForUpdate()
-        if (result is UpdateCheckResult.UpdateAvailable) updateCheckState = result
+        updateCheckState = result
+        if (result is UpdateCheckResult.UpdateAvailable &&
+            result.info.versionCode != ignoredVersion) {
+            pendingUpdateInfo = result.info
+        }
     }
 
     val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
@@ -149,68 +160,138 @@ fun SettingsScreen(
         )
     }
 
-    // Update available / download dialog
+    // Update available dialog — changelog + 3-button layout
     pendingUpdateInfo?.let { info ->
-        AlertDialog(
-            onDismissRequest = {
-                if (downloadState !is DownloadState.Progress) pendingUpdateInfo = null
-            },
-            title = { Text("Update available — v${info.versionName}") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (info.releaseNotes.isNotEmpty()) {
-                        Text(info.releaseNotes, style = MaterialTheme.typography.bodySmall)
+        val isDownloading = downloadState is DownloadState.Progress || downloadState is DownloadState.Installing
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { if (!isDownloading) pendingUpdateInfo = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(vertical = 24.dp),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "Update Available",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "v${info.versionName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                        Icon(
+                            Icons.Default.SystemUpdateAlt,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
-                    when (val ds = downloadState) {
-                        is DownloadState.Progress -> {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Downloading… ${ds.percent}%", style = MaterialTheme.typography.bodySmall)
-                                LinearProgressIndicator(
-                                    progress = { ds.percent / 100f },
-                                    modifier = Modifier.fillMaxWidth()
+
+                    HorizontalDivider()
+
+                    // Scrollable changelog
+                    if (info.releaseNotes.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "What's New",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .heightIn(max = 260.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = formatChangelog(info.releaseNotes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        is DownloadState.Installing -> {
-                            Text("Opening installer…", style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    // Download progress
+                    when (val ds = downloadState) {
+                        is DownloadState.Progress -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Downloading… ${ds.percent}%", style = MaterialTheme.typography.bodySmall)
+                            LinearProgressIndicator(progress = { ds.percent / 100f }, modifier = Modifier.fillMaxWidth())
                         }
-                        is DownloadState.Failed -> {
-                            Text("Failed: ${ds.message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        }
+                        is DownloadState.Installing -> Text("Opening installer…", style = MaterialTheme.typography.bodySmall)
+                        is DownloadState.Failed -> Text(
+                            "Failed: ${ds.message}",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         else -> {}
                     }
-                }
-            },
-            confirmButton = {
-                val downloading = downloadState is DownloadState.Progress || downloadState is DownloadState.Installing
-                TextButton(
-                    enabled = !downloading,
-                    onClick = {
-                        scope.launch {
-                            UpdateRepository.downloadAndInstall(context, info) { state ->
-                                downloadState = state
-                                if (state is DownloadState.Installing) {
+
+                    HorizontalDivider()
+
+                    // Primary action
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            scope.launch {
+                                UpdateRepository.downloadAndInstall(context, info) { state ->
+                                    downloadState = state
+                                    if (state is DownloadState.Installing) {
+                                        pendingUpdateInfo = null
+                                        downloadState = DownloadState.Idle
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isDownloading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (isDownloading) "Downloading…" else "Download & Install")
+                    }
+
+                    // Secondary actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { pendingUpdateInfo = null; downloadState = DownloadState.Idle },
+                            enabled = !isDownloading,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Later") }
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    rotatoPrefs.setIgnoredUpdateVersion(info.versionCode)
                                     pendingUpdateInfo = null
                                     downloadState = DownloadState.Idle
                                 }
-                            }
-                        }
+                            },
+                            enabled = !isDownloading,
+                            modifier = Modifier.weight(1f),
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) { Text("Ignore") }
                     }
-                ) {
-                    if (downloadState is DownloadState.Progress) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text("Download & Install")
                 }
-            },
-            dismissButton = {
-                TextButton(
-                    enabled = downloadState !is DownloadState.Progress,
-                    onClick = { pendingUpdateInfo = null; downloadState = DownloadState.Idle }
-                ) { Text("Later") }
             }
-        )
+        }
     }
 
 
@@ -999,3 +1080,22 @@ private fun MalMinScoreFilter(
         }
     }
 }
+
+
+/** Convert GitHub Markdown release notes into plain readable text for display. */
+private fun formatChangelog(raw: String): String = raw.lines()
+    .joinToString("\n") { line ->
+        val t = line.trim()
+        when {
+            t.startsWith("### ") -> "\n▸ ${t.removePrefix("### ")}"
+            t.startsWith("## ") -> "\n▸ ${t.removePrefix("## ")}"
+            t.startsWith("# ") -> "▸ ${t.removePrefix("# ")}"
+            t.startsWith("- ") || t.startsWith("* ") -> "  • ${t.drop(2)}"
+            else -> t
+        }
+    }
+    .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+    .replace(Regex("\\*(.*?)\\*"), "$1")
+    .replace(Regex("`(.*?)`"), "$1")
+    .trimStart('\n')
+    .trim()

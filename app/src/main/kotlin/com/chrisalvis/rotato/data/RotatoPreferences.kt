@@ -62,6 +62,7 @@ class RotatoPreferences(private val context: Context) {
         val DISCOVER_HINT_SEEN = booleanPreferencesKey("discover_hint_seen")
         val GOOGLE_DRIVE_BACKUP_ENABLED = booleanPreferencesKey("google_drive_backup_enabled")
         val WALLPAPER_FIT = stringPreferencesKey("wallpaper_fit")
+        val IGNORED_UPDATE_VERSION = intPreferencesKey("ignored_update_version")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -464,5 +465,13 @@ class RotatoPreferences(private val context: Context) {
         // Mirror to SharedPreferences so RotatoBackupAgent can read it synchronously
         context.getSharedPreferences("rotato_backup_cfg", Context.MODE_PRIVATE)
             .edit().putBoolean("google_drive_backup_enabled", enabled).apply()
+    }
+
+    val ignoredUpdateVersion: Flow<Int> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[IGNORED_UPDATE_VERSION] ?: 0 }
+
+    suspend fun setIgnoredUpdateVersion(versionCode: Int) {
+        context.dataStore.edit { it[IGNORED_UPDATE_VERSION] = versionCode }
     }
 }
