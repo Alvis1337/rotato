@@ -75,9 +75,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.graphics.Brush
@@ -407,32 +404,7 @@ private fun LibraryContent(
                             }
                         }
 
-                        if (inSelectionMode) {
-                            thumbnailContent()
-                        } else {
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = { value ->
-                                    if (value == SwipeToDismissBoxValue.EndToStart) {
-                                        contextMenuFile = null
-                                        viewModel.removeImage(file)
-                                    }
-                                    true
-                                }
-                            )
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = false,
-                                enableDismissFromEndToStart = true,
-                                backgroundContent = {
-                                    DeleteSwipeBackground(
-                                        visible = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart ||
-                                            dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
-                                    )
-                                }
-                            ) {
-                                thumbnailContent()
-                            }
-                        }
+                        thumbnailContent()
                     }
                 }
             }
@@ -663,23 +635,6 @@ private fun RotationStatusCard(
 }
 
 @Composable
-private fun DeleteSwipeBackground(visible: Boolean) {
-    Box(
-        modifier = Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (visible) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.error.copy(alpha = 0.9f))
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterEnd
-    ) {
-        Icon(
-            imageVector = Icons.Default.Delete,
-            contentDescription = null,
-            tint = Color.White
-        )
-    }
-}
-
 @Composable
 private fun ImageThumbnail(
     file: File,
