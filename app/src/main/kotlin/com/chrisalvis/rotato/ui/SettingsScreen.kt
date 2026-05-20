@@ -214,6 +214,7 @@ fun SettingsScreen(
     }
 
 
+    Scaffold(
         topBar = {
             TopAppBar(
                 navigationIcon = {

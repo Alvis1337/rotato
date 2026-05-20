@@ -1569,7 +1569,10 @@ private fun WallpaperDetailOverlay(
                 }
 
                 OutlinedIconButton(
-                    onClick = { onSaveToGallery(wallpaper) },
+                    onClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onSaveToGallery(wallpaper)
+                    },
                     enabled = !isSavingToGallery,
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))

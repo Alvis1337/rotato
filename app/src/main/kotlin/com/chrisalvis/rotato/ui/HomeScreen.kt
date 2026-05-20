@@ -103,6 +103,8 @@ import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoSettings
 import com.chrisalvis.rotato.data.RotationError
@@ -132,6 +134,7 @@ fun HomeScreen(
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
+    val haptic = LocalHapticFeedback.current
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -324,7 +327,10 @@ private fun LibraryContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedButton(
-                onClick = { viewModel.setWallpaperNow() },
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.setWallpaperNow()
+                },
                 enabled = images.isNotEmpty() && setNowState == SetNowState.IDLE,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(14.dp)
