@@ -537,9 +537,36 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = localLists.addWallpaper(listId, wp)
             val ctx = getApplication<Application>().applicationContext
-            val listName = lists.value.find { it.id == listId }?.name ?: "list"
+            val list = lists.value.find { it.id == listId }
+            val listName = list?.name ?: "list"
             if (ok) {
-                Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
+                // If this list drives rotation, download the file now so it appears immediately.
+                if (list?.useAsRotation == true) {
+                    val key = wp.id
+                    if (!_downloadingIds.value.contains(key)) {
+                        _downloadingIds.update { it + key }
+                        val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+                        val downloaded = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                        if (downloaded) {
+                            val history = historyFromJson(prefs.historyJson.first()).toMutableList()
+                            history.add(0, WallpaperHistoryItem(
+                                thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl,
+                                fullUrl = wp.fullUrl, source = wp.source,
+                                timestamp = System.currentTimeMillis(),
+                                tags = wp.tags, pageUrl = wp.pageUrl
+                            ))
+                            prefs.setHistoryJson(history.take(50).toJson())
+                            Toast.makeText(ctx, "Saved to \"$listName\" · added to rotation", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(ctx, "Saved to \"$listName\" (download failed)", Toast.LENGTH_SHORT).show()
+                        }
+                        _downloadingIds.update { it - key }
+                    } else {
+                        Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
+                }
             } else {
                 _sessionSaved.update { it - 1 }
                 Toast.makeText(ctx, "Already in \"$listName\"", Toast.LENGTH_SHORT).show()

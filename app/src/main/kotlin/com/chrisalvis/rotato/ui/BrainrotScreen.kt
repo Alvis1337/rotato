@@ -1266,9 +1266,16 @@ private fun WallpaperDetailOverlay(
     val density = LocalDensity.current
     val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
 
-    val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
+    // Guard: if all items are removed (last image blocked/skipped), close the overlay cleanly.
+    if (items.isEmpty()) {
+        LaunchedEffect(Unit) { onDismiss() }
+        return
+    }
+
+    val safeStart = startIndex.coerceIn(0, items.size - 1)
+    val pagerState = rememberPagerState(initialPage = safeStart) { items.size }
     // Key on items so the closure captures the latest list after any item is removed.
-    val wallpaper by remember(items) { derivedStateOf { items.getOrNull(pagerState.currentPage) ?: items[startIndex] } }
+    val wallpaper by remember(items) { derivedStateOf { items.getOrNull(pagerState.currentPage) ?: items[safeStart] } }
 
     // Fire whenever wallpaper changes — covers both manual swipes and list-shrink advances.
     LaunchedEffect(wallpaper) {
