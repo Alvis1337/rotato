@@ -113,6 +113,7 @@ import com.dragselectcompose.core.DragSelectState
 import com.dragselectcompose.core.gridDragSelect
 import com.dragselectcompose.core.rememberDragSelectState
 import java.io.File
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -462,6 +463,20 @@ private fun RotationStatusCard(
     else
         MaterialTheme.colorScheme.surfaceVariant
 
+    val nextRotationMs = if (isEnabled && lastRotationMs > 0L) lastRotationMs + intervalMinutes * 60_000L else 0L
+    var countdownText by remember(nextRotationMs) { mutableStateOf("") }
+    LaunchedEffect(nextRotationMs) {
+        if (nextRotationMs <= 0L) return@LaunchedEffect
+        while (true) {
+            val remaining = nextRotationMs - System.currentTimeMillis()
+            countdownText = if (remaining <= 0L) "any moment" else {
+                val totalSec = remaining / 1000L
+                if (totalSec < 60) "${totalSec}s" else "${totalSec / 60}m ${totalSec % 60}s"
+            }
+            delay(1_000L)
+        }
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor)
@@ -493,6 +508,13 @@ private fun RotationStatusCard(
                         text = "Last set: ${formatAgo(lastRotationMs)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                if (isEnabled && countdownText.isNotEmpty()) {
+                    Text(
+                        text = "Next: $countdownText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
                 if (linkedCollection != null) {

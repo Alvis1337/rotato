@@ -87,6 +87,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _endReached = MutableStateFlow(false)
     val endReached: StateFlow<Boolean> = _endReached.asStateFlow()
 
+    private val _hasNewBatch = MutableStateFlow(false)
+    val hasNewBatch: StateFlow<Boolean> = _hasNewBatch.asStateFlow()
+
+    fun clearNewBatch() { _hasNewBatch.update { false } }
+
     private val _noResults = MutableStateFlow(false)
     val noResults: StateFlow<Boolean> = _noResults.asStateFlow()
 
@@ -348,6 +353,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 consecutiveEmptyFetches = 0
                 _gridItems.update { it + newItems }  // single batch update → one recomposition
+                _hasNewBatch.update { true }
                 viewModelScope.launch(Dispatchers.IO) {
                     prefs.addSeenWallpaperKeys(newItems.map { "${it.source}:${it.id}" }.toSet())
                 }

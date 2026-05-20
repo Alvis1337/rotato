@@ -533,8 +533,20 @@ fun BrainrotScreen(
                         onOpenSearch = { showSearch = true },
                         onOpenSettings = { showSettings = true }
                     )
-                    loading && gridItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    loading && gridItems.isEmpty() -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        gridGridItems(12) {
+                            ShimmerBox(
+                                Modifier
+                                    .aspectRatio(1f)
+                                    .clip(MaterialTheme.shapes.medium)
+                            )
+                        }
                     }
                     else -> {
                         val pullRefreshState = rememberPullToRefreshState()

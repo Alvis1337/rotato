@@ -62,9 +62,10 @@ internal fun normalizeBooruQuery(q: String): String =
  * Normalises an explicit user search query for booru APIs.
  * Each space-separated token is individually cleaned (special chars stripped, lowercased)
  * and tokens are re-joined with spaces so the booru API treats them as separate AND tags.
- *   "anime 1girl" → "anime 1girl"   (two tags, ANDed)
- *   "Steins;Gate" → "steinsgate"    (one tag, special char stripped)
+ *   "anime 1girl" → "anime 1girl"          (two tags, ANDed)
+ *   "Steins;Gate" → "steinsgate"           (one tag, special char stripped)
  *   "attack_on_titan" → "attack_on_titan"  (pre-normalised MAL titles pass through unchanged)
+ *   "shaula_(re:zero)" → "shaula_(re:zero)"  (parentheses + colon preserved for character disambiguation)
  */
 internal fun normalizeUserQuery(q: String): String =
     q.trim()
@@ -72,7 +73,10 @@ internal fun normalizeUserQuery(q: String): String =
         .filter { it.isNotBlank() }
         .joinToString(" ") { token ->
             token.lowercase()
-                .replace(Regex("[^a-z0-9_-]"), "")
+                // Keep alphanumeric, underscore, hyphen, parentheses, and colon.
+                // Parentheses and colons are part of the standard booru tag convention:
+                // e.g. "character_(series)" or "re:zero" — stripping them breaks lookups.
+                .replace(Regex("[^a-z0-9_()\\.:-]"), "")
                 .trim('_', '-')
         }
         .trim()
