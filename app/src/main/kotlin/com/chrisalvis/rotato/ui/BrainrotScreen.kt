@@ -387,7 +387,7 @@ fun BrainrotScreen(
                         Column(
                             modifier = Modifier
                                 .statusBarsPadding()
-                                .padding(top = 8.dp, bottom = 6.dp)
+                                .padding(top = 8.dp, bottom = 10.dp)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -405,7 +405,7 @@ fun BrainrotScreen(
                                 FilledTonalButton(
                                     onClick = { vm.surpriseMe() },
                                     enabled = !busy,
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     if (busy) {
                                         CircularProgressIndicator(
@@ -428,7 +428,7 @@ fun BrainrotScreen(
                             if (allSources.isNotEmpty()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 2.dp)
+                                    modifier = Modifier.padding(start = 12.dp, end = 8.dp, bottom = 2.dp)
                                 ) {
                                     Icon(Icons.Default.FilterList, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(Modifier.width(4.dp))
@@ -462,11 +462,11 @@ fun BrainrotScreen(
                                         }
                                     }
                                 }
-                                Spacer(Modifier.height(4.dp))
+                                Spacer(Modifier.height(6.dp))
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 2.dp)
+                                modifier = Modifier.padding(start = 12.dp, end = 8.dp, bottom = 2.dp)
                             ) {
                                 Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.width(4.dp))
@@ -809,12 +809,6 @@ fun BrainrotScreen(
                                 contentDescription = "Search",
                                 tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
                             )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        SmallFloatingActionButton(
-                            onClick = { if (gridItems.isNotEmpty()) showHandsFree = true }
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Hands-free slideshow")
                         }
                         Spacer(Modifier.width(8.dp))
                         FloatingActionButton(onClick = { showSettings = true }) {
