@@ -325,7 +325,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun renameList(id: String, name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch { localLists.renameList(id, name) }
+        viewModelScope.launch {
+            val ok = localLists.renameList(id, name)
+            if (!ok) {
+                Toast.makeText(app.applicationContext, "Name already taken", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     /** Permanently lock a collection. No auth required — just hides it. */
@@ -491,8 +496,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             if (_downloading.value.contains(wallpaper.sourceId)) return@launch
             _downloading.update { it + wallpaper.sourceId }
-            val ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
-            _downloading.update { it - wallpaper.sourceId }
+            var ok = false
+            try {
+                ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+            } finally {
+                _downloading.update { it - wallpaper.sourceId }
+            }
             val msg = if (ok) "Saved to Pictures/Rotato" else "Failed to save"
             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
         }
@@ -644,13 +653,16 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             _downloading.update { it + wallpaper.sourceId }
-            val ok = if (wallpaper.source == "device") {
-                copyLocalToRotation(wallpaper.fullUrl, key)
-            } else {
-                feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+            try {
+                val ok = if (wallpaper.source == "device") {
+                    copyLocalToRotation(wallpaper.fullUrl, key)
+                } else {
+                    feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+                }
+                if (ok) _inRotation.update { it + key }
+            } finally {
+                _downloading.update { it - wallpaper.sourceId }
             }
-            if (ok) _inRotation.update { it + key }
-            _downloading.update { it - wallpaper.sourceId }
         }
     }
 

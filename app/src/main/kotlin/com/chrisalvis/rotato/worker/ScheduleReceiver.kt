@@ -76,6 +76,8 @@ class ScheduleReceiver : BroadcastReceiver() {
             val wallpapers = listPrefs.wallpapersForList(listId).first()
             val imageDir = File(context.filesDir, "rotato_images").also { it.mkdirs() }
             val feedRepo = FeedRepository(imageDir)
+
+            // Download any missing wallpapers
             wallpapers.forEach { entry ->
                 val key = sanitizeFilename(entry.sourceId)
                 val alreadyOnDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
@@ -91,6 +93,21 @@ class ScheduleReceiver : BroadcastReceiver() {
                     entry.fullUrl.isNotBlank() -> feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
                 }
             }
+
+            // Remove files that are tracked in OTHER collections but not the active one.
+            // applyEntry already calls removeRotationFiles for other *scheduled* lists, but may
+            // miss lists that were unscheduled. Files that were removed from ALL collections
+            // cannot be identified without a per-file manifest and are left in place.
+            val validKeys = wallpapers.map { sanitizeFilename(it.sourceId) }.toSet()
+            val otherCollectionKeys = listPrefs.allWallpapers.first()
+                .filter { it.listId != listId }
+                .map { sanitizeFilename(it.sourceId) }
+                .toSet()
+            imageDir.listFiles()?.forEach { file ->
+                val stem = file.nameWithoutExtension
+                if (stem !in validKeys && stem in otherCollectionKeys) file.delete()
+            }
+
             // Count only this list's wallpapers that are now present on disk.
             return wallpapers.count { wp ->
                 val key = sanitizeFilename(wp.sourceId)

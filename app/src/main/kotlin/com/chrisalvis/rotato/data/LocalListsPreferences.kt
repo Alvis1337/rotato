@@ -59,13 +59,21 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
-    suspend fun renameList(id: String, name: String) {
+    /** Returns true if the rename was applied, false if name is blank or already taken by another list. */
+    suspend fun renameList(id: String, name: String): Boolean {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return false
+        var renamed = false
         context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == id) it.copy(name = name.trim()) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
+            val lists = parseLists(prefs[LISTS_KEY] ?: "[]")
+            val duplicate = lists.any { it.id != id && it.name.equals(trimmed, ignoreCase = true) }
+            if (duplicate) return@edit
+            prefs[LISTS_KEY] = serializeLists(lists.map {
+                if (it.id == id) it.copy(name = trimmed) else it
+            })
+            renamed = true
         }
+        return renamed
     }
 
     suspend fun setUseAsRotation(listId: String, enabled: Boolean) {

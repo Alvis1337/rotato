@@ -78,8 +78,9 @@ class MalRepository(private val context: Context) {
                 val accessToken = json.getString("access_token")
                 val refreshToken = json.getString("refresh_token")
 
-                // Fetch username before persisting tokens so we don't save half-auth state
-                val username = fetchUsername(accessToken)
+                // Fetch username before persisting. On failure use empty string so tokens are
+                // still saved — the user is logged in and username can be refreshed later.
+                val username = runCatching { fetchUsername(accessToken) }.getOrDefault("")
                 // Write all auth fields + clear verifier atomically in one DataStore transaction
                 prefs.setAuthAndClearVerifier(accessToken, refreshToken, username)
             }
