@@ -283,7 +283,13 @@ class WallpaperWorker(
                 RotationErrorType.SET_FAILED,
                 "Failed to set wallpaper: ${e.localizedMessage ?: e.javaClass.simpleName}"
             ))
-            Result.retry()
+            // Only retry transient network/IO errors; permanent failures (bad file,
+            // permission denied, corrupt state) should not loop indefinitely.
+            if (e is java.io.IOException || e is java.net.SocketTimeoutException) {
+                Result.retry()
+            } else {
+                Result.failure()
+            }
         }
     }
 

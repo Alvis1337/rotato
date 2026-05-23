@@ -12,6 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
+import java.security.MessageDigest
 import java.security.SecureRandom
 
 class MalRepository(private val context: Context) {
@@ -29,6 +30,11 @@ class MalRepository(private val context: Context) {
         return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
 
+    private fun generateCodeChallenge(verifier: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII))
+        return Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    }
+
     suspend fun buildAuthUrl(): String {
         val verifier = generateCodeVerifier()
         prefs.setCodeVerifier(verifier)
@@ -39,8 +45,8 @@ class MalRepository(private val context: Context) {
             .appendQueryParameter("response_type", "code")
             .appendQueryParameter("client_id", BuildConfig.MAL_CLIENT_ID)
             .appendQueryParameter("redirect_uri", REDIRECT_URI)
-            .appendQueryParameter("code_challenge", verifier)
-            .appendQueryParameter("code_challenge_method", "plain")
+            .appendQueryParameter("code_challenge", generateCodeChallenge(verifier))
+            .appendQueryParameter("code_challenge_method", "S256")
             .build()
             .toString()
     }

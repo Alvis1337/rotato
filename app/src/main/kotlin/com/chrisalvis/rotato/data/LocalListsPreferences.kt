@@ -217,10 +217,16 @@ class LocalListsPreferences(private val context: Context) {
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             val tagsArr = o.optJSONArray("tags")
+            val listId = o.getString("listId")
+            val sourceId = o.getString("sourceId")
             LocalWallpaperEntry(
-                id = o.optString("id", UUID.randomUUID().toString()),
-                listId = o.getString("listId"),
-                sourceId = o.getString("sourceId"),
+                // Deterministic fallback so the same entry always gets the same ID
+                // even for entries persisted before we started writing the "id" field.
+                id = o.optString("id").ifBlank {
+                    UUID.nameUUIDFromBytes("$listId:$sourceId".toByteArray()).toString()
+                },
+                listId = listId,
+                sourceId = sourceId,
                 source = o.optString("source", ""),
                 thumbUrl = o.optString("thumbUrl", ""),
                 sampleUrl = o.optString("sampleUrl", ""),
