@@ -80,9 +80,8 @@ class MalRepository(private val context: Context) {
 
                 // Fetch username before persisting tokens so we don't save half-auth state
                 val username = fetchUsername(accessToken)
-                prefs.setTokens(accessToken, refreshToken)
-                prefs.setUsername(username)
-                prefs.clearCodeVerifier()
+                // Write all auth fields + clear verifier atomically in one DataStore transaction
+                prefs.setAuthAndClearVerifier(accessToken, refreshToken, username)
             }
         }
     }

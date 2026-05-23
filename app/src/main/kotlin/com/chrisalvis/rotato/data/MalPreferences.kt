@@ -107,6 +107,16 @@ class MalPreferences(private val context: Context) {
         context.dataStore.edit { it[MAL_USERNAME] = username }
     }
 
+    /** Atomically persist all auth state and clear the PKCE verifier in one DataStore transaction. */
+    suspend fun setAuthAndClearVerifier(accessToken: String, refreshToken: String, username: String) {
+        context.dataStore.edit { prefs ->
+            prefs[MAL_ACCESS_TOKEN] = accessToken
+            prefs[MAL_REFRESH_TOKEN] = refreshToken
+            prefs[MAL_USERNAME] = username
+            prefs.remove(MAL_CODE_VERIFIER)
+        }
+    }
+
     suspend fun setAnimeEntries(entries: List<MalAnimeEntry>) {
         val arr = JSONArray()
         entries.forEach { entry ->

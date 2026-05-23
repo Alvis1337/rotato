@@ -14,8 +14,10 @@ import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.sanitizeFilename
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.io.File
 
 class ScheduleReceiver : BroadcastReceiver() {
@@ -117,16 +119,21 @@ class ScheduleReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             val schedPrefs = SchedulePreferences(context)
             try {
-                val listPrefs = LocalListsPreferences(context)
-                val entries = schedPrefs.entries.first()
-                val fired = entries.find { it.id == entryId } ?: run {
-                    // Entry was deleted after the alarm was set — nothing to do.
-                    schedPrefs.recordTrigger(entryId, "entry not found")
-                    return@launch
-                }
+                withTimeout(8_000L) {
+                    val listPrefs = LocalListsPreferences(context)
+                    val entries = schedPrefs.entries.first()
+                    val fired = entries.find { it.id == entryId } ?: run {
+                        // Entry was deleted after the alarm was set — nothing to do.
+                        schedPrefs.recordTrigger(entryId, "entry not found")
+                        return@withTimeout
+                    }
 
-                Log.d(TAG, "  listId=${fired.listId}")
-                applyEntry(context, fired, entries, schedPrefs, listPrefs)
+                    Log.d(TAG, "  listId=${fired.listId}")
+                    applyEntry(context, fired, entries, schedPrefs, listPrefs)
+                }
+            } catch (e: TimeoutCancellationException) {
+                Log.e(TAG, "Timed out processing entry $entryId", e)
+                runCatching { schedPrefs.recordTrigger(entryId, "error: timeout") }
             } catch (e: Exception) {
                 Log.e(TAG, "Unhandled error processing entry $entryId", e)
                 runCatching { schedPrefs.recordTrigger(entryId, "error: ${e.javaClass.simpleName}") }

@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
                             BrainrotScreen(
                                 externalViewModel = brainrotViewModel,
                                 onNavigateToSettings = {
-                                    navController.navigate("home") {
+                                    navController.navigate("settings") {
                                         popUpTo("discover") { saveState = true }
                                         launchSingleTop = true
                                         restoreState = true

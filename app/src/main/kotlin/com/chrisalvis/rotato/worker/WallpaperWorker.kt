@@ -218,6 +218,11 @@ class WallpaperWorker(
                                 lockBitmap.recycle()
                                 try { wallpaperManager.setBitmap(lockScreenBitmap, null, true, WallpaperManager.FLAG_LOCK) }
                                 finally { lockScreenBitmap.recycle() }
+                            } else {
+                                // Lock image unreadable — fall back to home screen image and record a warning
+                                val errorType = if (lockTargetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
+                                prefs.addRotationError(RotationError(errorType, "Lock screen image unavailable: ${lockTargetFile.name}"))
+                                wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_LOCK)
                             }
                         } else {
                             wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)

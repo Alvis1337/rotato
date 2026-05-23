@@ -49,7 +49,7 @@ object RedditPlugin : SourcePlugin() {
     ): List<BrainrotWallpaper> {
         val sort = if (filters.discoverMode == DiscoverMode.RECENT) "new" else "top"
         val timeParam = if (sort == "top") "&t=month" else ""
-        val url = "https://www.reddit.com/r/$subreddit/$sort.json?limit=100&raw_json=1$timeParam"
+        val url = "https://www.reddit.com/r/${subreddit.urlEncode()}/$sort.json?limit=100&raw_json=1$timeParam"
         val json = getJson(url) ?: return emptyList()
         val children = json.optJSONObject("data")?.optJSONArray("children") ?: return emptyList()
 

@@ -161,8 +161,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshImages() {
         viewModelScope.launch {
             _isLoading.update { true }
-            _images.update { repository.getImages() }
-            _isLoading.update { false }
+            try {
+                _images.update { repository.getImages() }
+            } finally {
+                _isLoading.update { false }
+            }
         }
     }
 
@@ -236,9 +239,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun addImages(uris: List<Uri>) {
         viewModelScope.launch {
             _isLoading.update { true }
-            uris.forEach { repository.addImage(it) }
-            _images.update { repository.getImages() }
-            _isLoading.update { false }
+            try {
+                uris.forEach { repository.addImage(it) }
+                _images.update { repository.getImages() }
+            } finally {
+                _isLoading.update { false }
+            }
         }
     }
 
@@ -368,39 +374,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (_saveToListInProgress.value) return
         viewModelScope.launch {
             _saveToListInProgress.update { true }
-            val files = imageDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-            val existing = localLists.allWallpapers.first()
-                .filter { it.listId == listId }
-                .map { it.sourceId }
-                .toSet()
-            var added = 0
-            files.forEach { file ->
-                val sourceId = file.nameWithoutExtension
-                if (sourceId in existing) return@forEach
-                val fileUri = file.toURI().toString()
-                localLists.addWallpaperEntry(
-                    LocalWallpaperEntry(
-                        listId = listId,
-                        sourceId = sourceId,
-                        source = "device",
-                        thumbUrl = fileUri,
-                        fullUrl = fileUri,
-                        resolution = "",
-                        pageUrl = "",
-                        tags = emptyList()
+            try {
+                val files = imageDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                val existing = localLists.allWallpapers.first()
+                    .filter { it.listId == listId }
+                    .map { it.sourceId }
+                    .toSet()
+                var added = 0
+                files.forEach { file ->
+                    val sourceId = file.nameWithoutExtension
+                    if (sourceId in existing) return@forEach
+                    val fileUri = file.toURI().toString()
+                    localLists.addWallpaperEntry(
+                        LocalWallpaperEntry(
+                            listId = listId,
+                            sourceId = sourceId,
+                            source = "device",
+                            thumbUrl = fileUri,
+                            fullUrl = fileUri,
+                            resolution = "",
+                            pageUrl = "",
+                            tags = emptyList()
+                        )
                     )
-                )
-                added++
+                    added++
+                }
+                val ctx = getApplication<Application>().applicationContext
+                val total = files.size
+                val msg = when {
+                    total == 0 -> "No images in Library"
+                    added == 0 -> "All ${total} image${if (total != 1) "s" else ""} already in collection"
+                    else -> "Added $added image${if (added != 1) "s" else ""} to collection"
+                }
+                android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+            } finally {
+                _saveToListInProgress.update { false }
             }
-            val ctx = getApplication<Application>().applicationContext
-            val total = files.size
-            val msg = when {
-                total == 0 -> "No images in Library"
-                added == 0 -> "All ${total} image${if (total != 1) "s" else ""} already in collection"
-                else -> "Added $added image${if (added != 1) "s" else ""} to collection"
-            }
-            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
-            _saveToListInProgress.update { false }
         }
     }
 
@@ -409,7 +418,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _setNowState.update { SetNowState.SETTING }
             val request = OneTimeWorkRequestBuilder<WallpaperWorker>().build()
-            workManager.enqueue(request).await()
+            workManager.enqueueUniqueWork(SET_NOW_WORK_NAME, ExistingWorkPolicy.REPLACE, request).await()
             try {
                 val terminalStates = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
                 val info = workManager.getWorkInfoByIdFlow(request.id)
@@ -762,5 +771,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         const val WORK_NAME = "rotato_wallpaper_rotation"
+        const val SET_NOW_WORK_NAME = "rotato_set_wallpaper_now"
     }
 }
