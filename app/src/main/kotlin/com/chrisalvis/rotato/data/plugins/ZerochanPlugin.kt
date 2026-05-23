@@ -33,7 +33,10 @@ object ZerochanPlugin : SourcePlugin() {
         nsfw: Boolean,
         filters: BrainrotFilters,
     ): BrainrotWallpaper? {
-        val items = search(query, (1..maxRandomPage).random()) ?: return null
+        val randomPage = (1..maxRandomPage).random()
+        val items = search(query, randomPage)?.takeIf { it.length() > 0 }
+            ?: search(query, 1)  // retry page 1 if random page was empty
+            ?: return null
         val match = pickFiltered(items, filters, exclude) {
             itemId(it) to (it.optInt("width") to it.optInt("height"))
         } ?: return null
@@ -48,7 +51,10 @@ object ZerochanPlugin : SourcePlugin() {
         filters: BrainrotFilters,
         limit: Int,
     ): List<BrainrotWallpaper> {
-        val items = search(query, (1..maxRandomPage).random()) ?: return emptyList()
+        val randomPage = (1..maxRandomPage).random()
+        val items = search(query, randomPage)?.takeIf { it.length() > 0 }
+            ?: search(query, 1)  // retry page 1 if random page was empty
+            ?: return emptyList()
         val candidates = (0 until items.length()).mapNotNull { index ->
             val item = items.optJSONObject(index) ?: return@mapNotNull null
             val id = itemId(item)

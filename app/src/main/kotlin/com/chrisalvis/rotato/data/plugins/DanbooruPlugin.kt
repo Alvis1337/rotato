@@ -106,10 +106,10 @@ object DanbooruPlugin : SourcePlugin() {
             }
             null
         } ?: return@onIO null
-        // Prefer large_file_url (CDN sample — always accessible) over file_url (original — Cloudflare-protected for PNG originals)
+        // large_file_url = CDN-accessible sample for display; file_url = original (Cloudflare-protected for PNG)
         val largeUrl = post.optString("large_file_url")
-        val fullUrl = largeUrl.ifBlank { post.optString("file_url") }
-        val sampleUrl = fullUrl
+        val sampleUrl = largeUrl.ifBlank { post.optString("file_url") }
+        val fullUrl = post.optString("file_url").ifBlank { largeUrl }
         // Skip video posts (ugoira/mp4/webm) — Coil can't render them
         val videoExts = listOf(".mp4", ".webm", ".zip")
         if (videoExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return@onIO null
@@ -167,11 +167,11 @@ object DanbooruPlugin : SourcePlugin() {
             val w = obj.optInt("image_width"); val h = obj.optInt("image_height")
             if (!filters.matches(w, h)) return@mapNotNull null
             if (obj.optString("file_url").isBlank()) return@mapNotNull null
-            // Prefer large_file_url (CDN sample — always accessible) over file_url (original — Cloudflare-protected)
+            // large_file_url = CDN-accessible sample for display; file_url = original (Cloudflare-protected for PNG)
             val largeUrl = obj.optString("large_file_url")
-            val fullUrl = largeUrl.ifBlank { obj.optString("file_url") }
+            val sampleUrl = largeUrl.ifBlank { obj.optString("file_url") }
+            val fullUrl = obj.optString("file_url").ifBlank { largeUrl }
             if (videoExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return@mapNotNull null
-            val sampleUrl = fullUrl
             BrainrotWallpaper(
                 id = id, source = "danbooru",
                 thumbUrl = obj.optString("preview_file_url").ifBlank { sampleUrl },

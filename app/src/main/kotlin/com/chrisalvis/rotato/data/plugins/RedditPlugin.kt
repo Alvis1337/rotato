@@ -25,7 +25,7 @@ object RedditPlugin : SourcePlugin() {
         filters: BrainrotFilters,
     ): BrainrotWallpaper? = onIO {
         val subreddit = source.instanceId.trim().ifBlank { return@onIO null }
-        fetchImagePosts(subreddit, filters, exclude, limit = 100).shuffled().firstOrNull()
+        fetchImagePosts(subreddit, nsfw, filters, exclude, limit = 100).shuffled().firstOrNull()
     }
 
     override suspend fun fetchPage(
@@ -37,11 +37,12 @@ object RedditPlugin : SourcePlugin() {
         limit: Int,
     ): List<BrainrotWallpaper> = onIO {
         val subreddit = source.instanceId.trim().ifBlank { return@onIO emptyList() }
-        fetchImagePosts(subreddit, filters, exclude, limit)
+        fetchImagePosts(subreddit, nsfw, filters, exclude, limit)
     }
 
     private fun fetchImagePosts(
         subreddit: String,
+        nsfw: Boolean,
         filters: BrainrotFilters,
         exclude: List<String>,
         limit: Int,
@@ -54,6 +55,7 @@ object RedditPlugin : SourcePlugin() {
 
         return (0 until children.length()).mapNotNull { i ->
             val post = children.optJSONObject(i)?.optJSONObject("data") ?: return@mapNotNull null
+            if (!nsfw && post.optBoolean("over_18", false)) return@mapNotNull null
             if (!isImagePost(post)) return@mapNotNull null
             val id = post.optString("id").ifBlank { return@mapNotNull null }
             if (id in exclude) return@mapNotNull null

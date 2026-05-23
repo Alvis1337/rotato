@@ -40,9 +40,22 @@ class ImageRepository(private val context: Context) {
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: return@withContext false
 
-            // Decode into a bitmap so we normalize the format and strip metadata
-            val bitmap = BitmapFactory.decodeStream(inputStream)
+            // First pass: read dimensions without allocating pixels
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeStream(inputStream, null, opts)
             inputStream.close()
+
+            // Compute inSampleSize to cap decode at ~2048px on the longer side (OOM guard)
+            val maxDim = 2048
+            var sampleSize = 1
+            val largerDim = maxOf(opts.outWidth, opts.outHeight)
+            while (largerDim / (sampleSize * 2) >= maxDim) sampleSize *= 2
+
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val decodeStream = context.contentResolver.openInputStream(uri)
+                ?: return@withContext false
+            val bitmap = BitmapFactory.decodeStream(decodeStream, null, decodeOpts)
+            decodeStream.close()
 
             if (bitmap == null) return@withContext false
 

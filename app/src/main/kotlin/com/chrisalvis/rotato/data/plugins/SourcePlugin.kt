@@ -35,8 +35,15 @@ abstract class SourcePlugin {
      * Returns true if this source can meaningfully serve content for the requested nsfw setting.
      * SFW-only sources skip out when nsfw=true rather than polluting an NSFW feed with SFW results.
      * Wallhaven overrides this to also check for an API key (required for NSFW access).
+     * Sources that require credentials return false when those credentials are absent.
      */
-    open fun canServe(nsfw: Boolean, source: LocalSource): Boolean = !(nsfw && safeContent)
+    open fun canServe(nsfw: Boolean, source: LocalSource): Boolean {
+        if (requiresCredentials) {
+            if (needsApiKey && source.apiKey.isBlank()) return false
+            if (needsApiUser && source.apiUser.isBlank()) return false
+        }
+        return !(nsfw && safeContent)
+    }
 
     /**
      * Fetch one wallpaper from this source.

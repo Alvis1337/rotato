@@ -1327,7 +1327,7 @@ private fun WallpaperGridContent(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(wallpapers, key = { it.entryId.ifBlank { it.sourceId } }) { wp ->
+        items(wallpapers, key = { it.entryId.ifBlank { "${it.sourceId}:${it.thumbUrl}" } }) { wp ->
             WallpaperThumbnail(
                 wallpaper = wp,
                 isInRotation = isInRotation(wp),
