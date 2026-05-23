@@ -126,7 +126,7 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
                     _keyValidationState.update { it + (SourceType.WALLHAVEN to isValid) }
                 }
             } catch (_: Exception) {
-                // Leave the checking state as-is on network errors.
+                _keyValidationState.update { it + (SourceType.WALLHAVEN to false) }
             }
         }
     }

@@ -75,15 +75,15 @@ class MalRepository(private val context: Context) {
                 val body = resp.body?.string()
                 check(resp.isSuccessful) { "Token exchange failed: ${resp.code} $body" }
                 val json = JSONObject(body ?: throw IOException("Empty token response"))
-                prefs.setTokens(
-                    json.getString("access_token"),
-                    json.getString("refresh_token")
-                )
-            }
+                val accessToken = json.getString("access_token")
+                val refreshToken = json.getString("refresh_token")
 
-            val username = fetchUsername(prefs.accessToken.first())
-            prefs.setUsername(username)
-            prefs.clearCodeVerifier()
+                // Fetch username before persisting tokens so we don't save half-auth state
+                val username = fetchUsername(accessToken)
+                prefs.setTokens(accessToken, refreshToken)
+                prefs.setUsername(username)
+                prefs.clearCodeVerifier()
+            }
         }
     }
 

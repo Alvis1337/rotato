@@ -24,20 +24,27 @@ class FeedRepository(private val imageDir: File) {
             Log.e(TAG, "downloadWallpaper: fullUrl is blank!")
             return@withContext false
         }
-        val ext = fullUrl.substringAfterLast('.').substringBefore('?').take(5).ifBlank { "jpg" }
-        val destFile = File(imageDir, "${sanitizeFilename(sourceId)}.$ext")
-        if (destFile.exists() && destFile.isValidImage()) return@withContext true
-        if (destFile.exists()) destFile.delete() // corrupt/stale file — force re-download
+        val sanitized = sanitizeFilename(sourceId)
+        // Check if any previously-downloaded file for this sourceId is still valid (extension-agnostic).
+        val existing = imageDir.listFiles()?.firstOrNull { it.nameWithoutExtension == sanitized }
+        if (existing != null && existing.isValidImage()) return@withContext true
+        existing?.delete() // corrupt or stale — force re-download
+
         return@withContext try {
-            var bytes = downloadBytes(fullUrl, authHeader)
-            if (bytes == null && fallbackUrl.isNotBlank()) {
+            var pair = downloadBytesWithMime(fullUrl, authHeader)
+            if (pair == null && fallbackUrl.isNotBlank()) {
                 if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper: primary URL failed, retrying with fallback: $fallbackUrl")
-                bytes = downloadBytes(fallbackUrl, authHeader)
+                pair = downloadBytesWithMime(fallbackUrl, authHeader)
             }
-            bytes ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
+            val (bytes, contentType) = pair ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
+            // Prefer Content-Type header, fall back to URL suffix, then magic bytes.
+            val ext = detectExtFromContentType(contentType)
+                ?: fullUrl.substringAfterLast('.').substringBefore('?').take(5).lowercase().takeIf { it.matches("[a-z]+".toRegex()) }
+                ?: detectExtFromBytes(bytes)
+                ?: "jpg"
             imageDir.mkdirs()
-            destFile.writeBytes(bytes)
-            if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper successful: $destFile")
+            File(imageDir, "$sanitized.$ext").writeBytes(bytes)
+            if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper successful: $sanitized.$ext")
             true
         } catch (e: Exception) {
             Log.e(TAG, "downloadWallpaper failed for $fullUrl", e)
@@ -170,7 +177,7 @@ class FeedRepository(private val imageDir: File) {
         } catch (e: Exception) { false }
     }
 
-    private fun downloadBytes(url: String, authHeader: String? = null): ByteArray? = try {
+    private fun downloadBytesWithMime(url: String, authHeader: String? = null): Pair<ByteArray, String?>? = try {
         if (BuildConfig.DEBUG) Log.d(TAG, "Downloading from: $url")
         val reqBuilder = Request.Builder()
             .url(url)
@@ -190,15 +197,39 @@ class FeedRepository(private val imageDir: File) {
                 Log.w(TAG, "HTTP ${resp.code} for $url")
                 null
             } else {
+                val contentType = resp.header("Content-Type")
                 val bytes = resp.body?.bytes()
-                if (BuildConfig.DEBUG) Log.d(TAG, "Got ${bytes?.size} bytes")
-                bytes
+                if (BuildConfig.DEBUG) Log.d(TAG, "Got ${bytes?.size} bytes, Content-Type=$contentType")
+                bytes?.let { it to contentType }
             }
         }
     } catch (e: Exception) {
-        Log.e(TAG, "downloadBytes exception for $url", e)
+        Log.e(TAG, "downloadBytesWithMime exception for $url", e)
         null
     }
+
+    private fun detectExtFromContentType(contentType: String?): String? = when {
+        contentType == null -> null
+        "jpeg" in contentType || "jpg" in contentType -> "jpg"
+        "png" in contentType -> "png"
+        "webp" in contentType -> "webp"
+        "gif" in contentType -> "gif"
+        else -> null
+    }
+
+    private fun detectExtFromBytes(bytes: ByteArray): String? {
+        if (bytes.size < 4) return null
+        return when {
+            bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "jpg"
+            bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> "png"
+            bytes[0] == 0x47.toByte() && bytes[1] == 0x49.toByte() -> "gif"
+            bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() -> "webp"
+            else -> null
+        }
+    }
+
+    private fun downloadBytes(url: String, authHeader: String? = null): ByteArray? =
+        downloadBytesWithMime(url, authHeader)?.first
 
     companion object {
         // Shared client — reusing thread pool and connection pool across all FeedRepository instances.

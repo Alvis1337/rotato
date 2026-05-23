@@ -712,7 +712,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createList(name: String) {
         viewModelScope.launch {
-            val list = localLists.createList(name)
+            val list = localLists.createList(name) ?: return@launch
             _selectedListId.update { list.id }
         }
     }

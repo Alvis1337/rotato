@@ -122,14 +122,12 @@ class MainActivity : AppCompatActivity() {
                 val pendingNav = _pendingNavigate.value
                 LaunchedEffect(pendingNav) {
                     val route = pendingNav ?: return@LaunchedEffect
-                    if (route in setOf("discover", "home", "browse", "settings")) {
-                        navController.navigate(route) {
-                            popUpTo("discover") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                        _pendingNavigate.value = null
+                    navController.navigate(route) {
+                        popUpTo("discover") { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
                     }
+                    _pendingNavigate.value = null
                 }
 
                 Scaffold(

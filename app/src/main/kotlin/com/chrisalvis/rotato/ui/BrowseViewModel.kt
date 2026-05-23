@@ -251,7 +251,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun createList(name: String, smartRule: SmartRule? = null) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            val list = localLists.createList(name)
+            val list = localLists.createList(name) ?: return@launch
             if (smartRule != null && !smartRule.isEmpty) {
                 localLists.setSmartRule(list.id, smartRule)
                 populateSmartCollection(list.id, smartRule)
@@ -569,13 +569,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     if (name.isBlank()) continue
                     val oldId = item.optString("id").ifBlank { name }
                     val existing = existingByName[name.lowercase()]
-                    val target = existing ?: localLists.createList(name).also { created ->
+                    val target = existing ?: localLists.createList(name)?.also { created ->
                         restoredCollections++
                         existingByName[name.lowercase()] = created
                         if (item.optBoolean("isLocked", false)) {
                             localLists.setLocked(created.id, true)
                         }
-                    }
+                    } ?: existingByName[name.lowercase()] ?: continue
                     listIdMap[oldId] = target.id
                 }
 
@@ -788,7 +788,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun importFromRotation(listName: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val list = localLists.createList(listName)
+            val list = localLists.createList(listName) ?: return@launch
             val files = imageDir.listFiles() ?: return@launch
             files.sortedBy { it.name }.forEach { file ->
                 val relativePath = "rotato_images/${file.name}"

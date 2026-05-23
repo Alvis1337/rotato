@@ -36,8 +36,9 @@ object GelbooruPlugin : SourcePlugin() {
         val maxPid = ((count - 1) / 20).coerceIn(0, 100)
 
         val arr = if (maxPid > 0) {
-            val randomPid = (1..maxPid).random()
-            getJson("$baseUrl&pid=$randomPid")?.optJSONArray("post")
+            val randomPid = (0..maxPid).random()
+            if (randomPid == 0) page0.optJSONArray("post")
+            else getJson("$baseUrl&pid=$randomPid")?.optJSONArray("post")
         } else {
             page0.optJSONArray("post")
         } ?: return@onIO null
@@ -76,8 +77,9 @@ object GelbooruPlugin : SourcePlugin() {
         val count = page0.optJSONObject("@attributes")?.optInt("count", 0) ?: 0
         val maxPid = ((count - 1) / limit).coerceIn(0, 100)
         val arr = if (maxPid > 0) {
-            val randomPid = (1..maxPid).random()
-            getJson("$baseUrl&pid=$randomPid")?.optJSONArray("post")
+            val randomPid = (0..maxPid).random()
+            if (randomPid == 0) page0.optJSONArray("post")
+            else getJson("$baseUrl&pid=$randomPid")?.optJSONArray("post")
         } else {
             page0.optJSONArray("post")
         } ?: return@onIO emptyList()

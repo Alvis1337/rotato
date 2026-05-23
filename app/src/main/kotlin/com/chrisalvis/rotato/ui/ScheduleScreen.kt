@@ -231,10 +231,10 @@ private fun ScheduleEditDialog(
     onSave: (ScheduleEntry) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var days by remember { mutableStateOf(entry.days) }
-    var hour by remember { mutableIntStateOf(entry.startHour) }
-    var minute by remember { mutableIntStateOf(entry.startMinute) }
-    var selectedListId by remember { mutableStateOf(entry.listId) }
+    var days by remember(entry.id) { mutableStateOf(entry.days) }
+    var hour by remember(entry.id) { mutableIntStateOf(entry.startHour) }
+    var minute by remember(entry.id) { mutableIntStateOf(entry.startMinute) }
+    var selectedListId by remember(entry.id) { mutableStateOf(entry.listId) }
     var showTimePicker by remember { mutableStateOf(false) }
     var expandListDropdown by remember { mutableStateOf(false) }
 

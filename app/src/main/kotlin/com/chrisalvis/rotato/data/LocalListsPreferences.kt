@@ -29,10 +29,13 @@ class LocalListsPreferences(private val context: Context) {
     fun wallpapersForList(listId: String): Flow<List<LocalWallpaperEntry>> =
         allWallpapers.map { all -> all.filter { it.listId == listId } }
 
-    suspend fun createList(name: String): LocalList {
-        val list = LocalList(name = name.trim())
+    suspend fun createList(name: String): LocalList? {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return null
+        val list = LocalList(name = trimmed)
         context.dataStore.edit { prefs ->
             val current = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
+            if (current.any { it.name.equals(trimmed, ignoreCase = true) }) return@edit
             current.add(list)
             prefs[LISTS_KEY] = serializeLists(current)
         }

@@ -130,6 +130,8 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
         private suspend fun getOrCreateFavoritesList(listsPrefs: LocalListsPreferences): LocalList {
             return listsPrefs.lists.first().firstOrNull { it.name.equals(FAVORITES_LIST_NAME, ignoreCase = true) }
                 ?: listsPrefs.createList(FAVORITES_LIST_NAME)
+                // Race condition: if createList returned null, another coroutine just created it
+                ?: listsPrefs.lists.first().first { it.name.equals(FAVORITES_LIST_NAME, ignoreCase = true) }
         }
 
         private fun favoriteSourceId(source: String, fullUrl: String, thumbUrl: String): String {

@@ -31,7 +31,8 @@ object DanbooruPlugin : SourcePlugin() {
         else null
 
     private fun accountLevel(source: LocalSource, auth: String): Int {
-        val cached = accountLevelCache[source.apiUser]
+        val cacheKey = "${source.apiUser}:${source.apiKey}"
+        val cached = accountLevelCache[cacheKey]
         if (cached != null) return cached
         val level = runCatching {
             val req = Request.Builder()
@@ -44,7 +45,7 @@ object DanbooruPlugin : SourcePlugin() {
                 org.json.JSONObject(resp.body?.string() ?: return@runCatching 0).optInt("level", 0)
             }
         }.getOrDefault(0)
-        accountLevelCache[source.apiUser] = level
+        accountLevelCache[cacheKey] = level
         return level
     }
 
@@ -56,9 +57,13 @@ object DanbooruPlugin : SourcePlugin() {
         val isPremiumAccount = auth != null && accountLevel(source, auth) >= GOLD_LEVEL
 
         val tagQuery = buildString {
-            if (normalized.isNotBlank()) append(normalized)
-            if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
-            else { if (normalized.isNotBlank()) append(" "); append("rating:explicit") }
+            // Free accounts are capped at 2 tags total; reserve 1 slot for the rating tag.
+            val userTokens = if (normalized.isNotBlank()) normalized.split(" ").filter { it.isNotBlank() } else emptyList()
+            val maxUserTokens = if (isPremiumAccount) userTokens.size else 1
+            val effectiveQuery = userTokens.take(maxUserTokens).joinToString(" ")
+            if (effectiveQuery.isNotBlank()) append(effectiveQuery)
+            if (!nsfw) { if (effectiveQuery.isNotBlank()) append(" "); append("rating:general") }
+            else { if (effectiveQuery.isNotBlank()) append(" "); append("rating:explicit") }
             // TODO: add globalBlacklist tags as -tag exclusions here for Gold accounts.
             // Free accounts are capped at 2 tags total, so blacklist exclusions would break them.
             // Gold accounts (level >= 30) can use unlimited tags — same isPremiumAccount guard applies.
@@ -127,9 +132,12 @@ object DanbooruPlugin : SourcePlugin() {
         val auth = authHeader(source)
         val isPremiumAccount = auth != null && accountLevel(source, auth) >= GOLD_LEVEL
         val tagQuery = buildString {
-            if (normalized.isNotBlank()) append(normalized)
-            if (!nsfw) { if (normalized.isNotBlank()) append(" "); append("rating:general") }
-            else { if (normalized.isNotBlank()) append(" "); append("rating:explicit") }
+            val userTokens = if (normalized.isNotBlank()) normalized.split(" ").filter { it.isNotBlank() } else emptyList()
+            val maxUserTokens = if (isPremiumAccount) userTokens.size else 1
+            val effectiveQuery = userTokens.take(maxUserTokens).joinToString(" ")
+            if (effectiveQuery.isNotBlank()) append(effectiveQuery)
+            if (!nsfw) { if (effectiveQuery.isNotBlank()) append(" "); append("rating:general") }
+            else { if (effectiveQuery.isNotBlank()) append(" "); append("rating:explicit") }
             if (isPremiumAccount && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }
