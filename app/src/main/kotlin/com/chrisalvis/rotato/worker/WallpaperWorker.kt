@@ -93,18 +93,27 @@ class WallpaperWorker(
 
         // Auto-pause: night window
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        if (autoPause.isInNightWindow(currentHour)) return Result.success()
+        if (autoPause.isInNightWindow(currentHour)) {
+            prefs.setLastSkipReason("Paused: night schedule is active")
+            return Result.success()
+        }
 
         // Auto-pause: charging
         if (autoPause.chargingEnabled) {
             val bm = applicationContext.getSystemService(BatteryManager::class.java)
-            if (bm?.isCharging == true) return Result.success()
+            if (bm?.isCharging == true) {
+                prefs.setLastSkipReason("Paused: charging-only mode")
+                return Result.success()
+            }
         }
 
         // Auto-pause: screen on (skip rotation while device is interactive)
         if (!autoPause.rotateScreenOn) {
             val pm = applicationContext.getSystemService(PowerManager::class.java)
-            if (pm?.isInteractive == true) return Result.success()
+            if (pm?.isInteractive == true) {
+                prefs.setLastSkipReason("Paused: rotates when screen is off")
+                return Result.success()
+            }
         }
 
         val activeScheduledListId = findActiveScheduledListId(scheduleEntries, lists)
@@ -282,6 +291,7 @@ class WallpaperWorker(
                 scheduleNextRun(intervalMinutes)
             }
 
+            prefs.setLastSkipReason(null)
             Result.success()
         } catch (e: Exception) {
             prefs.addRotationError(RotationError(

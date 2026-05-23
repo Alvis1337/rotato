@@ -154,6 +154,7 @@ fun BrainrotScreen(
     val busy by vm.busy.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
+    val noResultsReason by vm.noResultsReason.collectAsStateWithLifecycle()
     val noSources by vm.noSources.collectAsStateWithLifecycle()
     val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
     val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
@@ -604,8 +605,10 @@ fun BrainrotScreen(
                     noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
                     noResults -> NoResultsState(
                         searchQuery = searchQuery,
+                        noResultsReason = noResultsReason,
                         onRetry = { vm.retry() },
                         onClearSearch = { vm.setSearchQuery("") },
+                        onDisableWifiOnly = { vm.setWifiOnly(false) },
                         onOpenSearch = { showSearch = true },
                         onOpenSettings = { showSettings = true }
                     )
@@ -2041,11 +2044,20 @@ private fun OnboardingStep(number: String, description: String) {
 @Composable
 private fun NoResultsState(
     searchQuery: String,
+    noResultsReason: NoResultsReason?,
     onRetry: () -> Unit,
     onClearSearch: () -> Unit,
+    onDisableWifiOnly: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val subtitle = when (noResultsReason) {
+        NoResultsReason.WIFI_ONLY -> "Wi-Fi only mode is on — connect to Wi-Fi or disable it in Settings."
+        NoResultsReason.SEARCH_EMPTY -> "No wallpapers match your search. Try clearing the query or changing filters."
+        NoResultsReason.EXHAUSTED -> "All sources have been exhausted. Try refreshing or adjusting your filters."
+        null -> "Check Settings → Sources for red health indicators, or enable more sources."
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -2066,12 +2078,16 @@ private fun NoResultsState(
                 OutlinedButton(onClick = onClearSearch) { Text("Clear search") }
             }
             Text(
-                "Check Settings → Sources for red health indicators, adjust your search query, or enable more sources.",
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center
             )
-            Button(onClick = onRetry) { Text("Retry") }
+            if (noResultsReason == NoResultsReason.WIFI_ONLY) {
+                Button(onClick = onDisableWifiOnly) { Text("Disable Wi-Fi only") }
+            } else {
+                Button(onClick = onRetry) { Text("Retry") }
+            }
         }
 
         Row(

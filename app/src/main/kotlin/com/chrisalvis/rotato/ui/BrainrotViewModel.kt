@@ -69,6 +69,8 @@ data class SourceHealth(
     val isTesting: Boolean = false,
 )
 
+enum class NoResultsReason { WIFI_ONLY, SEARCH_EMPTY, EXHAUSTED }
+
 class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = RotatoPreferences(app)
@@ -105,6 +107,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _noResults = MutableStateFlow(false)
     val noResults: StateFlow<Boolean> = _noResults.asStateFlow()
+
+    private val _noResultsReason = MutableStateFlow<NoResultsReason?>(null)
+    val noResultsReason: StateFlow<NoResultsReason?> = _noResultsReason.asStateFlow()
 
     private val _noSources = MutableStateFlow(false)
     val noSources: StateFlow<Boolean> = _noSources.asStateFlow()
@@ -269,6 +274,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             pageCache.clear()
             _endReached.update { false }
             _noResults.update { false }
+            _noResultsReason.update { null }
             consecutiveEmptyFetches = 0
             _resetVersion.update { it + 1 }
         }
@@ -284,6 +290,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val caps = cm.getNetworkCapabilities(cm.activeNetwork)
                 val onWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
                 if (!onWifi) {
+                    _noResultsReason.update { NoResultsReason.WIFI_ONLY }
                     _noResults.update { true }
                     return@launch
                 }
@@ -361,6 +368,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             Log.d("DiscoverFetch", "drain complete — ${newItems.size} new items, ${displayedKeys.size} total seen")
             if (newItems.isEmpty()) {
                 if (_gridItems.value.isEmpty()) {
+                    _noResultsReason.update {
+                        if (_searchQuery.value.isNotBlank()) NoResultsReason.SEARCH_EMPTY
+                        else NoResultsReason.EXHAUSTED
+                    }
                     _noResults.update { true }
                     _endReached.update { true }
                     consecutiveEmptyFetches = 0
@@ -819,6 +830,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _gridItems.update { freshItems + it }
                 _noResults.update { false }
+                _noResultsReason.update { null }
                 _endReached.update { false }
                 pageCache.clear()
                 prefs.addSeenWallpaperKeys(freshItems.map { "${it.source}:${it.id}" }.toSet())
@@ -860,6 +872,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setHandsFreeInterval(secs: Int) {
         viewModelScope.launch { prefs.setHandsFreeInterval(secs) }
+    }
+
+    fun setWifiOnly(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setWifiOnlyDiscover(enabled)
+            loadMore(reset = true)
+        }
     }
 
     fun setUseMalFilter(enabled: Boolean) {

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wallpaper
@@ -73,6 +74,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -272,6 +274,8 @@ private fun LibraryContent(
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
     val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
     val wallpaperRatings by viewModel.wallpaperRatings.collectAsStateWithLifecycle()
+    val lastSkipReason by viewModel.lastSkipReason.collectAsStateWithLifecycle()
+    val setNowErrorMessage by viewModel.setNowErrorMessage.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
@@ -306,6 +310,34 @@ private fun LibraryContent(
 
         if (isLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (lastSkipReason != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        lastSkipReason!!,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
         }
 
         var selectedFile by remember { mutableStateOf<File?>(null) }
@@ -469,7 +501,7 @@ private fun LibraryContent(
                     SetNowState.ERROR -> {
                         Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Failed — retry?")
+                        Text(setNowErrorMessage ?: "Failed — retry?")
                     }
                     SetNowState.IDLE -> {
                         Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))

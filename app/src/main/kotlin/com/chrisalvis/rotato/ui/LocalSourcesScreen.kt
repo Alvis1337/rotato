@@ -11,6 +11,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.*
@@ -70,6 +71,8 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _keyValidationState = MutableStateFlow<Map<SourceType, Boolean?>>(emptyMap())
     val keyValidationState: StateFlow<Map<SourceType, Boolean?>> = _keyValidationState.asStateFlow()
+    private val _keyNetworkError = MutableStateFlow(false)
+    val keyNetworkError: StateFlow<Boolean> = _keyNetworkError.asStateFlow()
     private val latestWallhavenKey = MutableStateFlow("")
 
     // Key format: "${type.name}:${instanceId}" — unique per source instance
@@ -105,6 +108,7 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun validateWallhavenKey(apiKey: String) {
         val trimmedKey = apiKey.trim()
         latestWallhavenKey.value = trimmedKey
+        _keyNetworkError.update { false }
         _keyValidationState.update { it + (SourceType.WALLHAVEN to null) }
         if (trimmedKey.isBlank()) return
 
@@ -124,9 +128,11 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 if (isValid != null && latestWallhavenKey.value == trimmedKey) {
+                    _keyNetworkError.update { false }
                     _keyValidationState.update { it + (SourceType.WALLHAVEN to isValid) }
                 }
             } catch (_: Exception) {
+                _keyNetworkError.update { true }
                 _keyValidationState.update { it + (SourceType.WALLHAVEN to false) }
             }
         }
@@ -162,6 +168,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val sources by vm.sources.collectAsStateWithLifecycle()
     val healthMap by vm.health.collectAsStateWithLifecycle()
     val keyValidationState by vm.keyValidationState.collectAsStateWithLifecycle()
+    val keyNetworkError by vm.keyNetworkError.collectAsStateWithLifecycle()
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -289,6 +296,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         source = source,
                         health = healthMap[source.type],
                         keyValidation = keyValidationState[source.type],
+                        keyNetworkError = keyNetworkError,
                         isTesting = testingSource == "${source.type.name}:${source.instanceId}",
                         onToggle = { vm.setEnabled(source.type, source.instanceId, it) },
                         onSaveCredentials = { key, user -> vm.setCredentials(source.type, source.instanceId, key, user) },
@@ -315,6 +323,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     source = source,
                     health = healthMap[source.type],
                     keyValidation = null,
+                    keyNetworkError = keyNetworkError,
                     isTesting = testingSource == "${source.type.name}:${source.instanceId}",
                     onToggle = { vm.setEnabled(source.type, source.instanceId, it) },
                     onSaveCredentials = { _, _ -> },
@@ -351,6 +360,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         source = source,
                         health = healthMap[source.type],
                         keyValidation = keyValidationState[source.type],
+                        keyNetworkError = keyNetworkError,
                         isPremium = true,
                         isLocked = !unlocked,
                         isTesting = testingSource == "${source.type.name}:${source.instanceId}",
@@ -387,6 +397,7 @@ private fun SourceCard(
     source: LocalSource,
     health: SourceHealth? = null,
     keyValidation: Boolean? = null,
+    keyNetworkError: Boolean = false,
     isPremium: Boolean = false,
     isLocked: Boolean = false,
     isTesting: Boolean = false,
@@ -606,16 +617,17 @@ private fun SourceCard(
                                     )
                                 }
                                 false -> {
+                                    val isNetworkErr = keyNetworkError
                                     Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Invalid key",
-                                        tint = MaterialTheme.colorScheme.error,
+                                        imageVector = if (isNetworkErr) Icons.Default.Warning else Icons.Default.Close,
+                                        contentDescription = if (isNetworkErr) "Network error" else "Invalid key",
+                                        tint = if (isNetworkErr) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        "Invalid key",
+                                        if (isNetworkErr) "Can't verify — check connection" else "Invalid key",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = if (isNetworkErr) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
                                     )
                                 }
                                 null -> {

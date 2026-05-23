@@ -54,6 +54,7 @@ class RotatoPreferences(private val context: Context) {
         val LAST_WALLPAPER_FULL_URL = stringPreferencesKey("last_wallpaper_full_url")
         val LAST_WALLPAPER_SOURCE = stringPreferencesKey("last_wallpaper_source")
         val LAST_WALLPAPER_SET_MS = longPreferencesKey("last_wallpaper_set_ms")
+        val LAST_SKIP_REASON = stringPreferencesKey("last_skip_reason")
         val TOTAL_ROTATIONS = longPreferencesKey("total_rotations")
         val ROTATION_ERRORS = stringPreferencesKey("rotation_errors_json")
         val PINNED_SEARCHES = stringPreferencesKey("pinned_searches_json")
@@ -423,6 +424,10 @@ class RotatoPreferences(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { it[LAST_WALLPAPER_SET_MS] ?: 0L }
 
+    val lastSkipReason: Flow<String?> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> prefs[LAST_SKIP_REASON] }
+
     suspend fun setLastWallpaperState(
         thumbUrl: String,
         fullUrl: String,
@@ -434,6 +439,13 @@ class RotatoPreferences(private val context: Context) {
             it[LAST_WALLPAPER_FULL_URL] = fullUrl
             it[LAST_WALLPAPER_SOURCE] = source
             it[LAST_WALLPAPER_SET_MS] = setMs
+        }
+    }
+
+    suspend fun setLastSkipReason(reason: String?) {
+        context.dataStore.edit { prefs ->
+            if (reason == null) prefs.remove(LAST_SKIP_REASON)
+            else prefs[LAST_SKIP_REASON] = reason
         }
     }
 

@@ -85,6 +85,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _setNowState = MutableStateFlow(SetNowState.IDLE)
     val setNowState: StateFlow<SetNowState> = _setNowState.asStateFlow()
 
+    private val _setNowErrorMessage = MutableStateFlow<String?>(null)
+    val setNowErrorMessage: StateFlow<String?> = _setNowErrorMessage.asStateFlow()
 
     val collections: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -94,6 +96,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val lastRotationMs: StateFlow<Long> = preferences.lastRotationMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    val lastSkipReason: StateFlow<String?> = preferences.lastSkipReason
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val wallpaperRatings: StateFlow<Map<String, Int>> = preferences.wallpaperRatings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
@@ -141,6 +146,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearRotationErrors() {
         viewModelScope.launch { preferences.clearRotationErrors() }
+    }
+
+    private suspend fun resetSetNowUi() {
+        kotlinx.coroutines.delay(2_000)
+        _setNowState.update { SetNowState.IDLE }
+        _setNowErrorMessage.update { null }
     }
 
     init {
@@ -417,28 +428,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (_images.value.isEmpty()) return
         viewModelScope.launch {
             _setNowState.update { SetNowState.SETTING }
-            val request = OneTimeWorkRequestBuilder<WallpaperWorker>().build()
-            workManager.enqueueUniqueWork(SET_NOW_WORK_NAME, ExistingWorkPolicy.REPLACE, request).await()
+            _setNowErrorMessage.update { null }
             try {
+                val request = OneTimeWorkRequestBuilder<WallpaperWorker>().build()
+                workManager.enqueueUniqueWork(SET_NOW_WORK_NAME, ExistingWorkPolicy.REPLACE, request).await()
                 val terminalStates = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
                 val info = workManager.getWorkInfoByIdFlow(request.id)
                     .first { it?.state in terminalStates }
                 when (info?.state) {
                     WorkInfo.State.SUCCEEDED -> {
                         _setNowState.update { SetNowState.DONE }
-                        kotlinx.coroutines.delay(2_000)
-                        _setNowState.update { SetNowState.IDLE }
+                        resetSetNowUi()
                     }
                     else -> {
+                        _setNowErrorMessage.update { rotationErrors.value.lastOrNull()?.message ?: "Rotation failed" }
                         _setNowState.update { SetNowState.ERROR }
-                        kotlinx.coroutines.delay(2_000)
-                        _setNowState.update { SetNowState.IDLE }
+                        resetSetNowUi()
                     }
                 }
             } catch (e: Exception) {
+                _setNowErrorMessage.update { e.message?.take(60) ?: "Failed" }
                 _setNowState.update { SetNowState.ERROR }
-                kotlinx.coroutines.delay(2_000)
-                _setNowState.update { SetNowState.IDLE }
+                resetSetNowUi()
             }
         }
     }
@@ -458,13 +469,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun setSpecificWallpaper(file: File) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _setNowState.update { SetNowState.SETTING }
+            _setNowErrorMessage.update { null }
             try {
                 val app = getApplication<Application>()
                 val bitmap = loadScaledBitmap(app, file.absolutePath)
                     ?: run {
+                        _setNowErrorMessage.update { "Could not load image" }
                         _setNowState.update { SetNowState.ERROR }
-                        kotlinx.coroutines.delay(2_000)
-                        _setNowState.update { SetNowState.IDLE }
+                        resetSetNowUi()
                         return@launch
                     }
                 val settingsVal = preferences.settings.first()
@@ -489,12 +501,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 screenBitmap.recycle()
                 bitmap.recycle()
                 _setNowState.update { SetNowState.DONE }
-                kotlinx.coroutines.delay(2_000)
-                _setNowState.update { SetNowState.IDLE }
+                resetSetNowUi()
             } catch (e: Exception) {
+                _setNowErrorMessage.update { e.message?.take(60) ?: "Unknown error" }
                 _setNowState.update { SetNowState.ERROR }
-                kotlinx.coroutines.delay(2_000)
-                _setNowState.update { SetNowState.IDLE }
+                resetSetNowUi()
             }
         }
     }
