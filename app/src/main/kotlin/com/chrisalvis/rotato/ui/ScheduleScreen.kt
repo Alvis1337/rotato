@@ -160,14 +160,28 @@ private fun ScheduleEntryCard(
                 }
                 Switch(checked = entry.enabled, onCheckedChange = onToggleEnabled)
             }
+            if (!entry.enabled) {
+                Text(
+                    "Paused — this schedule won't run",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DAY_ORDER.forEach { (dayConst, label) ->
                     val active = dayConst in entry.days
-                    FilterChip(
-                        selected = active,
+                    SuggestionChip(
                         onClick = {},
                         label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                         modifier = Modifier.height(28.dp),
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+                            labelColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        border = SuggestionChipDefaults.suggestionChipBorder(
+                            enabled = true,
+                            borderColor = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.outlineVariant,
+                        ),
                     )
                 }
                 Spacer(Modifier.weight(1f))

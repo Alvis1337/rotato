@@ -255,7 +255,7 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                         composable("browse") {
-                            BrowseScreen()
+                            BrowseScreen(onGoToDiscover = { navController.navigate("discover") })
                         }
                     }
                 }

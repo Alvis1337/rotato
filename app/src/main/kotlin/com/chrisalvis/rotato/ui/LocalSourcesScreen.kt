@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -163,6 +164,10 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val keyValidationState by vm.keyValidationState.collectAsStateWithLifecycle()
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val onSaved = { scope.launch { snackbarHostState.showSnackbar("Source updated") }; Unit }
+
     var showDisableAllConfirm by remember { mutableStateOf(false) }
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
@@ -245,6 +250,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val premiumSources = sources.filter { it.type.isPremium }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Sources", fontWeight = FontWeight.Bold) },
@@ -290,6 +296,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, source.instanceId, it) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { vm.testSource(source) },
+                        onSaved = onSaved,
                     )
                 }
             }
@@ -316,6 +323,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     onValidateWallhavenKey = {},
                     onTest = { vm.testSource(source) },
                     onRemove = { confirmRemove = source.type to source.instanceId },
+                    onSaved = onSaved,
                 )
             }
             item {
@@ -352,6 +360,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, source.instanceId, it) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { if (unlocked) vm.testSource(source) },
+                        onSaved = onSaved,
                     )
                 }
             }
@@ -388,6 +397,7 @@ private fun SourceCard(
     onValidateWallhavenKey: (String) -> Unit = {},
     onTest: () -> Unit = {},
     onRemove: (() -> Unit)? = null,
+    onSaved: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
@@ -521,9 +531,12 @@ private fun SourceCard(
                             Text(if (expanded) "Close" else "Configure")
                         }
                     } else {
-                        TextButton(onClick = { showPremiumInfo = true }) {
-                            Text("Unlock")
-                        }
+                        Text(
+                            "Coming soon",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = androidx.compose.ui.Modifier.padding(horizontal = 12.dp),
+                        )
                     }
                     Switch(
                         checked = source.enabled,
@@ -661,6 +674,7 @@ private fun SourceCard(
                             onSaveWallhavenPurity(if (p == "000") "100" else p)
                         }
                         expanded = false
+                        onSaved()
                     }) {
                         Text("Save")
                     }

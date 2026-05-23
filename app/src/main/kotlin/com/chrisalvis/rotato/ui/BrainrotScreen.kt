@@ -697,15 +697,24 @@ fun BrainrotScreen(
                                             key = { it },
                                             span = { GridItemSpan(maxLineSpan) },
                                         ) {
-                                            OutlinedButton(
-                                                onClick = { vm.forceLoadMore() },
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .padding(horizontal = 24.dp, vertical = 12.dp)
                                             ) {
-                                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(Modifier.width(6.dp))
-                                                Text("Try to load more")
+                                                Text(
+                                                    "No more matches — try different filters",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                                Spacer(Modifier.height(8.dp))
+                                                OutlinedButton(onClick = { vm.forceLoadMore() }) {
+                                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text("Load more anyway")
+                                                }
                                             }
                                         }
                                     }
@@ -756,15 +765,24 @@ fun BrainrotScreen(
                                     }
                                     if (endReached && gridItems.isNotEmpty()) {
                                         items(listOf("end-reached"), span = { StaggeredGridItemSpan.FullLine }) {
-                                            OutlinedButton(
-                                                onClick = { vm.forceLoadMore() },
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .padding(horizontal = 24.dp, vertical = 12.dp)
                                             ) {
-                                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(Modifier.width(6.dp))
-                                                Text("Try to load more")
+                                                Text(
+                                                    "No more matches — try different filters",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                                Spacer(Modifier.height(8.dp))
+                                                OutlinedButton(onClick = { vm.forceLoadMore() }) {
+                                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text("Load more anyway")
+                                                }
                                             }
                                         }
                                     }

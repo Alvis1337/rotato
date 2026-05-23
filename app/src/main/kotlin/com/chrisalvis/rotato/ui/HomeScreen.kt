@@ -101,6 +101,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -356,6 +357,17 @@ private fun LibraryContent(
                     onAddPhotos = onPhotoPick
                 )
             } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                if (!inSelectionMode) {
+                    Text(
+                        text = "Long press an image to select",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     state = dragSelectState.gridState,
@@ -424,6 +436,7 @@ private fun LibraryContent(
                         thumbnailContent()
                     }
                 }
+                } // Column
             }
         }
 
@@ -1205,9 +1218,10 @@ private fun EmptyState(modifier: Modifier = Modifier, onGoToDiscover: () -> Unit
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Add wallpapers to start rotating",
+                text = "Photos saved here rotate as your wallpaper",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(4.dp))
             FilledTonalButton(onClick = onGoToDiscover) {

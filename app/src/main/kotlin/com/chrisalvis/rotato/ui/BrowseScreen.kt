@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowseScreen() {
+fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val vm: BrowseViewModel = viewModel()
 
     val lists by vm.lists.collectAsStateWithLifecycle()
@@ -171,6 +171,7 @@ fun BrowseScreen() {
             lists = lists.filter { it.id != selectedList!!.id },
             onConfirm = { vm.moveSelectedToList(it); showMoveDialog = false },
             onDismiss = { showMoveDialog = false },
+            onCreateList = { vm.showCreateDialog() },
         )
     }
 
@@ -645,6 +646,7 @@ fun BrowseScreen() {
                             photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                     },
+                    onGoToDiscover = onGoToDiscover,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1274,6 +1276,7 @@ private fun WallpaperGridContent(
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
     onPickFromDevice: (() -> Unit)? = null,
+    onGoToDiscover: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (wallpapers.isEmpty()) {
@@ -1308,6 +1311,12 @@ private fun WallpaperGridContent(
                             Spacer(Modifier.width(6.dp))
                             Text("Add from device")
                         }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    FilledTonalButton(onClick = onGoToDiscover) {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Open Discover")
                     }
                 }
             }
@@ -1925,13 +1934,17 @@ private fun MoveWallpapersDialog(
     lists: List<LocalList>,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
+    onCreateList: () -> Unit = {},
 ) {
     if (lists.isEmpty()) {
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("Move") },
             text = { Text("No other collections to move to.") },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = { onDismiss(); onCreateList() }) { Text("Create collection") }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         )
         return
     }
