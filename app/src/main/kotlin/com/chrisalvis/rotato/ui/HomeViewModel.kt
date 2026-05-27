@@ -212,8 +212,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                             }
                         } else {
-                            feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
-                            changed = true
+                            try {
+                                feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                                changed = true
+                            } catch (e: Exception) {
+                                android.util.Log.e("HomeViewModel", "Failed to download rotation wallpaper: ${entry.fullUrl}", e)
+                            }
                         }
                     }
                 }
@@ -238,8 +242,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val intervalMinutes = saved.intervalMinutes.toLong()
             val workName = if (intervalMinutes < 15) CHAIN_WORK_NAME else WORK_NAME
 
-            val infos = workManager.getWorkInfosForUniqueWork(workName).get()
-            val isAlive = infos.any { it.state in listOf(WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED) }
+            val isAlive = withContext(Dispatchers.IO) {
+                val infos = workManager.getWorkInfosForUniqueWork(workName).get()
+                infos.any { it.state in listOf(WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED) }
+            }
 
             if (!isAlive) {
                 scheduleRotation(intervalMinutes)
