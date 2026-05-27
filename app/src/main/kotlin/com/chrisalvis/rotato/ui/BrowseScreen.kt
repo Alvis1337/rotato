@@ -375,43 +375,41 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         bottomBar = {
             if (selectionMode && selected.isNotEmpty() && selectedList != null) {
                 BottomAppBar {
-                    // Primary actions always visible
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { showDeleteSelectedConfirm = true },
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    IconButton(
+                        onClick = { showDeleteSelectedConfirm = true },
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
-                        Text("Delete", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
+                            Text("Delete", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                        }
                     }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { showMoveDialog = true },
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    IconButton(
+                        onClick = { showMoveDialog = true },
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.DriveFileMove, contentDescription = "Move")
-                        Text("Move", style = MaterialTheme.typography.labelSmall)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.DriveFileMove, contentDescription = "Move")
+                            Text("Move", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { vm.downloadSelected() },
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    IconButton(
+                        onClick = { vm.downloadSelected() },
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.Download, contentDescription = "Save to gallery")
-                        Text("Save", style = MaterialTheme.typography.labelSmall)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Download, contentDescription = "Save to gallery")
+                            Text("Save", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                     // Overflow for secondary actions
                     var showSelectionOverflow by remember { mutableStateOf(false) }
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Column(
-                            modifier = Modifier.clickable { showSelectionOverflow = true },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More actions")
-                            Text("More", style = MaterialTheme.typography.labelSmall)
+                        IconButton(onClick = { showSelectionOverflow = true }) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                                Text("More", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                         DropdownMenu(
                             expanded = showSelectionOverflow,

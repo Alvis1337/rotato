@@ -730,7 +730,7 @@ private fun ImageThumbnail(
                 .data(file)
                 .crossfade(300)
                 .build(),
-            contentDescription = null,
+            contentDescription = if (isSelected) "Wallpaper (selected)" else "Wallpaper",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )

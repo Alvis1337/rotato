@@ -104,6 +104,7 @@ fun SettingsScreen(
     val malFilterStatuses by malViewModel.filterStatuses.collectAsStateWithLifecycle()
     val malFilterMinScore by malViewModel.filterMinScore.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
+    var showImportConfirmDialog by remember { mutableStateOf(false) }
     val autoPauseSettings by viewModel.autoPauseSettings.collectAsStateWithLifecycle()
     val chargingTriggerEnabled by viewModel.chargingTriggerEnabled.collectAsStateWithLifecycle()
     val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
@@ -158,6 +159,27 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showImportConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirmDialog = false },
+            title = { Text("Import backup?") },
+            text = { Text("This will overwrite your current sources, API keys, and preferences with the contents of the selected file. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImportConfirmDialog = false
+                        importLauncher.launch(arrayOf("application/json", "*/*"))
+                    }
+                ) {
+                    Text("Import", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportConfirmDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -689,7 +711,7 @@ fun SettingsScreen(
                                 }
                             }
                             OutlinedButton(
-                                onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                                onClick = { showImportConfirmDialog = true },
                                 enabled = backupState == BackupState.IDLE,
                                 modifier = Modifier.weight(1f)
                             ) {
