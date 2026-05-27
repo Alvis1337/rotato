@@ -1,6 +1,9 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.app.AlarmManager
+import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,6 +45,12 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     /** Emits a one-shot result message from [triggerNow] or [saveEdit]. */
     private val _triggerResult = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val triggerResult: SharedFlow<String> = _triggerResult.asSharedFlow()
+
+    /** True when the device is running API 31+ but exact alarm permission has not been granted. */
+    val needsExactAlarmPermission: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !(getApplication<Application>().getSystemService(Context.ALARM_SERVICE) as AlarmManager)
+                    .canScheduleExactAlarms()
 
     fun startAdd() {
         _editEntry.update {

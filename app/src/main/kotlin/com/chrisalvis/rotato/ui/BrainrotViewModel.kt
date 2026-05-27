@@ -681,22 +681,25 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     val key = wp.id
                     if (!_downloadingIds.value.contains(key)) {
                         _downloadingIds.update { it + key }
-                        val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                        val downloaded = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
-                        if (downloaded) {
-                            val history = historyFromJson(prefs.historyJson.first()).toMutableList()
-                            history.add(0, WallpaperHistoryItem(
-                                thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl,
-                                fullUrl = wp.fullUrl, source = wp.source,
-                                timestamp = System.currentTimeMillis(),
-                                tags = wp.tags, pageUrl = wp.pageUrl
-                            ))
-                            prefs.setHistoryJson(history.take(50).toJson())
-                            Toast.makeText(ctx, "Saved to \"$listName\" · added to rotation", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(ctx, "Saved to \"$listName\" (download failed)", Toast.LENGTH_SHORT).show()
+                        try {
+                            val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+                            val downloaded = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                            if (downloaded) {
+                                val history = historyFromJson(prefs.historyJson.first()).toMutableList()
+                                history.add(0, WallpaperHistoryItem(
+                                    thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl,
+                                    fullUrl = wp.fullUrl, source = wp.source,
+                                    timestamp = System.currentTimeMillis(),
+                                    tags = wp.tags, pageUrl = wp.pageUrl
+                                ))
+                                prefs.setHistoryJson(history.take(50).toJson())
+                                Toast.makeText(ctx, "Saved to \"$listName\" · added to rotation", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(ctx, "Saved to \"$listName\" (download failed)", Toast.LENGTH_SHORT).show()
+                            }
+                        } finally {
+                            _downloadingIds.update { it - key }
                         }
-                        _downloadingIds.update { it - key }
                     } else {
                         Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
                     }
@@ -1021,29 +1024,32 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (_downloadingIds.value.contains(key)) return
         viewModelScope.launch {
             _downloadingIds.update { it + key }
-            val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
-            val ctx = getApplication<Application>().applicationContext
-            if (ok) {
-                val history = historyFromJson(prefs.historyJson.first()).toMutableList()
-                history.add(0, WallpaperHistoryItem(
-                    thumbUrl = wp.thumbUrl,
-                    sampleUrl = wp.sampleUrl,
-                    fullUrl = wp.fullUrl,
-                    source = wp.source,
-                    timestamp = System.currentTimeMillis(),
-                    tags = wp.tags,
-                    pageUrl = wp.pageUrl
-                ))
-                prefs.setHistoryJson(history.take(50).toJson())
-                val rotationList = localLists.lists.first().firstOrNull { it.useAsRotation }
-                if (rotationList != null) localLists.addWallpaper(rotationList.id, wp)
-                val msg = if (rotationList != null) "Added to rotation · saved to \"${rotationList.name}\"" else "Added to rotation"
-                Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(ctx, "Download failed", Toast.LENGTH_SHORT).show()
+            try {
+                val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+                val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                val ctx = getApplication<Application>().applicationContext
+                if (ok) {
+                    val history = historyFromJson(prefs.historyJson.first()).toMutableList()
+                    history.add(0, WallpaperHistoryItem(
+                        thumbUrl = wp.thumbUrl,
+                        sampleUrl = wp.sampleUrl,
+                        fullUrl = wp.fullUrl,
+                        source = wp.source,
+                        timestamp = System.currentTimeMillis(),
+                        tags = wp.tags,
+                        pageUrl = wp.pageUrl
+                    ))
+                    prefs.setHistoryJson(history.take(50).toJson())
+                    val rotationList = localLists.lists.first().firstOrNull { it.useAsRotation }
+                    if (rotationList != null) localLists.addWallpaper(rotationList.id, wp)
+                    val msg = if (rotationList != null) "Added to rotation · saved to \"${rotationList.name}\"" else "Added to rotation"
+                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(ctx, "Download failed", Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                _downloadingIds.update { it - key }
             }
-            _downloadingIds.update { it - key }
         }
     }
 
@@ -1052,11 +1058,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (_downloadingIds.value.contains(key)) return
         viewModelScope.launch {
             _downloadingIds.update { it + key }
-            val ctx = getApplication<Application>().applicationContext
-            val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            val ok = feedRepo.saveToGallery(ctx, sourceId, wp.fullUrl, wp.sampleUrl)
-            Toast.makeText(ctx, if (ok) "Saved to Pictures/Rotato" else "Save failed", Toast.LENGTH_SHORT).show()
-            _downloadingIds.update { it - key }
+            try {
+                val ctx = getApplication<Application>().applicationContext
+                val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
+                val ok = feedRepo.saveToGallery(ctx, sourceId, wp.fullUrl, wp.sampleUrl)
+                Toast.makeText(ctx, if (ok) "Saved to Pictures/Rotato" else "Save failed", Toast.LENGTH_SHORT).show()
+            } finally {
+                _downloadingIds.update { it - key }
+            }
         }
     }
 }
