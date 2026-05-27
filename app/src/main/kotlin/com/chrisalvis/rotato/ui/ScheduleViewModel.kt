@@ -81,7 +81,8 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             } else {
-                ScheduleManager.schedule(getApplication(), entry)
+                if (entry.enabled) ScheduleManager.schedule(getApplication(), entry)
+                else ScheduleManager.cancel(getApplication(), entry.id)
             }
         }
         _editEntry.update { null }

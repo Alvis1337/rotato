@@ -64,7 +64,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                     OneTimeWorkRequestBuilder<WallpaperWorker>().build(),
                 )
 
-            ScheduleManager.schedule(context, entry)
+            ScheduleManager.scheduleIfEnabled(context, entry)
             return triggerResult
         }
 
@@ -142,6 +142,12 @@ class ScheduleReceiver : BroadcastReceiver() {
                     val fired = entries.find { it.id == entryId } ?: run {
                         // Entry was deleted after the alarm was set — nothing to do.
                         schedPrefs.recordTrigger(entryId, "entry not found")
+                        return@withTimeout
+                    }
+
+                    if (!fired.enabled) {
+                        // Entry was disabled after alarm was queued — skip silently.
+                        schedPrefs.recordTrigger(entryId, "skipped: disabled")
                         return@withTimeout
                     }
 

@@ -20,6 +20,11 @@ object ScheduleManager {
         setAlarm(context, entry.id, triggerMs)
     }
 
+    /** Re-arm only if the entry is still enabled; cancel otherwise. */
+    fun scheduleIfEnabled(context: Context, entry: ScheduleEntry) {
+        if (entry.enabled) schedule(context, entry) else cancel(context, entry.id)
+    }
+
     fun scheduleAt(context: Context, entryId: String, triggerMs: Long) {
         setAlarm(context, entryId, triggerMs)
     }
