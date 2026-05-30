@@ -62,15 +62,8 @@ class PluginRepository(private val context: Context) {
     // Public API
     // ---------------------------------------------------------------------------
 
-    /** All available manifests: bundled + installed, deduplicated (installed overrides bundled). */
-    val manifests: Flow<List<PluginManifest>> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            val bundled = loadBundledManifests()
-            val installed = parseInstalledManifests(prefs[INSTALLED_PLUGINS_KEY] ?: "[]")
-            val installedIds = installed.map { it.id }.toSet()
-            bundled.filter { it.id !in installedIds } + installed
-        }
+    /** All available manifests: user-installed only. Bundled plugins are no longer auto-loaded. */
+    val manifests: Flow<List<PluginManifest>> = installedManifests
 
     /** Returns the manifest with [id], checking installed first then bundled. Null if not found. */
     suspend fun getManifest(id: String): PluginManifest? = manifests.first().firstOrNull { it.id == id }
