@@ -64,8 +64,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -341,7 +339,6 @@ private fun LibraryContent(
         }
 
         var selectedFile by remember { mutableStateOf<File?>(null) }
-        var contextMenuFile by remember { mutableStateOf<File?>(null) }
         var ratingDialogFile by remember { mutableStateOf<File?>(null) }
         val pullRefreshState = rememberPullToRefreshState()
 
@@ -413,56 +410,13 @@ private fun LibraryContent(
                     items(images, key = { it.absolutePath }) { file ->
                         val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
                         val thumbnailContent: @Composable () -> Unit = {
-                            Box {
-                                ImageThumbnail(
-                                    file = file,
-                                    rating = wallpaperRatings[file.name] ?: 0,
-                                    isSelected = isSelected,
-                                    inSelectionMode = inSelectionMode,
-                                    onClick = { if (!inSelectionMode) selectedFile = file },
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        contextMenuFile = file
-                                    }
-                                )
-                                DropdownMenu(
-                                    expanded = contextMenuFile == file,
-                                    onDismissRequest = { contextMenuFile = null }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Set as wallpaper") },
-                                        leadingIcon = { Icon(Icons.Filled.Wallpaper, null) },
-                                        onClick = {
-                                            contextMenuFile = null
-                                            viewModel.setSpecificWallpaper(file)
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Save to gallery") },
-                                        leadingIcon = { Icon(Icons.Filled.SaveAlt, null) },
-                                        onClick = {
-                                            contextMenuFile = null
-                                            viewModel.saveFileToGallery(file)
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Rate") },
-                                        leadingIcon = { Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC107)) },
-                                        onClick = {
-                                            contextMenuFile = null
-                                            ratingDialogFile = file
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Remove", color = MaterialTheme.colorScheme.error) },
-                                        leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                        onClick = {
-                                            contextMenuFile = null
-                                            viewModel.removeImage(file)
-                                        }
-                                    )
-                                }
-                            }
+                            ImageThumbnail(
+                                file = file,
+                                rating = wallpaperRatings[file.name] ?: 0,
+                                isSelected = isSelected,
+                                inSelectionMode = inSelectionMode,
+                                onClick = { if (!inSelectionMode) selectedFile = file },
+                            )
                         }
 
                         thumbnailContent()
