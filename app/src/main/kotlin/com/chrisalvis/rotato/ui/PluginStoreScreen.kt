@@ -162,6 +162,15 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
     var urlInput by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
 
+    // Auto-dismiss dialog on successful URL install
+    LaunchedEffect(urlInstallState) {
+        if (urlInstallState == InstallPluginState.SUCCESS) {
+            delay(1_000)
+            showUrlDialog = false
+            urlInput = ""
+        }
+    }
+
     if (showUrlDialog) {
         AlertDialog(
             onDismissRequest = {

@@ -115,10 +115,11 @@ class LocalSourcesPreferences(private val context: Context) {
 
     /** Imports sources from a JSON string, replacing current sources. */
     suspend fun importSources(json: String) {
+        // Only reject truly unparseable JSON; an intentionally-empty backup ([]) is valid
+        val arr = try { org.json.JSONArray(json) } catch (_: Exception) { return }
         val parsed = parse(json)
-        if (parsed.isEmpty()) return
         context.dataStore.edit { prefs ->
-            prefs[SOURCES_KEY] = serialize(parsed)
+            prefs[SOURCES_KEY] = if (arr.length() == 0) "[]" else serialize(parsed)
         }
     }
 
