@@ -193,6 +193,7 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
 
     val installedIds = remember(installedManifests) { installedManifests.map { it.id }.toSet() }
     val allEntries = remember(entriesByStore) { entriesByStore.values.flatten() }
+    val storeOrder = remember(entriesByStore) { entriesByStore.keys.toList() }
 
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -408,8 +409,6 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                     }
                 }
                 StoreLoadingState.Loaded -> {
-                    // Group plugins by store, filtering by search query
-                    val storeOrder = remember(entriesByStore) { entriesByStore.keys.toList() }
                     for (storeUrl in storeOrder) {
                         val storeEntries = entriesByStore[storeUrl] ?: continue
                         val storeName = storeEntries.firstOrNull()?.storeName ?: storeUrl
