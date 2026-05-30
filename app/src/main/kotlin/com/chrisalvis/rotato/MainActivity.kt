@@ -32,6 +32,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.core.content.IntentCompat
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.BrowseScreen
@@ -63,6 +64,12 @@ class MainActivity : AppCompatActivity() {
             RotatoTheme {
                 val rotatoPrefs = remember { RotatoPreferences(applicationContext) }
                 val setupDone by rotatoPrefs.setupDone.collectAsStateWithLifecycle(initialValue = null)
+
+                // Migration: if user upgraded from pre-store-first build, auto-install bundled plugins
+                val pluginRepo = remember { PluginRepository(applicationContext) }
+                LaunchedEffect(setupDone) {
+                    if (setupDone == true) pluginRepo.autoMigrateIfNeeded()
+                }
 
                 if (setupDone == null) {
                     Box(

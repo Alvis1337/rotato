@@ -80,6 +80,21 @@ class PluginRepository(private val context: Context) {
         manifest
     }
 
+    /**
+     * Called on app start for users upgrading from the pre-store-first build.
+     * If setup is complete but no plugins are installed, auto-installs all
+     * bundled manifests from assets so existing sources continue to work.
+     */
+    suspend fun autoMigrateIfNeeded() = withContext(Dispatchers.IO) {
+        if (installedManifests.first().isNotEmpty()) return@withContext
+        val bundled = loadBundledManifests()
+        if (bundled.isNotEmpty()) {
+            context.dataStore.edit { prefs ->
+                prefs[INSTALLED_PLUGINS_KEY] = serializeManifests(bundled)
+            }
+        }
+    }
+
     /** Removes an installed plugin by [id]. No-op if not installed. */
     suspend fun uninstall(id: String) {
         context.dataStore.edit { prefs ->
