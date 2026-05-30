@@ -1551,7 +1551,6 @@ private fun WallpaperUrlPreviewDialog(
     onShare: (BrowseWallpaper) -> Unit,
     onDismiss: (currentWallpaper: BrowseWallpaper?) -> Unit
 ) {
-    BackHandler(onBack = { onDismiss(currentWallpaper) })
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -1567,6 +1566,8 @@ private fun WallpaperUrlPreviewDialog(
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+
+    BackHandler(onBack = { onDismiss(currentWallpaper) })
 
     LaunchedEffect(pagerState.currentPage) { showZoom = false }
 
