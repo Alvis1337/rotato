@@ -244,7 +244,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             onToggleRotation = { vm.toggleRotation(it) },
             onSaveToGallery = { vm.saveWallpaper(it) },
             onRemoveFromCollection = { wp ->
-                if (wp.entryId.isNotBlank()) { vm.removeWallpaper(wp.entryId); previewWallpaper = null }
+                if (wp.entryId.isNotBlank()) vm.removeWallpaper(wp.entryId)
             },
             onSetAsCover = { wp -> updateCover(wp) },
             onCopyUrl = { wp ->
@@ -1555,6 +1555,16 @@ private fun WallpaperUrlPreviewDialog(
     var showMoreMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(pagerState.currentPage) { showZoom = false }
+
+    // When an item is removed, either close the dialog (list empty) or
+    // keep the pager in bounds by scrolling back one page.
+    LaunchedEffect(wallpapers.size) {
+        when {
+            wallpapers.isEmpty() -> onDismiss(null)
+            pagerState.currentPage >= wallpapers.size ->
+                pagerState.scrollToPage((wallpapers.size - 1).coerceAtLeast(0))
+        }
+    }
 
     Dialog(
         onDismissRequest = { onDismiss(currentWallpaper) },
