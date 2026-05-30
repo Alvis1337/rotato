@@ -28,6 +28,10 @@ data class PluginStoreEntry(
     val tags: List<String>,
     val isBundled: Boolean,
     val safeContent: Boolean,
+    /** URL of the index this entry was fetched from. */
+    val storeSource: String = "",
+    /** Display name of the store this entry came from. */
+    val storeName: String = "",
 )
 
 /**
@@ -43,7 +47,9 @@ class PluginRepository(private val context: Context) {
 
     companion object {
         private val INSTALLED_PLUGINS_KEY = stringPreferencesKey("installed_plugins_json")
+        private val CUSTOM_STORES_KEY = stringPreferencesKey("custom_store_index_urls")
         const val STORE_INDEX_URL = "https://raw.githubusercontent.com/Alvis1337/rotato/main/plugin-store/index.json"
+        const val DEFAULT_STORE_NAME = "Rotato Official"
         private val BUNDLED_IDS = setOf("GELBOORU", "DANBOORU", "RULE34", "SAFEBOORU", "WALLHAVEN", "KONACHAN", "YANDERE", "ZEROCHAN", "REDDIT")
 
         private val httpClient = OkHttpClient.Builder()
@@ -95,37 +101,71 @@ class PluginRepository(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { prefs -> parseInstalledManifests(prefs[INSTALLED_PLUGINS_KEY] ?: "[]") }
 
-    /** Fetches the community plugin store index. Returns empty list on error. */
-    suspend fun fetchStoreIndex(): List<PluginStoreEntry> = withContext(Dispatchers.IO) {
+    /** Flow of user-added store index URLs. */
+    val customStoreUrls: Flow<List<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> parseCustomStoreUrls(prefs[CUSTOM_STORES_KEY] ?: "[]") }
+
+    /**
+     * Fetches all store entries from the default index and every user-added index.
+     * Returns a map of indexUrl → entries so the UI can group by store.
+     */
+    suspend fun fetchAllStoreEntries(): Map<String, List<PluginStoreEntry>> = withContext(Dispatchers.IO) {
+        val result = linkedMapOf<String, List<PluginStoreEntry>>()
         runCatching {
-            val req = Request.Builder().url(STORE_INDEX_URL)
-                .header("User-Agent", "Rotato/1.0 plugin-store")
-                .build()
-            httpClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@runCatching emptyList()
-                val body = resp.body?.string() ?: return@runCatching emptyList()
-                val json = JSONObject(body)
-                val pluginsArr = json.optJSONArray("plugins") ?: return@runCatching emptyList()
-                (0 until pluginsArr.length()).mapNotNull { i ->
-                    val o = pluginsArr.optJSONObject(i) ?: return@mapNotNull null
-                    val id = o.optString("id").ifBlank { return@mapNotNull null }
-                    val manifestUrl = o.optString("manifestUrl").ifBlank { return@mapNotNull null }
-                    PluginStoreEntry(
-                        id = id,
-                        name = o.optString("name", id),
-                        description = o.optString("description", ""),
-                        author = o.optString("author", "Rotato"),
-                        version = o.optString("version", "1.0"),
-                        versionCode = o.optInt("versionCode", 1),
-                        manifestUrl = manifestUrl,
-                        tags = o.optJSONArray("tags")?.let { t -> (0 until t.length()).map { t.getString(it) } } ?: emptyList(),
-                        isBundled = o.optBoolean("isBundled", id in BUNDLED_IDS),
-                        safeContent = o.optBoolean("safeContent", true),
-                    )
-                }
+            val (_, entries) = fetchFromIndexUrl(STORE_INDEX_URL)
+            result[STORE_INDEX_URL] = entries
+        }
+        for (url in customStoreUrls.first()) {
+            runCatching {
+                val (_, entries) = fetchFromIndexUrl(url)
+                result[url] = entries
             }
-        }.getOrElse { emptyList() }
+        }
+        result
     }
+
+    /**
+     * Fetches a single index URL. Returns store name + list of entries.
+     * Throws on network failure.
+     */
+    suspend fun fetchFromIndexUrl(url: String): Pair<String, List<PluginStoreEntry>> = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url)
+            .header("User-Agent", "Rotato/1.0 plugin-store")
+            .build()
+        httpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code} from $url")
+            val body = resp.body?.string() ?: throw IllegalStateException("Empty response from $url")
+            val json = JSONObject(body)
+            val storeName = json.optString("name").ifBlank { extractDomainName(url) }
+            val pluginsArr = json.optJSONArray("plugins") ?: return@use storeName to emptyList()
+            val entries = (0 until pluginsArr.length()).mapNotNull { i ->
+                val o = pluginsArr.optJSONObject(i) ?: return@mapNotNull null
+                val id = o.optString("id").ifBlank { return@mapNotNull null }
+                val manifestUrl = o.optString("manifestUrl").ifBlank { return@mapNotNull null }
+                PluginStoreEntry(
+                    id = id,
+                    name = o.optString("name", id),
+                    description = o.optString("description", ""),
+                    author = o.optString("author", "Unknown"),
+                    version = o.optString("version", "1.0"),
+                    versionCode = o.optInt("versionCode", 1),
+                    manifestUrl = manifestUrl,
+                    tags = o.optJSONArray("tags")?.let { t -> (0 until t.length()).map { t.getString(it) } } ?: emptyList(),
+                    isBundled = o.optBoolean("isBundled", id in BUNDLED_IDS),
+                    safeContent = o.optBoolean("safeContent", true),
+                    storeSource = url,
+                    storeName = storeName,
+                )
+            }
+            storeName to entries
+        }
+    }
+
+    /** Kept for backward compatibility; fetches only the default store. */
+    suspend fun fetchStoreIndex(): List<PluginStoreEntry> = runCatching {
+        fetchFromIndexUrl(STORE_INDEX_URL).second
+    }.getOrElse { emptyList() }
 
     /** Returns plugin IDs where the store has a newer versionCode than the installed version. */
     suspend fun checkForUpdates(storeEntries: List<PluginStoreEntry>): Set<String> {
@@ -134,6 +174,31 @@ class PluginRepository(private val context: Context) {
             .filter { entry -> installed[entry.id]?.let { entry.versionCode > it.versionCode } == true }
             .map { it.id }
             .toSet()
+    }
+
+    /**
+     * Validates [url] as a plugin index and adds it to the custom store list.
+     * Returns the store's display name. Throws if the URL is invalid or unreachable.
+     */
+    suspend fun addCustomStore(url: String): String {
+        val trimmed = url.trim()
+        val (storeName, entries) = fetchFromIndexUrl(trimmed)
+        if (entries.isEmpty()) throw IllegalStateException("No plugins found at this URL.")
+        context.dataStore.edit { prefs ->
+            val current = parseCustomStoreUrls(prefs[CUSTOM_STORES_KEY] ?: "[]").toMutableList()
+            if (trimmed !in current) current.add(trimmed)
+            prefs[CUSTOM_STORES_KEY] = serializeCustomStoreUrls(current)
+        }
+        return storeName
+    }
+
+    /** Removes a custom store URL. No-op if not present. */
+    suspend fun removeCustomStore(url: String) {
+        context.dataStore.edit { prefs ->
+            val current = parseCustomStoreUrls(prefs[CUSTOM_STORES_KEY] ?: "[]").toMutableList()
+            current.remove(url)
+            prefs[CUSTOM_STORES_KEY] = serializeCustomStoreUrls(current)
+        }
     }
 
     // ---------------------------------------------------------------------------
@@ -191,4 +256,16 @@ class PluginRepository(private val context: Context) {
             JSONObject(resp.body?.string() ?: return@use null)
         }
     }.getOrNull()
+
+    private fun parseCustomStoreUrls(json: String): List<String> = runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { arr.optString(it).ifBlank { null } }
+    }.getOrElse { emptyList() }
+
+    private fun serializeCustomStoreUrls(urls: List<String>): String =
+        JSONArray().also { arr -> urls.forEach { arr.put(it) } }.toString()
+
+    private fun extractDomainName(url: String): String = runCatching {
+        java.net.URI(url).host ?: url
+    }.getOrElse { url }
 }

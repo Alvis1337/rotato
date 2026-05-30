@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class StoreLoadingState { Loading, Loaded, Error }
+enum class AddStoreState { IDLE, BUSY, SUCCESS, ERROR }
 
 class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
     private val pluginRepository = PluginRepository(app)
@@ -49,43 +50,75 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
     private val _loadingState = MutableStateFlow(StoreLoadingState.Loading)
     val loadingState: StateFlow<StoreLoadingState> = _loadingState.asStateFlow()
 
-    private val _storeEntries = MutableStateFlow<List<PluginStoreEntry>>(emptyList())
-    val storeEntries: StateFlow<List<PluginStoreEntry>> = _storeEntries.asStateFlow()
+    /** Map of storeIndexUrl → list of entries from that store. */
+    private val _entriesByStore = MutableStateFlow<Map<String, List<PluginStoreEntry>>>(emptyMap())
+    val entriesByStore: StateFlow<Map<String, List<PluginStoreEntry>>> = _entriesByStore.asStateFlow()
+
+    /** Flat list of all entries across all stores, for update checking. */
+    val allEntries: List<PluginStoreEntry> get() = _entriesByStore.value.values.flatten()
 
     val installedManifests: StateFlow<List<PluginManifest>> = pluginRepository.installedManifests
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val customStoreUrls: StateFlow<List<String>> = pluginRepository.customStoreUrls
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _updateAvailable = MutableStateFlow<Set<String>>(emptySet())
     val updateAvailable: StateFlow<Set<String>> = _updateAvailable.asStateFlow()
 
-    // Per-plugin install state: id -> state
     private val _installStates = MutableStateFlow<Map<String, InstallPluginState>>(emptyMap())
     val installStates: StateFlow<Map<String, InstallPluginState>> = _installStates.asStateFlow()
 
     private val _installErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     val installErrors: StateFlow<Map<String, String>> = _installErrors.asStateFlow()
 
-    // Install-from-URL state
     private val _urlInstallState = MutableStateFlow(InstallPluginState.IDLE)
     val urlInstallState: StateFlow<InstallPluginState> = _urlInstallState.asStateFlow()
     private val _urlInstallError = MutableStateFlow<String?>(null)
     val urlInstallError: StateFlow<String?> = _urlInstallError.asStateFlow()
 
-    init {
-        refresh()
-    }
+    private val _addStoreState = MutableStateFlow(AddStoreState.IDLE)
+    val addStoreState: StateFlow<AddStoreState> = _addStoreState.asStateFlow()
+    private val _addStoreError = MutableStateFlow<String?>(null)
+    val addStoreError: StateFlow<String?> = _addStoreError.asStateFlow()
+
+    init { refresh() }
 
     fun refresh() {
         viewModelScope.launch {
             _loadingState.update { StoreLoadingState.Loading }
             try {
-                val entries = pluginRepository.fetchStoreIndex()
-                _storeEntries.update { entries }
-                _updateAvailable.update { pluginRepository.checkForUpdates(entries) }
+                val byStore = pluginRepository.fetchAllStoreEntries()
+                _entriesByStore.update { byStore }
+                _updateAvailable.update { pluginRepository.checkForUpdates(byStore.values.flatten()) }
                 _loadingState.update { StoreLoadingState.Loaded }
             } catch (_: Exception) {
                 _loadingState.update { StoreLoadingState.Error }
             }
+        }
+    }
+
+    fun addStore(url: String) {
+        viewModelScope.launch {
+            _addStoreState.update { AddStoreState.BUSY }
+            _addStoreError.update { null }
+            try {
+                pluginRepository.addCustomStore(url)
+                _addStoreState.update { AddStoreState.SUCCESS }
+                refresh()
+            } catch (e: Exception) {
+                _addStoreError.update { e.message ?: "Failed to add store" }
+                _addStoreState.update { AddStoreState.ERROR }
+            }
+            delay(2_000)
+            _addStoreState.update { AddStoreState.IDLE }
+        }
+    }
+
+    fun removeStore(url: String) {
+        viewModelScope.launch {
+            pluginRepository.removeCustomStore(url)
+            refresh()
         }
     }
 
@@ -122,7 +155,6 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
                     prefs.upsertSource(LocalSource(pluginId = manifest.id, enabled = false))
                 }
                 _urlInstallState.update { InstallPluginState.SUCCESS }
-                // Refresh to show newly installed plugin
                 refresh()
             } catch (e: Exception) {
                 _urlInstallError.update { e.message ?: "Failed to install plugin" }
@@ -148,21 +180,27 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
 fun PluginStoreScreen(onNavigateBack: () -> Unit) {
     val vm: PluginStoreViewModel = viewModel()
     val loadingState by vm.loadingState.collectAsStateWithLifecycle()
-    val storeEntries by vm.storeEntries.collectAsStateWithLifecycle()
+    val entriesByStore by vm.entriesByStore.collectAsStateWithLifecycle()
     val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
     val installStates by vm.installStates.collectAsStateWithLifecycle()
     val installErrors by vm.installErrors.collectAsStateWithLifecycle()
     val urlInstallState by vm.urlInstallState.collectAsStateWithLifecycle()
     val urlInstallError by vm.urlInstallError.collectAsStateWithLifecycle()
+    val customStoreUrls by vm.customStoreUrls.collectAsStateWithLifecycle()
+    val addStoreState by vm.addStoreState.collectAsStateWithLifecycle()
+    val addStoreError by vm.addStoreError.collectAsStateWithLifecycle()
 
     val installedIds = remember(installedManifests) { installedManifests.map { it.id }.toSet() }
+    val allEntries = remember(entriesByStore) { entriesByStore.values.flatten() }
 
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
+    var showAddStoreDialog by remember { mutableStateOf(false) }
+    var storeUrlInput by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Auto-dismiss dialog on successful URL install
+    // Auto-dismiss install dialog on success
     LaunchedEffect(urlInstallState) {
         if (urlInstallState == InstallPluginState.SUCCESS) {
             delay(1_000)
@@ -170,13 +208,20 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
             urlInput = ""
         }
     }
+    // Auto-dismiss add-store dialog on success
+    LaunchedEffect(addStoreState) {
+        if (addStoreState == AddStoreState.SUCCESS) {
+            delay(800)
+            showAddStoreDialog = false
+            storeUrlInput = ""
+        }
+    }
 
     if (showUrlDialog) {
         AlertDialog(
             onDismissRequest = {
                 if (urlInstallState != InstallPluginState.BUSY) {
-                    showUrlDialog = false
-                    urlInput = ""
+                    showUrlDialog = false; urlInput = ""
                 }
             },
             title = { Text("Install Plugin from URL") },
@@ -197,11 +242,7 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     )
                     if (urlInstallState == InstallPluginState.ERROR && urlInstallError != null) {
-                        Text(
-                            urlInstallError ?: "",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Text(urlInstallError ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
@@ -210,18 +251,53 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                     onClick = { vm.installFromUrl(urlInput) },
                     enabled = urlInput.isNotBlank() && urlInstallState == InstallPluginState.IDLE
                 ) {
-                    if (urlInstallState == InstallPluginState.BUSY) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text(if (urlInstallState == InstallPluginState.SUCCESS) "Installed!" else "Install")
-                    }
+                    if (urlInstallState == InstallPluginState.BUSY) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Text(if (urlInstallState == InstallPluginState.SUCCESS) "Installed!" else "Install")
                 }
             },
             dismissButton = {
+                TextButton(onClick = { showUrlDialog = false; urlInput = "" }, enabled = urlInstallState != InstallPluginState.BUSY) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showAddStoreDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (addStoreState != AddStoreState.BUSY) { showAddStoreDialog = false; storeUrlInput = "" }
+            },
+            title = { Text("Add Plugin Store") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Enter the URL of a Rotato plugin index JSON file.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = storeUrlInput,
+                        onValueChange = { storeUrlInput = it },
+                        label = { Text("Index URL") },
+                        placeholder = { Text("https://raw.githubusercontent.com/…/index.json") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = addStoreState != AddStoreState.BUSY,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    when (addStoreState) {
+                        AddStoreState.ERROR -> Text(addStoreError ?: "Failed to add store", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                        AddStoreState.SUCCESS -> Text("Store added!", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        else -> {}
+                    }
+                }
+            },
+            confirmButton = {
                 TextButton(
-                    onClick = { showUrlDialog = false; urlInput = "" },
-                    enabled = urlInstallState != InstallPluginState.BUSY
-                ) { Text("Cancel") }
+                    onClick = { vm.addStore(storeUrlInput) },
+                    enabled = storeUrlInput.isNotBlank() && addStoreState == AddStoreState.IDLE
+                ) {
+                    if (addStoreState == AddStoreState.BUSY) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Text(if (addStoreState == AddStoreState.SUCCESS) "Added!" else "Add Store")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddStoreDialog = false; storeUrlInput = "" }, enabled = addStoreState != AddStoreState.BUSY) { Text("Cancel") }
             }
         )
     }
@@ -235,36 +311,64 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    TextButton(onClick = { vm.refresh() }) { Text("Refresh") }
-                }
+                actions = { TextButton(onClick = { vm.refresh() }) { Text("Refresh") } }
             )
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Plugin Stores management section
+            item {
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Plugin Stores", fontWeight = FontWeight.Medium)
+                        // Default store (non-removable)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Rotato Official", style = MaterialTheme.typography.bodyMedium)
+                                Text("Default", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                        // Custom stores
+                        customStoreUrls.forEach { storeUrl ->
+                            val storeName = remember(storeUrl, entriesByStore) {
+                                entriesByStore[storeUrl]?.firstOrNull()?.storeName ?: storeUrl
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(storeName, style = MaterialTheme.typography.bodyMedium)
+                                    Text(storeUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                                }
+                                TextButton(onClick = { vm.removeStore(storeUrl) }) {
+                                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                        OutlinedButton(onClick = { showAddStoreDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Add Plugin Store")
+                        }
+                    }
+                }
+            }
+
             // Install from URL card
             item {
                 OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Install from URL", fontWeight = FontWeight.Medium)
-                        Text(
-                            "Have a plugin manifest URL? Install it directly.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(
-                            onClick = { showUrlDialog = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                        Text("Have a plugin manifest URL? Install it directly.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { showUrlDialog = true }, modifier = Modifier.fillMaxWidth()) {
                             Text("Install from URL")
                         }
                     }
@@ -286,10 +390,7 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
             when (loadingState) {
                 StoreLoadingState.Loading -> {
                     item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     }
@@ -307,41 +408,47 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                     }
                 }
                 StoreLoadingState.Loaded -> {
-                    val filteredEntries = if (searchQuery.isBlank()) storeEntries
-                    else storeEntries.filter { entry ->
-                        entry.name.contains(searchQuery, ignoreCase = true) ||
-                            entry.description.contains(searchQuery, ignoreCase = true) ||
-                            entry.tags.any { it.contains(searchQuery, ignoreCase = true) }
-                    }
+                    // Group plugins by store, filtering by search query
+                    val storeOrder = remember(entriesByStore) { entriesByStore.keys.toList() }
+                    for (storeUrl in storeOrder) {
+                        val storeEntries = entriesByStore[storeUrl] ?: continue
+                        val storeName = storeEntries.firstOrNull()?.storeName ?: storeUrl
+                        val filtered = if (searchQuery.isBlank()) storeEntries
+                        else storeEntries.filter { entry ->
+                            entry.name.contains(searchQuery, ignoreCase = true) ||
+                                entry.description.contains(searchQuery, ignoreCase = true) ||
+                                entry.tags.any { it.contains(searchQuery, ignoreCase = true) }
+                        }
+                        if (filtered.isEmpty()) continue
 
-                    if (filteredEntries.isEmpty()) {
-                        item {
+                        item(key = "header_$storeUrl") {
                             Text(
-                                "No plugins found.",
-                                modifier = Modifier.padding(vertical = 16.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                storeName.uppercase(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                             )
                         }
-                    }
 
-                    items(filteredEntries, key = { it.id }) { entry ->
-                        val isBundled = entry.isBundled || entry.id in PluginStoreViewModel.BUNDLED_IDS
-                        val isInstalled = entry.id in installedIds
-                        val hasUpdate = entry.id in updateAvailable
-                        val installState = installStates[entry.id] ?: InstallPluginState.IDLE
-                        val installError = installErrors[entry.id]
+                        items(filtered, key = { "${storeUrl}:${it.id}" }) { entry ->
+                            val isBundled = entry.isBundled || entry.id in PluginStoreViewModel.BUNDLED_IDS
+                            val isInstalled = entry.id in installedIds
+                            val hasUpdate = entry.id in updateAvailable
+                            val installState = installStates[entry.id] ?: InstallPluginState.IDLE
+                            val installError = installErrors[entry.id]
 
-                        PluginStoreCard(
-                            entry = entry,
-                            isBundled = isBundled,
-                            isInstalled = isInstalled,
-                            hasUpdate = hasUpdate,
-                            installState = installState,
-                            installError = installError,
-                            onInstall = { vm.install(entry) },
-                            onUninstall = { vm.uninstall(entry.id) },
-                        )
-                    }
+                            PluginStoreCard(
+                                entry = entry,
+                                isBundled = isBundled,
+                                isInstalled = isInstalled,
+                                hasUpdate = hasUpdate,
+                                installState = installState,
+                                installError = installError,
+                                onInstall = { vm.install(entry) },
+                                onUninstall = { vm.uninstall(entry.id) },
+                            )
+                        }
+                    } // end for (storeOrder)
                 }
             }
         }
