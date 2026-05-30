@@ -63,7 +63,7 @@ class PluginRepository(private val context: Context) {
     // ---------------------------------------------------------------------------
 
     /** All available manifests: user-installed only. Bundled plugins are no longer auto-loaded. */
-    val manifests: Flow<List<PluginManifest>> = installedManifests
+    val manifests: Flow<List<PluginManifest>> get() = installedManifests
 
     /** Returns the manifest with [id], checking installed first then bundled. Null if not found. */
     suspend fun getManifest(id: String): PluginManifest? = manifests.first().firstOrNull { it.id == id }
