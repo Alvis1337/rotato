@@ -246,10 +246,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         loadLists()
-        val seeded = applyMalSeedIfEnabledInternal()
-        if (!seeded && _searchQuery.value.isBlank()) {
-            loadMore(reset = false)
-        }
+        refreshMalCacheIfEnabled() // silently refresh MAL list; buildDiscoverRequests uses it internally
+        loadMore(reset = false)
     }
 
     /**
@@ -891,33 +889,15 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun applyMalSeedIfEnabled() {
-        viewModelScope.launch {
-            if (!applyMalSeedIfEnabledInternal()) {
-                loadMore(reset = true)
-            }
-        }
-    }
-
-    private suspend fun applyMalSeedIfEnabledInternal(): Boolean {
-        if (_searchQuery.value.isNotBlank()) return false
-        if (!prefs.brainrotFilters.first().useMalFilter) return false
-        if (malPrefs.accessToken.first().isBlank()) return false
-
-        val entries = malRepo.fetchAnimeList().getOrNull().orEmpty()
-        if (entries.isEmpty()) return false
-
-        malPrefs.setAnimeEntries(entries)
-        val seed = entries
-            .random()
-            .title
-            .trim()
-            .lowercase()
-            .replace(" ", "_")
-            .takeIf { it.isNotBlank() } ?: return false
-
-        setSearchQuery(seed)
-        return true
+    /**
+     * Silently fetches and caches the user's MAL list so buildDiscoverRequests can use
+     * it for seeding content. Does NOT set the search query — the search bar stays blank.
+     */
+    private suspend fun refreshMalCacheIfEnabled() {
+        if (!prefs.brainrotFilters.first().useMalFilter) return
+        if (malPrefs.accessToken.first().isBlank()) return
+        val entries = malRepo.fetchAnimeList().getOrNull() ?: return
+        if (entries.isNotEmpty()) malPrefs.setAnimeEntries(entries)
     }
 
     fun setGlobalBlacklist(tags: Set<String>) {
