@@ -49,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -93,6 +94,15 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     val installState: StateFlow<InstallPluginState> = _installState.asStateFlow()
     private val _installError = MutableStateFlow<String?>(null)
     val installError: StateFlow<String?> = _installError.asStateFlow()
+
+    /** True if the one-time plugin-system intro banner should be shown. */
+    val showMigrationNotice: StateFlow<Boolean> = rotaPrefs.pluginSystemIntroShown
+        .map { !it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun dismissMigrationNotice() {
+        viewModelScope.launch { rotaPrefs.dismissPluginSystemIntro() }
+    }
 
     fun setEnabled(pluginId: String, instanceId: String = "", enabled: Boolean) {
         viewModelScope.launch { prefs.update(pluginId, instanceId, enabled = enabled) }
@@ -229,6 +239,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
     val manifests by vm.manifests.collectAsStateWithLifecycle()
     val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
+    val showMigrationNotice by vm.showMigrationNotice.collectAsStateWithLifecycle()
 
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
@@ -347,6 +358,50 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
                 )
             }
 
+            // One-time plugin system migration notice
+            if (showMigrationNotice) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    "Welcome to the new plugin system!",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    "Your existing sources have been automatically migrated. You can now install additional plugins from the Plugin Store.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = { vm.dismissMigrationNotice() }) {
+                                        Text("Got it", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    }
+                                    TextButton(onClick = { vm.dismissMigrationNotice(); onNavigateToPluginStore() }) {
+                                        Text("Browse plugins", color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (freeSources.isNotEmpty()) {
                 item {
                     Text(

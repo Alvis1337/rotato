@@ -67,6 +67,7 @@ class RotatoPreferences(private val context: Context) {
         val IGNORED_UPDATE_VERSION = intPreferencesKey("ignored_update_version")
         val COLLECTION_SORT_ORDER = stringPreferencesKey("collection_sort_order")
         val WIFI_ONLY_DISCOVER = booleanPreferencesKey("wifi_only_discover")
+        val PLUGIN_SYSTEM_INTRO_SHOWN = booleanPreferencesKey("plugin_system_intro_shown")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -532,5 +533,14 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setWifiOnlyDiscover(enabled: Boolean) {
         context.dataStore.edit { it[WIFI_ONLY_DISCOVER] = enabled }
+    }
+
+    /** True once the user has dismissed the plugin-system migration notice. */
+    val pluginSystemIntroShown: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[PLUGIN_SYSTEM_INTRO_SHOWN] ?: false }
+
+    suspend fun dismissPluginSystemIntro() {
+        context.dataStore.edit { it[PLUGIN_SYSTEM_INTRO_SHOWN] = true }
     }
 }
