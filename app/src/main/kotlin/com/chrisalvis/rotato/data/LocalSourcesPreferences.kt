@@ -42,6 +42,7 @@ class LocalSourcesPreferences(private val context: Context) {
         apiUser: String? = null,
         tags: String? = null,
         wallhavenPurity: String? = null,
+        baseUrl: String? = null,
     ) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
@@ -54,6 +55,7 @@ class LocalSourcesPreferences(private val context: Context) {
                 apiUser = apiUser ?: existing.apiUser,
                 tags = tags ?: existing.tags,
                 wallhavenPurity = wallhavenPurity ?: existing.wallhavenPurity,
+                baseUrl = baseUrl ?: existing.baseUrl,
             )
             prefs[SOURCES_KEY] = serialize(current)
         }
@@ -140,6 +142,9 @@ class LocalSourcesPreferences(private val context: Context) {
                     .takeUnless { it.isBlank() || it == "null" }
                     ?.toBooleanStrictOrNull(),
                 baseUrl = o.optString("baseUrl", ""),
+                extraConfig = o.optJSONObject("extraConfig")?.let { obj ->
+                    buildMap { obj.keys().forEach { k -> put(k, obj.optString(k)) } }
+                } ?: emptyMap(),
             ))
         }
         // Backfill any missing bundled (non-Reddit) plugin IDs with defaults
@@ -162,6 +167,11 @@ class LocalSourcesPreferences(private val context: Context) {
                     put("wallhavenPurity", s.wallhavenPurity)
                     put("nsfwEnabled", s.nsfwEnabled ?: JSONObject.NULL)
                     if (s.baseUrl.isNotBlank()) put("baseUrl", s.baseUrl)
+                    if (s.extraConfig.isNotEmpty()) {
+                        val extrasObj = JSONObject()
+                        s.extraConfig.forEach { (k, v) -> extrasObj.put(k, v) }
+                        put("extraConfig", extrasObj)
+                    }
                 })
             }
         }.toString()

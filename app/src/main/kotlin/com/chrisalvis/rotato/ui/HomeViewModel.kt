@@ -610,6 +610,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             put("apiUser", s.apiUser)
                             put("tags", s.tags)
                             put("wallhavenPurity", s.wallhavenPurity)
+                            if (s.extraConfig.isNotEmpty()) {
+                                put("extraConfig", JSONObject().apply {
+                                    s.extraConfig.forEach { (k, v) -> put(k, v) }
+                                })
+                            }
                         })
                     }
                 }
@@ -705,6 +710,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 apiUser = o.optString("apiUser", ""),
                                 tags = o.optString("tags", ""),
                                 wallhavenPurity = o.optString("wallhavenPurity", "110"),
+                                extraConfig = o.optJSONObject("extraConfig")?.let { extra ->
+                                    buildMap { extra.keys().forEach { k -> put(k, extra.optString(k)) } }
+                                } ?: emptyMap(),
                             )
                         )
                     }

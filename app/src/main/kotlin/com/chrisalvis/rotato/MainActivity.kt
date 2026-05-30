@@ -36,6 +36,7 @@ import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.BrowseScreen
 import com.chrisalvis.rotato.ui.LocalSourcesScreen
+import com.chrisalvis.rotato.ui.PluginStoreScreen
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
 import com.chrisalvis.rotato.ui.MalViewModel
@@ -115,7 +116,7 @@ class MainActivity : AppCompatActivity() {
                     else -> 0
                 }
 
-                val showBottomBar = currentRoute !in setOf("sources", "source_health", "setup", "onboarding")
+                val showBottomBar = currentRoute !in setOf("sources", "source_health", "setup", "onboarding", "plugin_store")
                     && brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null
 
                 // Handle navigation from notifications, shortcuts, or schedule receiver
@@ -240,7 +241,13 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                         composable("sources") {
-                            LocalSourcesScreen(onNavigateBack = { navController.popBackStack() })
+                            LocalSourcesScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToPluginStore = { navController.navigate("plugin_store") }
+                            )
+                        }
+                        composable("plugin_store") {
+                            PluginStoreScreen(onNavigateBack = { navController.popBackStack() })
                         }
                         composable("schedule") {
                             ScheduleScreen(onNavigateBack = { navController.popBackStack() })

@@ -2,6 +2,7 @@
   "id": "WALLHAVEN",
   "name": "Wallhaven",
   "version": "1.0",
+  "versionCode": 1,
   "author": "Rotato",
   "description": "Curated high-resolution wallpapers. API key enables NSFW content.",
   "protocol": "WALLHAVEN",

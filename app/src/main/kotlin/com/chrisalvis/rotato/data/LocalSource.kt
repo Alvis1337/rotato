@@ -13,5 +13,6 @@ data class LocalSource(
     val nsfwEnabled: Boolean? = null,
     /** Optional base URL override for user-configured instances. Blank = use manifest default. */
     val baseUrl: String = "",
+    val extraConfig: Map<String, String> = emptyMap(),
 )
 

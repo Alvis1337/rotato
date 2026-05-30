@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2025-01-01",
+  "plugins": [
+    {
+      "id": "SAFEBOORU",
+      "name": "Safebooru",
+      "description": "Safe-for-work anime art booru. No credentials required.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/safebooru.json",
+      "tags": ["anime", "safe", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "ZEROCHAN",
+      "name": "Zerochan",
+      "description": "Curated anime art with high-quality images. No credentials required.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/zerochan.json",
+      "tags": ["anime", "safe", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "KONACHAN",
+      "name": "Konachan",
+      "description": "High-quality anime wallpapers. No credentials required.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/konachan.json",
+      "tags": ["anime", "safe", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "YANDERE",
+      "name": "Yande.re",
+      "description": "High-resolution anime art booru.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/yandere.json",
+      "tags": ["anime", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "DANBOORU",
+      "name": "Danbooru",
+      "description": "Large anime art booru. API credentials expand access.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/danbooru.json",
+      "tags": ["anime", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "RULE34",
+      "name": "Rule34",
+      "description": "Adult content booru. May contain NSFW material.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/rule34.json",
+      "tags": ["anime", "nsfw", "free"],
+      "isBundled": true,
+      "safeContent": false
+    },
+    {
+      "id": "GELBOORU",
+      "name": "Gelbooru",
+      "description": "High-volume anime/game art booru. Requires API credentials.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/gelbooru.json",
+      "tags": ["anime", "premium"],
+      "isBundled": true,
+      "safeContent": false
+    },
+    {
+      "id": "WALLHAVEN",
+      "name": "Wallhaven",
+      "description": "Curated high-resolution wallpapers. API key enables NSFW content.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/wallhaven.json",
+      "tags": ["wallpapers", "premium"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "REDDIT",
+      "name": "Reddit",
+      "description": "Browse wallpaper subreddits. Add individual subreddits as sources.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/reddit.json",
+      "tags": ["wallpapers", "free"],
+      "isBundled": true,
+      "safeContent": true
+    }
+  ]
+}

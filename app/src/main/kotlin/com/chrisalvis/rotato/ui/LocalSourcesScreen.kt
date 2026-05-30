@@ -40,6 +40,7 @@ import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealth
 import com.chrisalvis.rotato.data.SourceHealthTracker
+import com.chrisalvis.rotato.data.plugins.FieldType
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginManifest
@@ -107,6 +108,19 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setWallhavenPurity(pluginId: String, instanceId: String = "", purity: String) {
         viewModelScope.launch { prefs.update(pluginId, instanceId, wallhavenPurity = purity) }
+    }
+
+    fun setBaseUrl(pluginId: String, instanceId: String = "", baseUrl: String) {
+        viewModelScope.launch { prefs.update(pluginId, instanceId, baseUrl = baseUrl) }
+    }
+
+    fun setExtraConfig(pluginId: String, instanceId: String = "", key: String, value: String) {
+        viewModelScope.launch {
+            val current = prefs.sources.first()
+                .firstOrNull { it.pluginId == pluginId && it.instanceId == instanceId }
+                ?: return@launch
+            prefs.upsertSource(current.copy(extraConfig = current.extraConfig + (key to value)))
+        }
     }
 
     fun addRedditInstance(subreddit: String) {
@@ -206,7 +220,7 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
+fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -> Unit) {
     val vm: LocalSourcesViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val healthMap by vm.health.collectAsStateWithLifecycle()
@@ -215,8 +229,6 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
     val manifests by vm.manifests.collectAsStateWithLifecycle()
     val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
-    val installState by vm.installState.collectAsStateWithLifecycle()
-    val installError by vm.installError.collectAsStateWithLifecycle()
 
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
@@ -228,8 +240,6 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
     var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var showInstallDialog by remember { mutableStateOf(false) }
-    var installUrl by remember { mutableStateOf("") }
 
     if (showAddRedditDialog) {
         val redditFocus = remember { FocusRequester() }
@@ -301,116 +311,6 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
             }
         )
     }
-    if (showInstallDialog) {
-        AlertDialog(
-            onDismissRequest = { if (installState != InstallPluginState.BUSY) { showInstallDialog = false; installUrl = "" } },
-            title = { Text("Install Plugin from URL") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Enter the URL of a Rotato plugin manifest JSON file.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = installUrl,
-                        onValueChange = { installUrl = it },
-                        label = { Text("Manifest URL") },
-                        placeholder = { Text("https://example.com/plugin.json") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = installState != InstallPluginState.BUSY,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    )
-                    if (installState == InstallPluginState.ERROR && installError != null) {
-                        Text(
-                            installError ?: "",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { vm.installPlugin(installUrl) },
-                    enabled = installUrl.isNotBlank() && installState == InstallPluginState.IDLE
-                ) {
-                    if (installState == InstallPluginState.BUSY) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Install")
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showInstallDialog = false; installUrl = "" },
-                    enabled = installState != InstallPluginState.BUSY
-                ) { Text("Cancel") }
-            }
-        )
-    }
-    if (showInstallDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                if (installState != InstallPluginState.BUSY) {
-                    showInstallDialog = false
-                    installUrl = ""
-                }
-            },
-            title = { Text("Install Plugin from URL") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Enter the URL of a Rotato plugin manifest JSON file.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    OutlinedTextField(
-                        value = installUrl,
-                        onValueChange = { installUrl = it },
-                        label = { Text("Manifest URL") },
-                        placeholder = { Text("https://example.com/plugin.json") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = installState != InstallPluginState.BUSY,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    )
-                    if (installState == InstallPluginState.ERROR && installError != null) {
-                        Text(
-                            installError ?: "",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { vm.installPlugin(installUrl) },
-                    enabled = installUrl.isNotBlank() && installState == InstallPluginState.IDLE
-                ) {
-                    if (installState == InstallPluginState.BUSY) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Install")
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showInstallDialog = false
-                        installUrl = ""
-                    },
-                    enabled = installState != InstallPluginState.BUSY
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
     // Partition: non-Reddit free, Reddit instances, then premium
     val freeSources = sources.filter { manifestMap[it.pluginId]?.isPremium != true && it.pluginId != "REDDIT" }
     val redditSources = sources.filter { it.pluginId == "REDDIT" }
@@ -427,8 +327,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showInstallDialog = true }) {
-                        Text("Install Plugin")
+                    TextButton(onClick = onNavigateToPluginStore) {
+                        Text("Plugin Store")
                     }
                 }
             )
@@ -468,6 +368,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
                         onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
                         onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
+                        onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
+                        onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { vm.testSource(source) },
                         onSaved = onSaved,
@@ -496,6 +398,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     onSaveCredentials = { _, _ -> },
                     onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
                     onSaveWallhavenPurity = {},
+                    onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
+                    onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
                     onValidateWallhavenKey = {},
                     onTest = { vm.testSource(source) },
                     onRemove = { confirmRemove = source.pluginId to source.instanceId },
@@ -536,6 +440,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
                         onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
                         onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
+                        onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
+                        onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { if (unlocked) vm.testSource(source) },
                         onSaved = onSaved,
@@ -617,6 +523,8 @@ private fun SourceCard(
     onSaveCredentials: (String, String) -> Unit,
     onSaveTags: (String) -> Unit,
     onSaveWallhavenPurity: (String) -> Unit = {},
+    onSaveBaseUrl: (String) -> Unit = {},
+    onSaveExtraConfig: (String, String) -> Unit = { _, _ -> },
     onValidateWallhavenKey: (String) -> Unit = {},
     onTest: () -> Unit = {},
     onRemove: (() -> Unit)? = null,
@@ -626,6 +534,17 @@ private fun SourceCard(
     var apiKey by remember(source) { mutableStateOf(source.apiKey) }
     var apiUser by remember(source) { mutableStateOf(source.apiUser) }
     var tags by remember(source) { mutableStateOf(source.tags) }
+    var baseUrl by remember(source) { mutableStateOf(source.baseUrl) }
+    val extraConfig = remember(source, manifest?.configFields) {
+        mutableStateMapOf<String, String>().apply {
+            manifest?.configFields?.forEach { field ->
+                put(
+                    field.key,
+                    source.extraConfig[field.key] ?: if (field.type == FieldType.TOGGLE) "false" else "",
+                )
+            }
+        }
+    }
     // Wallhaven purity bitmask: index 0=SFW, 1=Sketchy, 2=NSFW
     var puritySfw by remember(source) { mutableStateOf(source.wallhavenPurity.getOrElse(0) { '1' } == '1') }
     var puritySketchy by remember(source) { mutableStateOf(source.wallhavenPurity.getOrElse(1) { '1' } == '1') }
@@ -783,6 +702,76 @@ private fun SourceCard(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                     )
                 }
+                if (manifest?.instanceUrlConfigurable == true) {
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("Instance URL") },
+                        placeholder = { Text(manifest?.defaultBaseUrl ?: "https://...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        supportingText = { Text("Override the default API endpoint") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
+                    )
+                }
+                manifest?.configFields?.forEach { field ->
+                    when (field.type) {
+                        FieldType.TOGGLE -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(field.label, style = MaterialTheme.typography.bodyMedium)
+                                        if (field.hint.isNotBlank()) {
+                                            Text(
+                                                field.hint,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                    Switch(
+                                        checked = extraConfig[field.key].toBooleanStrictOrNull() ?: false,
+                                        onCheckedChange = { extraConfig[field.key] = it.toString() },
+                                    )
+                                }
+                            }
+                        }
+                        else -> {
+                            OutlinedTextField(
+                                value = extraConfig[field.key].orEmpty(),
+                                onValueChange = { extraConfig[field.key] = it },
+                                label = { Text(field.label) },
+                                placeholder = { if (field.placeholder.isNotBlank()) Text(field.placeholder) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = field.type != FieldType.TAGS,
+                                supportingText = {
+                                    val helper = buildList {
+                                        if (field.required) add("Required")
+                                        if (field.hint.isNotBlank()) add(field.hint)
+                                    }.joinToString(" • ")
+                                    if (helper.isNotBlank()) Text(helper)
+                                },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = when (field.type) {
+                                        FieldType.URL -> KeyboardType.Uri
+                                        FieldType.PASSWORD -> KeyboardType.Password
+                                        else -> KeyboardType.Text
+                                    },
+                                    imeAction = ImeAction.Done,
+                                ),
+                                visualTransformation = if (field.type == FieldType.PASSWORD) {
+                                    PasswordVisualTransformation()
+                                } else {
+                                    VisualTransformation.None
+                                },
+                            )
+                        }
+                    }
+                }
                 if (manifest?.needsApiUser == true) {
                     OutlinedTextField(
                         value = apiUser,
@@ -895,6 +884,10 @@ private fun SourceCard(
                             if (apiKey.isNotBlank()) onValidateWallhavenKey(apiKey)
                             val p = "${if (puritySfw) '1' else '0'}${if (puritySketchy) '1' else '0'}${if (purityNsfw) '1' else '0'}"
                             onSaveWallhavenPurity(if (p == "000") "100" else p)
+                        }
+                        onSaveBaseUrl(baseUrl.trim())
+                        manifest?.configFields?.forEach { field ->
+                            onSaveExtraConfig(field.key, extraConfig[field.key]?.trim().orEmpty())
                         }
                         expanded = false
                         onSaved()

@@ -17,6 +17,19 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+data class PluginStoreEntry(
+    val id: String,
+    val name: String,
+    val description: String,
+    val author: String,
+    val version: String,
+    val versionCode: Int,
+    val manifestUrl: String,
+    val tags: List<String>,
+    val isBundled: Boolean,
+    val safeContent: Boolean,
+)
+
 /**
  * Manages the full catalog of [PluginManifest] instances: bundled (from assets/) and
  * user-installed (from remote URLs, persisted in DataStore).
@@ -30,6 +43,8 @@ class PluginRepository(private val context: Context) {
 
     companion object {
         private val INSTALLED_PLUGINS_KEY = stringPreferencesKey("installed_plugins_json")
+        const val STORE_INDEX_URL = "https://raw.githubusercontent.com/Alvis1337/rotato/main/plugin-store/index.json"
+        private val BUNDLED_IDS = setOf("GELBOORU", "DANBOORU", "RULE34", "SAFEBOORU", "WALLHAVEN", "KONACHAN", "YANDERE", "ZEROCHAN", "REDDIT")
 
         private val httpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -79,6 +94,47 @@ class PluginRepository(private val context: Context) {
     val installedManifests: Flow<List<PluginManifest>> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { prefs -> parseInstalledManifests(prefs[INSTALLED_PLUGINS_KEY] ?: "[]") }
+
+    /** Fetches the community plugin store index. Returns empty list on error. */
+    suspend fun fetchStoreIndex(): List<PluginStoreEntry> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder().url(STORE_INDEX_URL)
+                .header("User-Agent", "Rotato/1.0 plugin-store")
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@runCatching emptyList()
+                val body = resp.body?.string() ?: return@runCatching emptyList()
+                val json = JSONObject(body)
+                val pluginsArr = json.optJSONArray("plugins") ?: return@runCatching emptyList()
+                (0 until pluginsArr.length()).mapNotNull { i ->
+                    val o = pluginsArr.optJSONObject(i) ?: return@mapNotNull null
+                    val id = o.optString("id").ifBlank { return@mapNotNull null }
+                    val manifestUrl = o.optString("manifestUrl").ifBlank { return@mapNotNull null }
+                    PluginStoreEntry(
+                        id = id,
+                        name = o.optString("name", id),
+                        description = o.optString("description", ""),
+                        author = o.optString("author", "Rotato"),
+                        version = o.optString("version", "1.0"),
+                        versionCode = o.optInt("versionCode", 1),
+                        manifestUrl = manifestUrl,
+                        tags = o.optJSONArray("tags")?.let { t -> (0 until t.length()).map { t.getString(it) } } ?: emptyList(),
+                        isBundled = o.optBoolean("isBundled", id in BUNDLED_IDS),
+                        safeContent = o.optBoolean("safeContent", true),
+                    )
+                }
+            }
+        }.getOrElse { emptyList() }
+    }
+
+    /** Returns plugin IDs where the store has a newer versionCode than the installed version. */
+    suspend fun checkForUpdates(storeEntries: List<PluginStoreEntry>): Set<String> {
+        val installed = installedManifests.first().associateBy { it.id }
+        return storeEntries
+            .filter { entry -> installed[entry.id]?.let { entry.versionCode > it.versionCode } == true }
+            .map { it.id }
+            .toSet()
+    }
 
     // ---------------------------------------------------------------------------
     // Bundled manifest loading

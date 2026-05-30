@@ -2,6 +2,7 @@
   "id": "RULE34",
   "name": "Rule34",
   "version": "1.0",
+  "versionCode": 1,
   "author": "Rotato",
   "description": "Rule34 booru. Requires a free account — get your User ID and API Key from rule34.xxx account options.",
   "protocol": "GELBOORU",

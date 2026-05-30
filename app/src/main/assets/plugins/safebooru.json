@@ -2,6 +2,7 @@
   "id": "SAFEBOORU",
   "name": "Safebooru",
   "version": "1.0",
+  "versionCode": 1,
   "author": "Rotato",
   "description": "Safe-for-work booru board. No account needed.",
   "protocol": "GELBOORU",

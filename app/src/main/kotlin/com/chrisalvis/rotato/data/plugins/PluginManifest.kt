@@ -1,5 +1,6 @@
 package com.chrisalvis.rotato.data.plugins
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 enum class Protocol {
@@ -18,6 +19,17 @@ sealed class PluginAuth {
         val required: Boolean = false,
     ) : PluginAuth()
 }
+
+enum class FieldType { TEXT, PASSWORD, URL, TOGGLE, TAGS }
+
+data class PluginConfigField(
+    val key: String,
+    val label: String,
+    val type: FieldType = FieldType.TEXT,
+    val placeholder: String = "",
+    val required: Boolean = false,
+    val hint: String = "",
+)
 
 /**
  * Declarative description of a wallpaper source. Parsed from JSON (bundled assets or remote URL).
@@ -43,6 +55,8 @@ data class PluginManifest(
      *      "imageUrl" ("file_url"|"safebooru"), "ratingTag" ("general"|"safe")
      */
     val extras: Map<String, String> = emptyMap(),
+    val versionCode: Int = 1,
+    val configFields: List<PluginConfigField> = emptyList(),
 ) {
     val needsApiKey: Boolean get() = auth is PluginAuth.ApiKey || auth is PluginAuth.ApiKeyUserId
     val needsApiUser: Boolean get() = auth is PluginAuth.ApiKeyUserId
@@ -94,6 +108,21 @@ data class PluginManifest(
             extras.forEach { (k, v) -> extrasObj.put(k, v) }
             put("extras", extrasObj)
         }
+        put("versionCode", versionCode)
+        if (configFields.isNotEmpty()) {
+            put("configFields", JSONArray().also { arr ->
+                configFields.forEach { f ->
+                    arr.put(JSONObject().apply {
+                        put("key", f.key)
+                        put("label", f.label)
+                        put("type", f.type.name)
+                        if (f.placeholder.isNotBlank()) put("placeholder", f.placeholder)
+                        if (f.required) put("required", true)
+                        if (f.hint.isNotBlank()) put("hint", f.hint)
+                    })
+                }
+            })
+        }
     }
 
     companion object {
@@ -131,6 +160,24 @@ data class PluginManifest(
                 extras = json.optJSONObject("extras")?.let { ext ->
                     buildMap { ext.keys().forEach { k -> put(k, ext.optString(k)) } }
                 } ?: emptyMap(),
+                versionCode = json.optInt("versionCode", 1),
+                configFields = json.optJSONArray("configFields")?.let { arr ->
+                    (0 until arr.length()).mapNotNull { i ->
+                        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                        val key = o.optString("key").ifBlank { return@mapNotNull null }
+                        val label = o.optString("label").ifBlank { return@mapNotNull null }
+                        PluginConfigField(
+                            key = key,
+                            label = label,
+                            type = FieldType.entries.firstOrNull {
+                                it.name.equals(o.optString("type"), ignoreCase = true)
+                            } ?: FieldType.TEXT,
+                            placeholder = o.optString("placeholder", ""),
+                            required = o.optBoolean("required", false),
+                            hint = o.optString("hint", ""),
+                        )
+                    }
+                } ?: emptyList(),
             )
         }
     }

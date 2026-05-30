@@ -2,6 +2,7 @@
   "id": "DANBOORU",
   "name": "Danbooru",
   "version": "1.0",
+  "versionCode": 1,
   "author": "Rotato",
   "description": "Large anime art booru. Free accounts limited to 2 search tags.",
   "protocol": "DANBOORU",

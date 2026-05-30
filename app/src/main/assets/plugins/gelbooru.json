@@ -2,6 +2,7 @@
   "id": "GELBOORU",
   "name": "Gelbooru",
   "version": "1.0",
+  "versionCode": 1,
   "author": "Rotato",
   "description": "High-volume anime/game art booru with optional API credentials.",
   "protocol": "GELBOORU",
