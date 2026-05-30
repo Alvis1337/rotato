@@ -75,7 +75,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
-import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -172,7 +171,6 @@ fun BrainrotScreen(
     val resetVersion by vm.resetVersion.collectAsStateWithLifecycle()
     val danbooruEnabled by vm.danbooruEnabled.collectAsStateWithLifecycle()
     val allSources by vm.allSources.collectAsStateWithLifecycle()
-    val discoverMode by vm.discoverMode.collectAsStateWithLifecycle()
     val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     val gridMode by vm.gridMode.collectAsStateWithLifecycle()
@@ -540,32 +538,6 @@ fun BrainrotScreen(
                                     }
                                 }
                                 Spacer(Modifier.height(6.dp))
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(start = 12.dp, end = 8.dp, bottom = 2.dp)
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.width(4.dp))
-                                Text("Discover mode", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp)
-                            ) {
-                                items(DiscoverMode.entries, key = { it.name }) { mode ->
-                                    val icon = when (mode) {
-                                        DiscoverMode.RANDOM -> Icons.Default.Shuffle
-                                        DiscoverMode.POPULAR -> Icons.Default.TrendingUp
-                                        DiscoverMode.RECENT -> Icons.Default.Schedule
-                                    }
-                                    FilterChip(
-                                        selected = discoverMode == mode,
-                                        onClick = { vm.setDiscoverMode(mode) },
-                                        leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                                        label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) }
-                                    )
-                                }
                             }
                         }
                     }

@@ -2,7 +2,6 @@ package com.chrisalvis.rotato.data.plugins
 
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
-import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.matches
 import okhttp3.Request
@@ -72,18 +71,9 @@ object DanbooruPlugin : SourcePlugin() {
             if (isPremiumAccount && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }
-            // Discover mode ordering (meta-tags work on all accounts, count as tags so only apply for premium)
-            if (isPremiumAccount) {
-                when (filters.discoverMode) {
-                    DiscoverMode.POPULAR -> append(" order:score")
-                    DiscoverMode.RECENT -> append(" order:id_desc")
-                    DiscoverMode.RANDOM -> Unit
-                }
-            }
         }.trim()
 
-        val useRandom = filters.discoverMode == DiscoverMode.RANDOM
-        val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.urlEncode()}&limit=20${if (useRandom) "&random=true" else ""}"
+        val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.urlEncode()}&limit=20&random=true"
         val req = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
             .apply { if (auth != null) addHeader("Authorization", auth) }.build()
         val arr = runCatching {
@@ -141,16 +131,8 @@ object DanbooruPlugin : SourcePlugin() {
             if (isPremiumAccount && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }
-            if (isPremiumAccount) {
-                when (filters.discoverMode) {
-                    DiscoverMode.POPULAR -> append(" order:score")
-                    DiscoverMode.RECENT -> append(" order:id_desc")
-                    DiscoverMode.RANDOM -> Unit
-                }
-            }
         }.trim()
-        val useRandom = filters.discoverMode == DiscoverMode.RANDOM
-        val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.urlEncode()}&limit=$limit${if (useRandom) "&random=true" else ""}"
+        val url = "https://danbooru.donmai.us/posts.json?tags=${tagQuery.urlEncode()}&limit=$limit&random=true"
         val req = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
             .apply { if (auth != null) addHeader("Authorization", auth) }.build()
         val arr = runCatching {

@@ -2,7 +2,6 @@ package com.chrisalvis.rotato.data.plugins
 
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
-import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.LocalSource
 import org.json.JSONObject
 
@@ -47,8 +46,8 @@ object RedditPlugin : SourcePlugin() {
         exclude: List<String>,
         limit: Int,
     ): List<BrainrotWallpaper> {
-        val sort = if (filters.discoverMode == DiscoverMode.RECENT) "new" else "top"
-        val timeParam = if (sort == "top") "&t=month" else ""
+        val sort = "top"
+        val timeParam = "&t=month"
         val url = "https://www.reddit.com/r/${subreddit.urlEncode()}/$sort.json?limit=100&raw_json=1$timeParam"
         val json = getJson(url) ?: return emptyList()
         val children = json.optJSONObject("data")?.optJSONArray("children") ?: return emptyList()

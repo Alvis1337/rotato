@@ -15,7 +15,6 @@ import coil.request.SuccessResult
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
-import com.chrisalvis.rotato.data.DiscoverMode
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
@@ -142,10 +141,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     val brainrotFilters: StateFlow<BrainrotFilters> = prefs.brainrotFilters
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrainrotFilters())
-
-    val discoverMode: StateFlow<DiscoverMode> = prefs.brainrotFilters
-        .map { it.discoverMode }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverMode.RANDOM)
 
     val sources: StateFlow<List<LocalSource>> = localSources.sources
         .map { configured -> configured.filter { it.enabled } }
@@ -903,13 +898,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setGlobalBlacklist(tags: Set<String>) {
         viewModelScope.launch {
             prefs.setGlobalBlacklist(tags)
-            loadMore(reset = true)
-        }
-    }
-
-    fun setDiscoverMode(mode: DiscoverMode) {
-        viewModelScope.launch {
-            prefs.setDiscoverMode(mode)
             loadMore(reset = true)
         }
     }

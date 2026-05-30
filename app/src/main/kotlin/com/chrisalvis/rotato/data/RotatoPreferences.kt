@@ -58,7 +58,6 @@ class RotatoPreferences(private val context: Context) {
         val TOTAL_ROTATIONS = longPreferencesKey("total_rotations")
         val ROTATION_ERRORS = stringPreferencesKey("rotation_errors_json")
         val PINNED_SEARCHES = stringPreferencesKey("pinned_searches_json")
-        val DISCOVER_MODE = stringPreferencesKey("discover_mode")
         val WIDGET_COLLECTION_ID = stringPreferencesKey("widget_collection_id")
         val SEEN_WALLPAPER_KEYS = stringPreferencesKey("seen_wallpaper_keys_json")
         val DISCOVER_HINT_SEEN = booleanPreferencesKey("discover_hint_seen")
@@ -196,9 +195,6 @@ class RotatoPreferences(private val context: Context) {
                 phoneScreenWidth = prefs[PHONE_SCREEN_WIDTH] ?: 0,
                 phoneScreenHeight = prefs[PHONE_SCREEN_HEIGHT] ?: 0,
                 useMalFilter = prefs[USE_MAL_FILTER] ?: true,
-                discoverMode = prefs[DISCOVER_MODE]?.let {
-                    runCatching { DiscoverMode.valueOf(it) }.getOrNull()
-                } ?: DiscoverMode.RANDOM,
             )
         }
 
@@ -467,10 +463,6 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun clearRotationErrors() {
         context.dataStore.edit { it[ROTATION_ERRORS] = "[]" }
-    }
-
-    suspend fun setDiscoverMode(mode: DiscoverMode) {
-        context.dataStore.edit { it[DISCOVER_MODE] = mode.name }
     }
 
     val pinnedSearches: Flow<List<String>> = context.dataStore.data

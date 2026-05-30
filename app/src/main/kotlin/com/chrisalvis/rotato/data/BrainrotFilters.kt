@@ -26,12 +26,6 @@ enum class AspectRatio(
     MY_PHONE("My Phone", "", -1, -1),
 }
 
-enum class DiscoverMode(val label: String) {
-    RANDOM("Random"),
-    POPULAR("Popular"),
-    RECENT("Recent"),
-}
-
 data class BrainrotFilters(
     val minResolution: MinResolution = MinResolution.ANY,
     val aspectRatio: AspectRatio = AspectRatio.ANY,
@@ -40,7 +34,6 @@ data class BrainrotFilters(
     val phoneScreenWidth: Int = 0,
     val phoneScreenHeight: Int = 0,
     val useMalFilter: Boolean = true,
-    val discoverMode: DiscoverMode = DiscoverMode.RANDOM,
 )
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */
