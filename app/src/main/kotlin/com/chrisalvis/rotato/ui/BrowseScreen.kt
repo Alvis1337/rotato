@@ -12,6 +12,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -196,6 +197,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var previewWallpaper by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var editRulesFor by remember { mutableStateOf<LocalList?>(null) }
+    val gridState = rememberLazyGridState()
+    val browseScope = rememberCoroutineScope()
 
     fun updateCover(wallpaper: BrowseWallpaper) {
         val entry = vm.wallpaperEntry(wallpaper.entryId) ?: return
@@ -251,7 +254,11 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             onShare = { wp ->
                 vm.shareWallpapers(context, listOf(wp.toLocalWallpaperEntry(selectedList?.id.orEmpty())))
             },
-            onDismiss = { previewWallpaper = null }
+            onDismiss = { lastViewed ->
+                previewWallpaper = null
+                val idx = wallpapers.indexOfFirst { it.entryId == lastViewed?.entryId }.takeIf { it >= 0 }
+                if (idx != null) browseScope.launch { gridState.scrollToItem(idx) }
+            }
         )
     }
 
@@ -633,6 +640,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     selectionMode = selectionMode,
                     selected = selected,
                     brokenEntryIds = brokenEntryIds,
+                    gridState = gridState,
                     onTap = { wp ->
                         if (selectionMode) vm.toggleSelection(wp)
                         else previewWallpaper = wp
@@ -1271,6 +1279,7 @@ private fun WallpaperGridContent(
     selectionMode: Boolean,
     selected: Set<String>,
     brokenEntryIds: Set<String>,
+    gridState: LazyGridState = rememberLazyGridState(),
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
     onPickFromDevice: (() -> Unit)? = null,
@@ -1322,7 +1331,6 @@ private fun WallpaperGridContent(
         return
     }
 
-    val gridState = rememberLazyGridState()
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(listId) { gridState.animateScrollToItem(0) }
 
@@ -1527,9 +1535,9 @@ private fun WallpaperUrlPreviewDialog(
     onSetAsCover: (BrowseWallpaper) -> Unit,
     onCopyUrl: (BrowseWallpaper) -> Unit,
     onShare: (BrowseWallpaper) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: (currentWallpaper: BrowseWallpaper?) -> Unit
 ) {
-    BackHandler(onBack = onDismiss)
+    BackHandler(onBack = { onDismiss(currentWallpaper) })
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -1549,7 +1557,7 @@ private fun WallpaperUrlPreviewDialog(
     LaunchedEffect(pagerState.currentPage) { showZoom = false }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { onDismiss(currentWallpaper) },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Box(
@@ -1609,7 +1617,7 @@ private fun WallpaperUrlPreviewDialog(
                                             targetValue = 800f,
                                             animationSpec = tween(durationMillis = 240, easing = FastOutLinearInEasing)
                                         )
-                                        onDismiss()
+                                        onDismiss(currentWallpaper)
                                     } else {
                                         offsetY.animateTo(
                                             targetValue = 0f,
@@ -1657,7 +1665,7 @@ private fun WallpaperUrlPreviewDialog(
 
             // Close button
             IconButton(
-                onClick = onDismiss,
+                onClick = { onDismiss(currentWallpaper) },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
