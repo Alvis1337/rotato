@@ -734,7 +734,7 @@ private fun SourceCard(
                                         }
                                     }
                                     Switch(
-                                        checked = extraConfig[field.key].toBooleanStrictOrNull() ?: false,
+                                        checked = extraConfig[field.key]?.toBooleanStrictOrNull() ?: false,
                                         onCheckedChange = { extraConfig[field.key] = it.toString() },
                                     )
                                 }
