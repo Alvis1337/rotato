@@ -1,53 +1,51 @@
 package com.chrisalvis.rotato.data
 
+import android.content.Context
 import android.util.Log
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
-import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
+import com.chrisalvis.rotato.data.plugins.PluginExecutor
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 
 private const val TAG = "DirectSource"
 
 /**
  * Entry point for fetching one wallpaper from a [LocalSource].
- * Delegates to the matching [SourcePlugin] in [SourcePluginRegistry] and
- * records fetch health in [SourceHealthTracker].
+ * Delegates to [PluginExecutor] via [PluginRepository] and records fetch health in [SourceHealthTracker].
  */
 suspend fun fetchFromSource(
+    context: Context,
     source: LocalSource,
     query: String,
     exclude: List<String> = emptyList(),
     nsfwMode: Boolean = false,
     filters: BrainrotFilters = BrainrotFilters(),
 ): BrainrotWallpaper? {
-    val plugin = SourcePluginRegistry.forType(source.type)
-    if (plugin == null) {
-        Log.w(TAG, "No plugin registered for source type: ${source.type}")
-        SourceHealthTracker.recordError(source.type, "No plugin registered")
+    val manifest = PluginRepository(context).getManifest(source.pluginId)
+    if (manifest == null) {
+        Log.w(TAG, "No manifest for pluginId: ${source.pluginId}")
+        SourceHealthTracker.recordError(source.pluginId, "No manifest registered")
         return null
     }
-    if (!PluginEntitlement.isUnlocked(plugin)) {
-        Log.d(TAG, "Plugin ${plugin.displayName} is locked — skipping")
+    if (!PluginEntitlement.isUnlocked(manifest)) {
+        Log.d(TAG, "Plugin ${manifest.name} is locked — skipping")
         return null
     }
     return try {
-        val result = plugin.fetch(source, query, exclude, nsfwMode, filters)
-        if (result != null) {
-            SourceHealthTracker.recordSuccess(source.type)
-        } else {
-            // null = no matching results — not a hard error, don't penalize source health
-        }
+        val result = PluginExecutor.fetch(manifest, source, query, exclude, nsfwMode, filters)
+        if (result != null) SourceHealthTracker.recordSuccess(source.pluginId)
         result
     } catch (e: Exception) {
-        Log.e(TAG, "Plugin ${plugin.displayName} threw exception", e)
-        SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
+        Log.e(TAG, "Plugin ${manifest.name} threw exception", e)
+        SourceHealthTracker.recordError(source.pluginId, e.message ?: "Unknown error")
         null
     }
 }
 
 /**
- * Bulk version of [fetchFromSource] — returns a full page of wallpapers.
- * Plugins that override [SourcePlugin.fetchPage] return up to 100 items per API call.
+ * Bulk version — returns a full page of wallpapers.
  */
 suspend fun fetchPageFromSource(
+    context: Context,
     source: LocalSource,
     query: String,
     exclude: List<String> = emptyList(),
@@ -55,23 +53,23 @@ suspend fun fetchPageFromSource(
     filters: BrainrotFilters = BrainrotFilters(),
     limit: Int = 100,
 ): List<BrainrotWallpaper> {
-    val plugin = SourcePluginRegistry.forType(source.type)
-    if (plugin == null) {
-        Log.w(TAG, "No plugin registered for source type: ${source.type}")
-        SourceHealthTracker.recordError(source.type, "No plugin registered")
+    val manifest = PluginRepository(context).getManifest(source.pluginId)
+    if (manifest == null) {
+        Log.w(TAG, "No manifest for pluginId: ${source.pluginId}")
+        SourceHealthTracker.recordError(source.pluginId, "No manifest registered")
         return emptyList()
     }
-    if (!PluginEntitlement.isUnlocked(plugin)) {
-        Log.d(TAG, "Plugin ${plugin.displayName} is locked — skipping")
+    if (!PluginEntitlement.isUnlocked(manifest)) {
+        Log.d(TAG, "Plugin ${manifest.name} is locked — skipping")
         return emptyList()
     }
     return try {
-        val results = plugin.fetchPage(source, query, exclude, nsfwMode, filters, limit)
-        if (results.isNotEmpty()) SourceHealthTracker.recordSuccess(source.type)
+        val results = PluginExecutor.fetchPage(manifest, source, query, exclude, nsfwMode, filters, limit)
+        if (results.isNotEmpty()) SourceHealthTracker.recordSuccess(source.pluginId)
         results
     } catch (e: Exception) {
-        Log.e(TAG, "Plugin ${plugin.displayName} threw exception", e)
-        SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
+        Log.e(TAG, "Plugin ${manifest.name} threw exception", e)
+        SourceHealthTracker.recordError(source.pluginId, e.message ?: "Unknown error")
         emptyList()
     }
 }

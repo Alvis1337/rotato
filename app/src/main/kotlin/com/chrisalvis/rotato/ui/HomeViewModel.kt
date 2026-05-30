@@ -30,7 +30,6 @@ import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.RotationError
 import com.chrisalvis.rotato.data.RotatoSettings
-import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.MinResolution
@@ -600,7 +599,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val sourcesArr = JSONArray().also { arr ->
                     sources.forEach { s ->
                         arr.put(JSONObject().apply {
-                            put("type", s.type.name)
+                            put("pluginId", s.pluginId)
                             put("enabled", s.enabled)
                             put("apiKey", s.apiKey)
                             put("apiUser", s.apiUser)
@@ -686,9 +685,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (sourcesArr != null) {
                     for (i in 0 until sourcesArr.length()) {
                         val o = sourcesArr.getJSONObject(i)
-                        val type = runCatching { SourceType.valueOf(o.getString("type")) }.getOrNull() ?: continue
+                        val pluginId = o.optString("pluginId").ifBlank { o.optString("type") }
+                        if (pluginId.isBlank()) continue
                         sourcesPrefs.update(
-                            type = type,
+                            pluginId = pluginId,
                             enabled = o.optBoolean("enabled", false),
                             apiKey = o.optString("apiKey", ""),
                             apiUser = o.optString("apiUser", ""),

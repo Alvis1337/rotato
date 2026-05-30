@@ -40,15 +40,15 @@ import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SourceHealth
 import com.chrisalvis.rotato.data.SourceHealthTracker
-import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
-import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
+import com.chrisalvis.rotato.data.plugins.PluginExecutor
+import com.chrisalvis.rotato.data.plugins.PluginManifest
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -60,6 +60,7 @@ import okhttp3.Request
 
 class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = LocalSourcesPreferences(app)
+    private val pluginRepository = PluginRepository(app)
     private val rotaPrefs = RotatoPreferences(app)
 
     val sources: StateFlow<List<LocalSource>> = prefs.sources
@@ -67,49 +68,52 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     val health = SourceHealthTracker.health
 
+    val manifests: StateFlow<List<PluginManifest>> = pluginRepository.manifests
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val httpClient = OkHttpClient()
 
-    private val _keyValidationState = MutableStateFlow<Map<SourceType, Boolean?>>(emptyMap())
-    val keyValidationState: StateFlow<Map<SourceType, Boolean?>> = _keyValidationState.asStateFlow()
+    private val _keyValidationState = MutableStateFlow<Map<String, Boolean?>>(emptyMap())
+    val keyValidationState: StateFlow<Map<String, Boolean?>> = _keyValidationState.asStateFlow()
     private val _keyNetworkError = MutableStateFlow(false)
     val keyNetworkError: StateFlow<Boolean> = _keyNetworkError.asStateFlow()
     private val latestWallhavenKey = MutableStateFlow("")
 
-    // Key format: "${type.name}:${instanceId}" — unique per source instance
+    // Key format: "${pluginId}:${instanceId}" — unique per source instance
     private val _testingSource = MutableStateFlow<String?>(null)
     val testingSource: StateFlow<String?> = _testingSource.asStateFlow()
 
-    fun setEnabled(type: SourceType, instanceId: String = "", enabled: Boolean) {
-        viewModelScope.launch { prefs.update(type, instanceId, enabled = enabled) }
+    fun setEnabled(pluginId: String, instanceId: String = "", enabled: Boolean) {
+        viewModelScope.launch { prefs.update(pluginId, instanceId, enabled = enabled) }
     }
 
-    fun setCredentials(type: SourceType, instanceId: String = "", apiKey: String, apiUser: String) {
-        viewModelScope.launch { prefs.update(type, instanceId, apiKey = apiKey, apiUser = apiUser) }
+    fun setCredentials(pluginId: String, instanceId: String = "", apiKey: String, apiUser: String) {
+        viewModelScope.launch { prefs.update(pluginId, instanceId, apiKey = apiKey, apiUser = apiUser) }
     }
 
-    fun setTags(type: SourceType, instanceId: String = "", tags: String) {
-        viewModelScope.launch { prefs.update(type, instanceId, tags = tags) }
+    fun setTags(pluginId: String, instanceId: String = "", tags: String) {
+        viewModelScope.launch { prefs.update(pluginId, instanceId, tags = tags) }
     }
 
-    fun setWallhavenPurity(type: SourceType, instanceId: String = "", purity: String) {
-        viewModelScope.launch { prefs.update(type, instanceId, wallhavenPurity = purity) }
+    fun setWallhavenPurity(pluginId: String, instanceId: String = "", purity: String) {
+        viewModelScope.launch { prefs.update(pluginId, instanceId, wallhavenPurity = purity) }
     }
 
     fun addRedditInstance(subreddit: String) {
         val trimmed = subreddit.trim().removePrefix("r/").trim()
         if (trimmed.isBlank()) return
-        viewModelScope.launch { prefs.addInstance(SourceType.REDDIT, trimmed) }
+        viewModelScope.launch { prefs.addInstance("REDDIT", trimmed) }
     }
 
-    fun removeInstance(type: SourceType, instanceId: String) {
-        viewModelScope.launch { prefs.removeInstance(type, instanceId) }
+    fun removeInstance(pluginId: String, instanceId: String) {
+        viewModelScope.launch { prefs.removeInstance(pluginId, instanceId) }
     }
 
     fun validateWallhavenKey(apiKey: String) {
         val trimmedKey = apiKey.trim()
         latestWallhavenKey.value = trimmedKey
         _keyNetworkError.update { false }
-        _keyValidationState.update { it + (SourceType.WALLHAVEN to null) }
+        _keyValidationState.update { it + ("WALLHAVEN" to null) }
         if (trimmedKey.isBlank()) return
 
         viewModelScope.launch {
@@ -129,27 +133,27 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (isValid != null && latestWallhavenKey.value == trimmedKey) {
                     _keyNetworkError.update { false }
-                    _keyValidationState.update { it + (SourceType.WALLHAVEN to isValid) }
+                    _keyValidationState.update { it + ("WALLHAVEN" to isValid) }
                 }
             } catch (_: Exception) {
                 _keyNetworkError.update { true }
-                _keyValidationState.update { it + (SourceType.WALLHAVEN to false) }
+                _keyValidationState.update { it + ("WALLHAVEN" to false) }
             }
         }
     }
 
     fun testSource(source: LocalSource) {
         viewModelScope.launch(Dispatchers.IO) {
-            val key = "${source.type.name}:${source.instanceId}"
+            val key = "${source.pluginId}:${source.instanceId}"
             _testingSource.update { key }
             try {
-                val plugin = SourcePluginRegistry.forType(source.type) ?: error("No plugin")
+                val manifest = pluginRepository.getManifest(source.pluginId) ?: error("No manifest for ${source.pluginId}")
                 val nsfw = rotaPrefs.nsfwMode.first()
-                val results = plugin.fetch(source, "", emptyList(), nsfw, BrainrotFilters())
-                if (results != null) SourceHealthTracker.recordSuccess(source.type)
+                val results = PluginExecutor.fetch(manifest, source, "", emptyList(), nsfw, BrainrotFilters())
+                if (results != null) SourceHealthTracker.recordSuccess(source.pluginId)
                 else throw Exception("No results returned")
             } catch (e: Exception) {
-                SourceHealthTracker.recordError(source.type, e.message ?: "Unknown error")
+                SourceHealthTracker.recordError(source.pluginId, e.message ?: "Unknown error")
             } finally {
                 _testingSource.update { null }
             }
@@ -170,6 +174,9 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val keyValidationState by vm.keyValidationState.collectAsStateWithLifecycle()
     val keyNetworkError by vm.keyNetworkError.collectAsStateWithLifecycle()
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
+    val manifests by vm.manifests.collectAsStateWithLifecycle()
+
+    val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -178,7 +185,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     var showDisableAllConfirm by remember { mutableStateOf(false) }
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
-    var confirmRemove by remember { mutableStateOf<Pair<SourceType, String>?>(null) }
+    var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     if (showAddRedditDialog) {
         val redditFocus = remember { FocusRequester() }
@@ -234,14 +241,14 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
             }
         )
     }
-    confirmRemove?.let { (type, instanceId) ->
+    confirmRemove?.let { (pluginId, instanceId) ->
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
             title = { Text("Remove source?") },
-            text = { Text("Remove this ${type.name.lowercase().replaceFirstChar { it.uppercase() }} source? This cannot be undone.") },
+            text = { Text("Remove this source? This cannot be undone.") },
             confirmButton = {
                 TextButton(onClick = {
-                    vm.removeInstance(type, instanceId)
+                    vm.removeInstance(pluginId, instanceId)
                     confirmRemove = null
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
             },
@@ -252,9 +259,9 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     }
 
     // Partition: non-Reddit free, Reddit instances, then premium
-    val freeSources = sources.filter { !it.type.isPremium && it.type != SourceType.REDDIT }
-    val redditSources = sources.filter { it.type == SourceType.REDDIT }
-    val premiumSources = sources.filter { it.type.isPremium }
+    val freeSources = sources.filter { manifestMap[it.pluginId]?.isPremium != true && it.pluginId != "REDDIT" }
+    val redditSources = sources.filter { it.pluginId == "REDDIT" }
+    val premiumSources = sources.filter { manifestMap[it.pluginId]?.isPremium == true }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -291,17 +298,18 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                items(freeSources, key = { "${it.type.name}:${it.instanceId}" }) { source ->
+                items(freeSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
                     SourceCard(
                         source = source,
-                        health = healthMap[source.type],
-                        keyValidation = keyValidationState[source.type],
+                        manifest = manifestMap[source.pluginId],
+                        health = healthMap[source.pluginId],
+                        keyValidation = keyValidationState[source.pluginId],
                         keyNetworkError = keyNetworkError,
-                        isTesting = testingSource == "${source.type.name}:${source.instanceId}",
-                        onToggle = { vm.setEnabled(source.type, source.instanceId, it) },
-                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, source.instanceId, key, user) },
-                        onSaveTags = { vm.setTags(source.type, source.instanceId, it) },
-                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, source.instanceId, it) },
+                        isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
+                        onToggle = { vm.setEnabled(source.pluginId, source.instanceId, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
+                        onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { vm.testSource(source) },
                         onSaved = onSaved,
@@ -318,20 +326,21 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
-            items(redditSources, key = { "${it.type.name}:${it.instanceId}" }) { source ->
+            items(redditSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
                 SourceCard(
                     source = source,
-                    health = healthMap[source.type],
+                    manifest = manifestMap[source.pluginId],
+                    health = healthMap[source.pluginId],
                     keyValidation = null,
                     keyNetworkError = keyNetworkError,
-                    isTesting = testingSource == "${source.type.name}:${source.instanceId}",
-                    onToggle = { vm.setEnabled(source.type, source.instanceId, it) },
+                    isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
+                    onToggle = { vm.setEnabled(source.pluginId, source.instanceId, it) },
                     onSaveCredentials = { _, _ -> },
-                    onSaveTags = { vm.setTags(source.type, source.instanceId, it) },
+                    onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
                     onSaveWallhavenPurity = {},
                     onValidateWallhavenKey = {},
                     onTest = { vm.testSource(source) },
-                    onRemove = { confirmRemove = source.type to source.instanceId },
+                    onRemove = { confirmRemove = source.pluginId to source.instanceId },
                     onSaved = onSaved,
                 )
             }
@@ -353,21 +362,22 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                items(premiumSources, key = { "${it.type.name}:${it.instanceId}" }) { source ->
-                    val plugin = source.type.plugin
-                    val unlocked = plugin == null || PluginEntitlement.isUnlocked(plugin)
+                items(premiumSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
+                    val manifest2 = manifestMap[source.pluginId]
+                    val unlocked = manifest2 == null || PluginEntitlement.isUnlocked(manifest2)
                     SourceCard(
                         source = source,
-                        health = healthMap[source.type],
-                        keyValidation = keyValidationState[source.type],
+                        manifest = manifestMap[source.pluginId],
+                        health = healthMap[source.pluginId],
+                        keyValidation = keyValidationState[source.pluginId],
                         keyNetworkError = keyNetworkError,
                         isPremium = true,
                         isLocked = !unlocked,
-                        isTesting = testingSource == "${source.type.name}:${source.instanceId}",
-                        onToggle = { if (unlocked) vm.setEnabled(source.type, source.instanceId, it) },
-                        onSaveCredentials = { key, user -> vm.setCredentials(source.type, source.instanceId, key, user) },
-                        onSaveTags = { vm.setTags(source.type, source.instanceId, it) },
-                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.type, source.instanceId, it) },
+                        isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
+                        onToggle = { if (unlocked) vm.setEnabled(source.pluginId, source.instanceId, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
+                        onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
                         onValidateWallhavenKey = vm::validateWallhavenKey,
                         onTest = { if (unlocked) vm.testSource(source) },
                         onSaved = onSaved,
@@ -395,6 +405,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
 @Composable
 private fun SourceCard(
     source: LocalSource,
+    manifest: PluginManifest? = null,
     health: SourceHealth? = null,
     keyValidation: Boolean? = null,
     keyNetworkError: Boolean = false,
@@ -423,8 +434,8 @@ private fun SourceCard(
 
     var showPremiumInfo by remember { mutableStateOf(false) }
 
-    LaunchedEffect(source.type, expanded, apiKey) {
-        if (source.type == SourceType.WALLHAVEN && expanded) {
+    LaunchedEffect(source.pluginId, expanded, apiKey) {
+        if (source.pluginId == "WALLHAVEN" && expanded) {
             delay(800)
             if (apiKey.isNotBlank()) onValidateWallhavenKey(apiKey)
         }
@@ -458,8 +469,8 @@ private fun SourceCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val displayName = if (source.type == SourceType.REDDIT && source.instanceId.isNotBlank())
-                            "r/${source.instanceId}" else source.type.displayName
+                        val displayName = if (source.pluginId == "REDDIT" && source.instanceId.isNotBlank())
+                            "r/${source.instanceId}" else manifest?.name ?: source.pluginId.lowercase().replaceFirstChar { it.uppercase() }
                         Text(displayName, fontWeight = FontWeight.Medium)
                         if (isPremium) {
                             SuggestionChip(
@@ -477,16 +488,16 @@ private fun SourceCard(
                             )
                         }
                     }
-                    val description = source.type.plugin?.description ?: run {
-                        if (!source.type.safeContent) "May include adult content"
-                        else if (!source.type.needsApiKey && !source.type.needsApiUser) "Works without credentials"
+                    val description = manifest?.description?.ifBlank { null } ?: run {
+                        if (manifest?.safeContent == false) "May include adult content"
+                        else if (manifest?.needsApiKey == false && manifest?.needsApiUser == false) "Works without credentials"
                         else null
                     }
                     if (description != null) {
                         Text(
                             description,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (!source.type.safeContent) MaterialTheme.colorScheme.error
+                            color = if (manifest?.safeContent == false) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.outline
                         )
                     }
@@ -508,9 +519,8 @@ private fun SourceCard(
                         Text("Tags: ${source.tags}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                     // Warn when a source that strictly requires credentials is enabled without them
-                    val plugin = source.type.plugin
-                    if (source.enabled && plugin?.requiresCredentials == true &&
-                        (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))) {
+                    if (source.enabled && manifest?.requiresCredentials == true &&
+                        (source.apiKey.isBlank() || (manifest?.needsApiUser == true && source.apiUser.isBlank()))) {
                         Text(
                             "⚠ Credentials required — this source won't fetch until configured",
                             style = MaterialTheme.typography.labelSmall,
@@ -559,7 +569,7 @@ private fun SourceCard(
 
             if (expanded && !isLocked) {
                 HorizontalDivider()
-                val isReddit = source.type == SourceType.REDDIT
+                val isReddit = source.pluginId == "REDDIT"
                 if (!isReddit) {
                     OutlinedTextField(
                         value = tags,
@@ -572,21 +582,21 @@ private fun SourceCard(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                     )
                 }
-                if (source.type.needsApiUser) {
+                if (manifest?.needsApiUser == true) {
                     OutlinedTextField(
                         value = apiUser,
                         onValueChange = { apiUser = it },
-                        label = { Text(source.type.apiUserLabel) },
+                        label = { Text(manifest?.apiUserLabel ?: "Username") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = if (source.type.needsApiKey) ImeAction.Next else ImeAction.Done)
+                        keyboardOptions = KeyboardOptions(imeAction = if (manifest?.needsApiKey == true) ImeAction.Next else ImeAction.Done)
                     )
                 }
-                if (source.type.needsApiKey) {
+                if (manifest?.needsApiKey == true) {
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = { apiKey = it },
-                        label = { Text(source.type.apiKeyLabel) },
+                        label = { Text(manifest?.apiKeyLabel ?: "API Key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
@@ -597,7 +607,7 @@ private fun SourceCard(
                             }
                         }
                     )
-                    if (source.type == SourceType.WALLHAVEN && apiKey.isNotBlank()) {
+                    if (source.pluginId == "WALLHAVEN" && apiKey.isNotBlank()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -642,7 +652,7 @@ private fun SourceCard(
                     }
                 }
                 // Wallhaven-specific purity picker
-                if (source.type == SourceType.WALLHAVEN) {
+                if (source.pluginId == "WALLHAVEN") {
                     Text("Content purity", style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -680,7 +690,7 @@ private fun SourceCard(
                     OutlinedButton(onClick = {
                         onSaveTags(tags.trim())
                         onSaveCredentials(apiKey, apiUser)
-                        if (source.type == SourceType.WALLHAVEN) {
+                        if (source.pluginId == "WALLHAVEN") {
                             if (apiKey.isNotBlank()) onValidateWallhavenKey(apiKey)
                             val p = "${if (puritySfw) '1' else '0'}${if (puritySketchy) '1' else '0'}${if (purityNsfw) '1' else '0'}"
                             onSaveWallhavenPurity(if (p == "000") "100" else p)

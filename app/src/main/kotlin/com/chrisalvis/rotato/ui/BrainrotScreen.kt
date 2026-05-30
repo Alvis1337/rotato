@@ -79,17 +79,15 @@ import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
-import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 
-/** Maps a lowercase source string from BrainrotWallpaper to its plugin display name. */
 private fun sourceDisplayName(source: String): String =
-    SourcePluginRegistry.all.firstOrNull { it.id.equals(source, ignoreCase = true) }
-        ?.displayName ?: source.replaceFirstChar { it.uppercase() }
+    source.replaceFirstChar { it.uppercase() }
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
 private fun parseAspectRatio(resolution: String): Float {
@@ -171,10 +169,13 @@ fun BrainrotScreen(
     val resetVersion by vm.resetVersion.collectAsStateWithLifecycle()
     val danbooruEnabled by vm.danbooruEnabled.collectAsStateWithLifecycle()
     val allSources by vm.allSources.collectAsStateWithLifecycle()
+    val pluginRepository = remember(context) { PluginRepository(context.applicationContext) }
+    val manifests by pluginRepository.manifests.collectAsStateWithLifecycle(emptyList())
     val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     val gridMode by vm.gridMode.collectAsStateWithLifecycle()
     val discoverHintSeen by vm.discoverHintSeen.collectAsStateWithLifecycle()
+    val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
     val gridState = rememberLazyStaggeredGridState()
     val compactGridState = rememberLazyGridState()
@@ -467,9 +468,10 @@ fun BrainrotScreen(
                                     contentPadding = PaddingValues(start = 12.dp, end = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    items(allSources, key = { "${it.type.name}:${it.instanceId}" }) { src ->
-                                        val missingCreds = src.type.needsApiKey && src.apiKey.isBlank()
-                                        val hasCreds = src.type.needsApiKey && src.apiKey.isNotBlank()
+                                    items(allSources, key = { "${it.pluginId}:${it.instanceId}" }) { src ->
+                                        val manifest = manifestMap[src.pluginId]
+                                        val missingCreds = manifest?.needsApiKey == true && src.apiKey.isBlank()
+                                        val hasCreds = manifest?.needsApiKey == true && src.apiKey.isNotBlank()
                                         val nsfwIcon = when (src.nsfwEnabled) {
                                             null -> Icons.Outlined.Visibility
                                             true -> Icons.Default.Visibility
@@ -483,7 +485,7 @@ fun BrainrotScreen(
                                         FilterChip(
                                             selected = src.enabled,
                                             onClick = { vm.toggleSource(src) },
-                                            label = { Text(src.type.displayName, style = MaterialTheme.typography.labelSmall) },
+                                            label = { Text(if (src.pluginId == "REDDIT" && src.instanceId.isNotBlank()) "r/${src.instanceId}" else manifest?.name ?: src.pluginId.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) },
                                             trailingIcon = if (missingCreds || hasCreds || nsfwMode) {
                                                 {
                                                     Row(
@@ -513,7 +515,7 @@ fun BrainrotScreen(
                                                                     .clip(CircleShape)
                                                                     .clickable {
                                                                         vm.setSourceNsfw(
-                                                                            src.type.name,
+                                                                            src.pluginId,
                                                                             src.instanceId,
                                                                             nextSourceNsfw(src.nsfwEnabled),
                                                                         )

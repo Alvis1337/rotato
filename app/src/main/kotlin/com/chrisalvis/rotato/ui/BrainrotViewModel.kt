@@ -20,7 +20,6 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
-import com.chrisalvis.rotato.data.SourceType
 import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.MalRepository
 import com.chrisalvis.rotato.data.MinResolution
@@ -28,7 +27,9 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
-import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
+import com.chrisalvis.rotato.data.plugins.PluginExecutor
+import com.chrisalvis.rotato.data.plugins.PluginManifest
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.data.plugins.http
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.data.historyFromJson
@@ -78,6 +79,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val malPrefs = MalPreferences(app)
     private val malRepo = MalRepository(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
+    private val pluginRepository = PluginRepository(app)
 
     /** Grid feed — single source of truth for displayed wallpapers */
     private val _gridItems = MutableStateFlow<List<BrainrotWallpaper>>(emptyList())
@@ -187,7 +189,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val resetVersion: StateFlow<Int> = _resetVersion.asStateFlow()
 
     val danbooruEnabled: StateFlow<Boolean> = localSources.sources
-        .map { sources -> sources.any { it.enabled && it.type == SourceType.DANBOORU } }
+        .map { sources -> sources.any { it.enabled && it.pluginId == "DANBOORU" } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Composite "source:id" dedup — session-long to prevent repeat items */
@@ -321,7 +323,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val source = request.source
                 val queries = request.queries
                 if (queries.all { q -> pageCache[cacheKey(source, q)]?.isNotEmpty() == true }) return@mapNotNull null
-                val sourceKey = source.type.name.lowercase()
+                val sourceKey = source.pluginId.lowercase()
                 async(Dispatchers.IO) {
                     for (q in queries) {
                         val ck = cacheKey(source, q)
@@ -330,7 +332,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                             .filter { it.startsWith("$sourceKey:") }
                             .map { it.removePrefix("$sourceKey:") }
                         val page = fetchPageForSource(source, q, excludes, request.effectiveNsfw, filters, fetchLimit)
-                        Log.d("DiscoverFetch", "${source.type.name} q=$q → ${page.size} items after filter (r${round+1})")
+                        Log.d("DiscoverFetch", "${source.pluginId} q=$q → ${page.size} items after filter (r${round+1})")
                         if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
                     }
                 }
@@ -395,7 +397,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun cacheKey(source: LocalSource, query: String) = "${source.type.name}:${source.instanceId}:$query"
+    private fun cacheKey(source: LocalSource, query: String) = "${source.pluginId}:${source.instanceId}:$query"
 
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>): List<String> = when {
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
@@ -424,14 +426,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
         return sources.first()
             .mapNotNull { source ->
-                val plugin = SourcePluginRegistry.forType(source.type) ?: return@mapNotNull null
-                if (plugin.requiresCredentials &&
-                    (source.apiKey.isBlank() || (plugin.needsApiUser && source.apiUser.isBlank()))
+                val manifest: PluginManifest = pluginRepository.getManifest(source.pluginId) ?: return@mapNotNull null
+                if (manifest.requiresCredentials &&
+                    (source.apiKey.isBlank() || (manifest.needsApiUser && source.apiUser.isBlank()))
                 ) {
                     return@mapNotNull null
                 }
                 val effectiveNsfw = source.nsfwEnabled ?: nsfw
-                if (!plugin.canServe(effectiveNsfw, source)) return@mapNotNull null
+                if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
                 DiscoverRequest(
                     source = source,
                     queries = queriesFor(source, explicitQuery, malTitles),
@@ -441,13 +443,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun sourceKey(source: LocalSource): String =
-        if (source.instanceId.isBlank()) source.type.name else "${source.type.name}:${source.instanceId}"
+        if (source.instanceId.isBlank()) source.pluginId else "${source.pluginId}:${source.instanceId}"
 
     private fun sourceLabel(source: LocalSource): String =
-        if (source.type == SourceType.REDDIT && source.instanceId.isNotBlank()) {
+        if (source.pluginId == "REDDIT" && source.instanceId.isNotBlank()) {
             "r/${source.instanceId}"
         } else {
-            source.type.displayName
+            source.pluginId.lowercase().replaceFirstChar { it.uppercase() }
         }
 
     private fun updateSourceHealth(source: LocalSource, transform: (SourceHealth) -> SourceHealth) {
@@ -493,19 +495,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         filters: BrainrotFilters,
         limit: Int,
     ): List<BrainrotWallpaper> {
-        val plugin = SourcePluginRegistry.forType(source.type)
-        if (plugin == null) {
-            recordSourceError(source, "No plugin registered")
+        val manifest = pluginRepository.getManifest(source.pluginId)
+        if (manifest == null) {
+            recordSourceError(source, "No manifest registered")
             return emptyList()
         }
-        if (!PluginEntitlement.isUnlocked(plugin)) return emptyList()
+        if (!PluginEntitlement.isUnlocked(manifest)) return emptyList()
         return try {
-            plugin.fetchPage(source, query, exclude, nsfw, filters, limit).also {
+            PluginExecutor.fetchPage(manifest, source, query, exclude, nsfw, filters, limit).also {
                 recordSourceSuccess(source)
             }
         } catch (e: Exception) {
             recordSourceError(source, e.message ?: "Unknown error")
-            Log.e("DiscoverFetch", "${source.type.name} q=$query exception: ${e.message}", e)
+            Log.e("DiscoverFetch", "${source.pluginId} q=$query exception: ${e.message}", e)
             emptyList()
         }
     }
@@ -517,14 +519,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         nsfw: Boolean,
         filters: BrainrotFilters,
     ): BrainrotWallpaper? {
-        val plugin = SourcePluginRegistry.forType(source.type)
-        if (plugin == null) {
+        val manifest = pluginRepository.getManifest(source.pluginId)
+        if (manifest == null) {
             recordSourceError(source, "No plugin registered")
             return null
         }
-        if (!PluginEntitlement.isUnlocked(plugin)) return null
+        if (!PluginEntitlement.isUnlocked(manifest)) return null
         return try {
-            plugin.fetch(source, query, exclude, nsfw, filters).also {
+            PluginExecutor.fetch(manifest, source, query, exclude, nsfw, filters).also {
                 recordSourceSuccess(source)
             }
         } catch (e: Exception) {
@@ -795,7 +797,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val ctx = getApplication<Application>().applicationContext
                 val freshItems = requests.map { request ->
                     async(Dispatchers.IO) {
-                        val sourceKey = request.source.type.name.lowercase()
+                        val sourceKey = request.source.pluginId.lowercase()
                         val excludes = seenKeys
                             .filter { it.startsWith("$sourceKey:") }
                             .map { it.removePrefix("$sourceKey:") }
@@ -904,7 +906,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleSource(source: LocalSource) {
         viewModelScope.launch {
-            localSources.update(source.type, source.instanceId, enabled = !source.enabled)
+            localSources.update(source.pluginId, source.instanceId, enabled = !source.enabled)
             loadMore(reset = true)
         }
     }

@@ -1,94 +1,17 @@
 package com.chrisalvis.rotato.data
 
-import com.chrisalvis.rotato.data.plugins.SourcePluginRegistry
-
-enum class SourceType(
-    val displayName: String,
-    val needsApiKey: Boolean,
-    val needsApiUser: Boolean,
-    val apiKeyLabel: String = "API Key",
-    val apiUserLabel: String = "API User",
-    val safeContent: Boolean = true
-) {
-    DANBOORU(
-        displayName = "Danbooru",
-        needsApiKey = true,
-        needsApiUser = true,
-        apiKeyLabel = "API Key",
-        apiUserLabel = "Username",
-        safeContent = false
-    ),
-    GELBOORU(
-        displayName = "Gelbooru",
-        needsApiKey = true,
-        needsApiUser = true,
-        apiKeyLabel = "API Key",
-        apiUserLabel = "User ID",
-        safeContent = false
-    ),
-    SAFEBOORU(
-        displayName = "Safebooru",
-        needsApiKey = false,
-        needsApiUser = false,
-        safeContent = true
-    ),
-    WALLHAVEN(
-        displayName = "Wallhaven",
-        needsApiKey = true,
-        needsApiUser = false,
-        apiKeyLabel = "API Key",
-        safeContent = true
-    ),
-    KONACHAN(
-        displayName = "Konachan",
-        needsApiKey = false,
-        needsApiUser = false,
-        safeContent = true
-    ),
-    ZEROCHAN(
-        displayName = "Zerochan",
-        needsApiKey = false,
-        needsApiUser = false,
-        safeContent = true
-    ),
-    YANDERE(
-        displayName = "Yande.re",
-        needsApiKey = false,
-        needsApiUser = false,
-        safeContent = false
-    ),
-    RULE34(
-        displayName = "Rule34",
-        needsApiKey = true,
-        needsApiUser = true,
-        apiKeyLabel = "API Key",
-        apiUserLabel = "User ID",
-        safeContent = false
-    ),
-    REDDIT(
-        displayName = "Reddit",
-        needsApiKey = false,
-        needsApiUser = false,
-        safeContent = true
-    );
-
-    /** Returns the [SourcePlugin] that handles fetch logic for this source type. */
-    val plugin get() = SourcePluginRegistry.findById(name)
-
-    /** True when the source is gated behind an IAP entitlement. */
-    val isPremium get() = plugin?.isPremium ?: false
-}
-
 data class LocalSource(
-    val type: SourceType,
+    val pluginId: String,
     /** For multi-instance sources (Reddit): the subreddit name. Empty for all other sources. */
     val instanceId: String = "",
     val enabled: Boolean = false,
     val apiKey: String = "",
     val apiUser: String = "",
     val tags: String = "",
-    /** Wallhaven only — purity bitmask string: "1" = SFW, "10" = Sketchy, "100" = NSFW, combined e.g. "110" */
+    /** Wallhaven only — purity bitmask string */
     val wallhavenPurity: String = "110",
     val nsfwEnabled: Boolean? = null,
+    /** Optional base URL override for user-configured instances. Blank = use manifest default. */
+    val baseUrl: String = "",
 )
 

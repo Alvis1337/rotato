@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -15,10 +16,18 @@ class LocalSourcesPreferences(private val context: Context) {
     companion object {
         private val SOURCES_KEY = stringPreferencesKey("local_sources_json")
 
-        // Reddit is user-managed (multi-instance) — never auto-created by defaults.
-        private fun defaultSources() = SourceType.entries
-            .filter { it != SourceType.REDDIT }
-            .map { LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser) }
+        // Bundled plugin IDs that get auto-created as defaults.
+        // Reddit is user-managed (multi-instance) — never auto-created.
+        private val BUNDLED_IDS = listOf(
+            "GELBOORU", "DANBOORU", "RULE34", "SAFEBOORU",
+            "WALLHAVEN", "KONACHAN", "YANDERE", "ZEROCHAN"
+        )
+        // Enabled by default: safe content, no credentials required
+        private val DEFAULT_ENABLED_IDS = setOf("SAFEBOORU", "ZEROCHAN", "KONACHAN")
+
+        private fun defaultSources() = BUNDLED_IDS.map { id ->
+            LocalSource(pluginId = id, enabled = id in DEFAULT_ENABLED_IDS)
+        }
     }
 
     val sources: Flow<List<LocalSource>> = context.dataStore.data
@@ -26,7 +35,7 @@ class LocalSourcesPreferences(private val context: Context) {
         .map { prefs -> parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() } }
 
     suspend fun update(
-        type: SourceType,
+        pluginId: String,
         instanceId: String = "",
         enabled: Boolean? = null,
         apiKey: String? = null,
@@ -36,7 +45,7 @@ class LocalSourcesPreferences(private val context: Context) {
     ) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
-            val idx = current.indexOfFirst { it.type == type && it.instanceId == instanceId }
+            val idx = current.indexOfFirst { it.pluginId == pluginId && it.instanceId == instanceId }
             if (idx == -1) return@edit
             val existing = current[idx]
             current[idx] = existing.copy(
@@ -50,20 +59,20 @@ class LocalSourcesPreferences(private val context: Context) {
         }
     }
 
-    suspend fun addInstance(type: SourceType, instanceId: String) {
+    suspend fun addInstance(pluginId: String, instanceId: String) {
         if (instanceId.isBlank()) return
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
-            if (current.any { it.type == type && it.instanceId == instanceId }) return@edit
-            current.add(LocalSource(type = type, instanceId = instanceId, enabled = true))
+            if (current.any { it.pluginId == pluginId && it.instanceId == instanceId }) return@edit
+            current.add(LocalSource(pluginId = pluginId, instanceId = instanceId, enabled = true))
             prefs[SOURCES_KEY] = serialize(current)
         }
     }
 
-    suspend fun removeInstance(type: SourceType, instanceId: String) {
+    suspend fun removeInstance(pluginId: String, instanceId: String) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
-            current.removeAll { it.type == type && it.instanceId == instanceId }
+            current.removeAll { it.pluginId == pluginId && it.instanceId == instanceId }
             prefs[SOURCES_KEY] = serialize(current)
         }
     }
@@ -75,14 +84,29 @@ class LocalSourcesPreferences(private val context: Context) {
         }
     }
 
-    suspend fun updateSourceNsfw(sourceId: String, instanceId: String, nsfwEnabled: Boolean?) {
-        val type = runCatching { SourceType.valueOf(sourceId) }.getOrNull() ?: return
+    suspend fun updateSourceNsfw(pluginId: String, instanceId: String, nsfwEnabled: Boolean?) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
-            val idx = current.indexOfFirst { it.type == type && it.instanceId == instanceId }
+            val idx = current.indexOfFirst { it.pluginId == pluginId && it.instanceId == instanceId }
             if (idx == -1) return@edit
             current[idx] = current[idx].copy(nsfwEnabled = nsfwEnabled)
             prefs[SOURCES_KEY] = serialize(current)
+        }
+    }
+
+    /** Exports current sources as a JSON string (same format as internal serialization). */
+    suspend fun exportSources(): String {
+        val prefs = context.dataStore.data.catch { emit(emptyPreferences()) }.first()
+        val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }
+        return serialize(current)
+    }
+
+    /** Imports sources from a JSON string, replacing current sources. */
+    suspend fun importSources(json: String) {
+        val parsed = parse(json)
+        if (parsed.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            prefs[SOURCES_KEY] = serialize(parsed)
         }
     }
 
@@ -91,9 +115,11 @@ class LocalSourcesPreferences(private val context: Context) {
         val result = mutableListOf<LocalSource>()
         (0 until arr.length()).forEach { i ->
             val o = arr.getJSONObject(i)
-            val type = runCatching { SourceType.valueOf(o.getString("type")) }.getOrNull() ?: return@forEach
+            // Auto-migration: old format stores "type" field, new stores "pluginId"
+            val pluginId = o.optString("pluginId").ifBlank { o.optString("type") }
+            if (pluginId.isBlank()) return@forEach
             result.add(LocalSource(
-                type = type,
+                pluginId = pluginId,
                 instanceId = o.optString("instanceId", ""),
                 enabled = o.optBoolean("enabled", false),
                 apiKey = o.optString("apiKey", ""),
@@ -103,20 +129,21 @@ class LocalSourcesPreferences(private val context: Context) {
                 nsfwEnabled = o.optString("nsfwEnabled", "")
                     .takeUnless { it.isBlank() || it == "null" }
                     ?.toBooleanStrictOrNull(),
+                baseUrl = o.optString("baseUrl", ""),
             ))
         }
-        // Backfill any missing non-Reddit source types with defaults
-        val seenNonReddit = result.filter { it.instanceId.isEmpty() }.map { it.type }.toSet()
-        result + SourceType.entries
-            .filter { it != SourceType.REDDIT && it !in seenNonReddit }
-            .map { LocalSource(type = it, enabled = it.safeContent && !it.needsApiUser) }
+        // Backfill any missing bundled (non-Reddit) plugin IDs with defaults
+        val seenNonReddit = result.filter { it.instanceId.isEmpty() }.map { it.pluginId }.toSet()
+        result + BUNDLED_IDS
+            .filter { it !in seenNonReddit }
+            .map { LocalSource(pluginId = it, enabled = it in DEFAULT_ENABLED_IDS) }
     } catch (_: Exception) { emptyList() }
 
     private fun serialize(sources: List<LocalSource>): String =
         JSONArray().also { arr ->
             sources.forEach { s ->
                 arr.put(JSONObject().apply {
-                    put("type", s.type.name)
+                    put("pluginId", s.pluginId)
                     put("instanceId", s.instanceId)
                     put("enabled", s.enabled)
                     put("apiKey", s.apiKey)
@@ -124,6 +151,7 @@ class LocalSourcesPreferences(private val context: Context) {
                     put("tags", s.tags)
                     put("wallhavenPurity", s.wallhavenPurity)
                     put("nsfwEnabled", s.nsfwEnabled ?: JSONObject.NULL)
+                    if (s.baseUrl.isNotBlank()) put("baseUrl", s.baseUrl)
                 })
             }
         }.toString()

@@ -28,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chrisalvis.rotato.data.LocalSource
-import com.chrisalvis.rotato.data.SourceType
 import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,11 +152,11 @@ private fun formatLastFetch(lastSuccess: Long): String {
 }
 
 private fun sourceKey(source: LocalSource): String =
-    if (source.instanceId.isBlank()) source.type.name else "${source.type.name}:${source.instanceId}"
+    if (source.instanceId.isBlank()) source.pluginId else "${source.pluginId}:${source.instanceId}"
 
 private fun sourceLabel(source: LocalSource): String =
-    if (source.type == SourceType.REDDIT && source.instanceId.isNotBlank()) {
+    if (source.pluginId == "REDDIT" && source.instanceId.isNotBlank()) {
         "r/${source.instanceId}"
     } else {
-        source.type.displayName
+        source.pluginId.lowercase().replaceFirstChar { it.uppercase() }
     }
