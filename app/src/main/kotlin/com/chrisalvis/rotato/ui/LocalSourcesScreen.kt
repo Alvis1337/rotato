@@ -58,6 +58,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+enum class InstallPluginState { IDLE, BUSY, SUCCESS, ERROR }
+
 class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = LocalSourcesPreferences(app)
     private val pluginRepository = PluginRepository(app)
@@ -71,6 +73,9 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     val manifests: StateFlow<List<PluginManifest>> = pluginRepository.manifests
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val installedManifests: StateFlow<List<PluginManifest>> = pluginRepository.installedManifests
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val httpClient = OkHttpClient()
 
     private val _keyValidationState = MutableStateFlow<Map<String, Boolean?>>(emptyMap())
@@ -82,6 +87,11 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     // Key format: "${pluginId}:${instanceId}" — unique per source instance
     private val _testingSource = MutableStateFlow<String?>(null)
     val testingSource: StateFlow<String?> = _testingSource.asStateFlow()
+
+    private val _installState = MutableStateFlow(InstallPluginState.IDLE)
+    val installState: StateFlow<InstallPluginState> = _installState.asStateFlow()
+    private val _installError = MutableStateFlow<String?>(null)
+    val installError: StateFlow<String?> = _installError.asStateFlow()
 
     fun setEnabled(pluginId: String, instanceId: String = "", enabled: Boolean) {
         viewModelScope.launch { prefs.update(pluginId, instanceId, enabled = enabled) }
@@ -107,6 +117,35 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeInstance(pluginId: String, instanceId: String) {
         viewModelScope.launch { prefs.removeInstance(pluginId, instanceId) }
+    }
+
+    fun installPlugin(url: String) {
+        viewModelScope.launch {
+            _installState.update { InstallPluginState.BUSY }
+            _installError.update { null }
+            try {
+                val manifest = pluginRepository.installFromUrl(url.trim())
+                val currentSources = prefs.sources.first()
+                if (currentSources.none { it.pluginId == manifest.id }) {
+                    prefs.upsertSource(LocalSource(pluginId = manifest.id, enabled = false))
+                }
+                _installState.update { InstallPluginState.SUCCESS }
+            } catch (e: Exception) {
+                _installError.update { e.message ?: "Failed to install plugin" }
+                _installState.update { InstallPluginState.ERROR }
+            }
+            delay(3_000)
+            _installState.update { InstallPluginState.IDLE }
+        }
+    }
+
+    fun uninstallPlugin(id: String) {
+        viewModelScope.launch {
+            prefs.sources.first()
+                .filter { it.pluginId == id }
+                .forEach { prefs.removeInstance(id, it.instanceId) }
+            pluginRepository.uninstall(id)
+        }
     }
 
     fun validateWallhavenKey(apiKey: String) {
@@ -175,6 +214,9 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     val keyNetworkError by vm.keyNetworkError.collectAsStateWithLifecycle()
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
     val manifests by vm.manifests.collectAsStateWithLifecycle()
+    val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
+    val installState by vm.installState.collectAsStateWithLifecycle()
+    val installError by vm.installError.collectAsStateWithLifecycle()
 
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
@@ -186,6 +228,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
     var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showInstallDialog by remember { mutableStateOf(false) }
+    var installUrl by remember { mutableStateOf("") }
 
     if (showAddRedditDialog) {
         val redditFocus = remember { FocusRequester() }
@@ -257,6 +301,115 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
             }
         )
     }
+    if (showInstallDialog) {
+        AlertDialog(
+            onDismissRequest = { if (installState != InstallPluginState.BUSY) { showInstallDialog = false; installUrl = "" } },
+            title = { Text("Install Plugin from URL") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Enter the URL of a Rotato plugin manifest JSON file.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = installUrl,
+                        onValueChange = { installUrl = it },
+                        label = { Text("Manifest URL") },
+                        placeholder = { Text("https://example.com/plugin.json") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = installState != InstallPluginState.BUSY,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    if (installState == InstallPluginState.ERROR && installError != null) {
+                        Text(
+                            installError ?: "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.installPlugin(installUrl) },
+                    enabled = installUrl.isNotBlank() && installState == InstallPluginState.IDLE
+                ) {
+                    if (installState == InstallPluginState.BUSY) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Install")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showInstallDialog = false; installUrl = "" },
+                    enabled = installState != InstallPluginState.BUSY
+                ) { Text("Cancel") }
+            }
+        )
+    }
+    if (showInstallDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (installState != InstallPluginState.BUSY) {
+                    showInstallDialog = false
+                    installUrl = ""
+                }
+            },
+            title = { Text("Install Plugin from URL") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Enter the URL of a Rotato plugin manifest JSON file.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = installUrl,
+                        onValueChange = { installUrl = it },
+                        label = { Text("Manifest URL") },
+                        placeholder = { Text("https://example.com/plugin.json") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = installState != InstallPluginState.BUSY,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    if (installState == InstallPluginState.ERROR && installError != null) {
+                        Text(
+                            installError ?: "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.installPlugin(installUrl) },
+                    enabled = installUrl.isNotBlank() && installState == InstallPluginState.IDLE
+                ) {
+                    if (installState == InstallPluginState.BUSY) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Install")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showInstallDialog = false
+                        installUrl = ""
+                    },
+                    enabled = installState != InstallPluginState.BUSY
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     // Partition: non-Reddit free, Reddit instances, then premium
     val freeSources = sources.filter { manifestMap[it.pluginId]?.isPremium != true && it.pluginId != "REDDIT" }
@@ -271,6 +424,11 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { showInstallDialog = true }) {
+                        Text("Install Plugin")
                     }
                 }
             )
@@ -382,6 +540,49 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit) {
                         onTest = { if (unlocked) vm.testSource(source) },
                         onSaved = onSaved,
                     )
+                }
+            }
+
+            if (installedManifests.isNotEmpty()) {
+                item {
+                    Text(
+                        "INSTALLED PLUGINS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(installedManifests, key = { "installed:${it.id}" }) { manifest ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(manifest.name, fontWeight = FontWeight.Medium)
+                                if (manifest.description.isNotBlank()) {
+                                    Text(
+                                        manifest.description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                manifest.sourceUrl?.let { url ->
+                                    Text(
+                                        url,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                            TextButton(onClick = { vm.uninstallPlugin(manifest.id) }) {
+                                Text("Uninstall", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
                 }
             }
 

@@ -62,7 +62,7 @@ class PluginRepository(private val context: Context) {
         val json = fetchRemoteJson(url) ?: throw IllegalStateException("Failed to fetch manifest from $url")
         val manifest = PluginManifest.fromJson(json, sourceUrl = url)
             ?: throw IllegalArgumentException("Invalid plugin manifest at $url")
-        saveInstalled(manifest)
+        saveManifest(manifest)
         manifest
     }
 
@@ -102,7 +102,8 @@ class PluginRepository(private val context: Context) {
     // Installed manifest persistence
     // ---------------------------------------------------------------------------
 
-    private suspend fun saveInstalled(manifest: PluginManifest) {
+    /** Persists a manifest to the installed-plugins DataStore entry. */
+    suspend fun saveManifest(manifest: PluginManifest) {
         context.dataStore.edit { prefs ->
             val current = parseInstalledManifests(prefs[INSTALLED_PLUGINS_KEY] ?: "[]").toMutableList()
             current.removeAll { it.id == manifest.id }

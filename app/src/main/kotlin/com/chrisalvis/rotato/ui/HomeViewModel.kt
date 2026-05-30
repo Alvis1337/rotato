@@ -34,6 +34,7 @@ import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 import kotlinx.coroutines.flow.combine
 import com.chrisalvis.rotato.worker.RotatoWidgetProvider
 import com.chrisalvis.rotato.worker.WallpaperWorker
@@ -72,6 +73,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val localLists = LocalListsPreferences(application)
     private val sourcesPrefs = LocalSourcesPreferences(application)
     private val malPrefs = MalPreferences(application)
+    private val pluginRepository = PluginRepository(getApplication())
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
 
@@ -595,11 +597,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val malMinScore = malPrefs.filterMinScore.first()
                 val collectionLists = localLists.lists.first()
                 val collectionWallpapers = localLists.allWallpapers.first()
+                val installedPlugins = pluginRepository.installedManifests.first()
 
                 val sourcesArr = JSONArray().also { arr ->
                     sources.forEach { s ->
                         arr.put(JSONObject().apply {
                             put("pluginId", s.pluginId)
+                            put("instanceId", s.instanceId)
+                            put("baseUrl", s.baseUrl)
                             put("enabled", s.enabled)
                             put("apiKey", s.apiKey)
                             put("apiUser", s.apiUser)
@@ -637,7 +642,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 val json = JSONObject().apply {
-                    put("version", 3)
+                    put("version", 4)
                     put("sources", sourcesArr)
                     put("preferences", JSONObject().apply {
                         put("intervalMinutes", prefs.intervalMinutes)
@@ -658,6 +663,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     })
                     put("collections", listsArr)
                     put("collectionWallpapers", wallpapersArr)
+                    put("installedPlugins", JSONArray().also { arr ->
+                        installedPlugins.forEach { m -> arr.put(m.toJson()) }
+                    })
                 }
                 getApplication<Application>().contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(json.toString(2).toByteArray(Charsets.UTF_8))
@@ -687,13 +695,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         val o = sourcesArr.getJSONObject(i)
                         val pluginId = o.optString("pluginId").ifBlank { o.optString("type") }
                         if (pluginId.isBlank()) continue
-                        sourcesPrefs.update(
-                            pluginId = pluginId,
-                            enabled = o.optBoolean("enabled", false),
-                            apiKey = o.optString("apiKey", ""),
-                            apiUser = o.optString("apiUser", ""),
-                            tags = o.optString("tags", ""),
-                            wallhavenPurity = o.optString("wallhavenPurity", "110")
+                        sourcesPrefs.upsertSource(
+                            com.chrisalvis.rotato.data.LocalSource(
+                                pluginId = pluginId,
+                                instanceId = o.optString("instanceId", ""),
+                                baseUrl = o.optString("baseUrl", ""),
+                                enabled = o.optBoolean("enabled", false),
+                                apiKey = o.optString("apiKey", ""),
+                                apiUser = o.optString("apiUser", ""),
+                                tags = o.optString("tags", ""),
+                                wallhavenPurity = o.optString("wallhavenPurity", "110"),
+                            )
                         )
                     }
                 }
@@ -726,6 +738,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         malPrefs.setFilterStatuses(statuses)
                     }
                     malPrefs.setFilterMinScore(malObj.optInt("filterMinScore", 0))
+                }
+
+                // Restore installed plugin manifests
+                val pluginsArr2 = json.optJSONArray("installedPlugins")
+                if (pluginsArr2 != null) {
+                    for (i in 0 until pluginsArr2.length()) {
+                        val obj = pluginsArr2.optJSONObject(i) ?: continue
+                        val manifest = com.chrisalvis.rotato.data.plugins.PluginManifest.fromJson(obj) ?: continue
+                        pluginRepository.saveManifest(manifest)
+                    }
                 }
 
                 // Restore collections (v2+)

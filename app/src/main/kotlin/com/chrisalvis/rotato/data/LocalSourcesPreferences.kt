@@ -77,6 +77,16 @@ class LocalSourcesPreferences(private val context: Context) {
         }
     }
 
+    /** Creates-or-replaces a source entry. Used by backup restore and plugin install. */
+    suspend fun upsertSource(source: LocalSource) {
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }.toMutableList()
+            val idx = current.indexOfFirst { it.pluginId == source.pluginId && it.instanceId == source.instanceId }
+            if (idx == -1) current.add(source) else current[idx] = source
+            prefs[SOURCES_KEY] = serialize(current)
+        }
+    }
+
     suspend fun disableAll() {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").ifEmpty { defaultSources() }
