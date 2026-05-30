@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
@@ -1398,11 +1399,24 @@ private fun WallpaperThumbnail(
             .clip(MaterialTheme.shapes.medium)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
     ) {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
             contentDescription = wallpaper.animeTitle.ifBlank { null },
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            error = {
+                Box(
+                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Wallpaper,
+                        contentDescription = "Image unavailable",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
         )
 
         // Subtle scrim when selected (matches HomeScreen pattern)
@@ -1656,7 +1670,7 @@ private fun WallpaperUrlPreviewDialog(
             ) { page ->
                 val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager
                 val imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = imageUrl,
                     contentDescription = wp.animeTitle.ifBlank { null },
                     contentScale = ContentScale.Fit,
@@ -1669,7 +1683,30 @@ private fun WallpaperUrlPreviewDialog(
                         }
                         .pointerInput(Unit) {
                             detectTapGestures(onDoubleTap = { showZoom = true })
+                        },
+                    error = {
+                        Box(
+                            Modifier.fillMaxSize().background(Color.Black),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Wallpaper,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    "Image unavailable",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
+                    }
                 )
             }
 

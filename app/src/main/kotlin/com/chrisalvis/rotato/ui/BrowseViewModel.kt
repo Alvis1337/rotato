@@ -752,8 +752,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                             app.filesDir,
                             entry.sourceId
                         )
-                        // Local files are always healthy — no HTTP check needed
-                        if (urlToCheck.startsWith("file://")) return@async
+                        // For local file:// URIs, just check existence — no HTTP needed
+                        if (urlToCheck.startsWith("file://")) {
+                            val exists = try { java.io.File(java.net.URI(urlToCheck)).exists() } catch (_: Exception) { false }
+                            if (!exists) synchronized(broken) { broken.add(entry.id) }
+                            return@async
+                        }
                         val isBroken = semaphore.withPermit { isUrlBroken(urlToCheck) }
                         if (isBroken) synchronized(broken) { broken.add(entry.id) }
                     }
