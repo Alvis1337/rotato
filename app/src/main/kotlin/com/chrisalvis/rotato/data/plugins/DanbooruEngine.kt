@@ -137,7 +137,9 @@ object DanbooruEngine : PluginEngine() {
             fullUrl = fullUrl,
             resolution = "${post.optInt("image_width")}x${post.optInt("image_height")}",
             pageUrl = "$base/posts/$id",
-            tags = (post.optString("tag_string_general") + " " + post.optString("tag_string_character"))
+            tags = (post.optString("tag_string_general") + " " +
+                    post.optString("tag_string_character") + " " +
+                    post.optString("tag_string_copyright"))
                 .trim().split(' ').filter { it.isNotBlank() }
                 .map { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }
         )

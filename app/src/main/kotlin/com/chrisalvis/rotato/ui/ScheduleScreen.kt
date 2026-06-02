@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,6 +53,7 @@ fun ScheduleScreen(
     val editEntry by vm.editEntry.collectAsStateWithLifecycle()
     val needsExactAlarm = vm.needsExactAlarmPermission
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         vm.triggerResult.collect { message ->
@@ -103,11 +105,22 @@ fun ScheduleScreen(
                 ) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
                     Text(
-                        "Exact alarm permission not granted — schedules may fire late. " +
-                                "Grant \"Alarms & reminders\" in system settings.",
+                        "Exact alarm permission not granted — schedules may fire late.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
                     )
+                    TextButton(
+                        onClick = {
+                            runCatching {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                }
+                                context.startActivity(intent)
+                            }
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer),
+                    ) { Text("Grant", fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -154,13 +167,15 @@ fun ScheduleScreen(
             ) {
                 items(entries, key = { it.id }) { entry ->
                     val targetList = lists.find { it.id == entry.listId }
+                    val isListDeleted = entry.listId.isNotBlank() && targetList == null
                     ScheduleEntryCard(
                         entry = entry,
                         listName = when {
                             entry.listId.isBlank() -> "Main rotation queue"
                             targetList != null -> targetList.name
-                            else -> "Unknown collection"
+                            else -> "Deleted collection"
                         },
+                        isListDeleted = isListDeleted,
                         isListLocked = entry.listId.isNotBlank() && targetList?.isLocked == true,
                         wasBlockedByLock = entry.lastLockedMs > 0L,
                         lastFiredMs = entry.lastFiredMs,
@@ -169,6 +184,7 @@ fun ScheduleScreen(
                         onDelete = { vm.delete(entry) },
                         onToggleEnabled = { vm.setEnabled(entry, it) },
                         onTriggerNow = { vm.triggerNow(entry) },
+                        onResetCollection = { vm.resetCollection(entry) },
                     )
                 }
             }
@@ -181,6 +197,7 @@ fun ScheduleScreen(
 private fun ScheduleEntryCard(
     entry: ScheduleEntry,
     listName: String,
+    isListDeleted: Boolean,
     isListLocked: Boolean,
     wasBlockedByLock: Boolean,
     lastFiredMs: Long,
@@ -189,17 +206,31 @@ private fun ScheduleEntryCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onTriggerNow: () -> Unit,
+    onResetCollection: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(listName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            listName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isListDeleted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        )
                         if (isListLocked) {
                             Icon(
                                 Icons.Default.Lock,
                                 contentDescription = "Locked",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (isListDeleted) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = "Collection deleted",
                                 modifier = Modifier.size(12.dp),
                                 tint = MaterialTheme.colorScheme.error,
                             )
@@ -212,6 +243,25 @@ private fun ScheduleEntryCard(
                     )
                 }
                 Switch(checked = entry.enabled, onCheckedChange = onToggleEnabled)
+            }
+            if (isListDeleted) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "This collection was deleted — the schedule won't run until you fix it.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = onResetCollection,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text("Use main queue", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
             if (!entry.enabled) {
                 Text(

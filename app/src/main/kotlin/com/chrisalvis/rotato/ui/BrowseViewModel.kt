@@ -52,6 +52,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
 import java.util.UUID
@@ -91,9 +92,16 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .map { all -> all.groupBy { it.listId }.mapValues { (_, v) -> v.size } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    val allKnownTags: StateFlow<List<String>> = localLists.allWallpapers
-        .map { all -> all.flatMap { it.tags }.map { it.lowercase() }.distinct().sorted() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val allKnownTags: StateFlow<List<String>> = combine(
+        localLists.allWallpapers,
+        prefs.historyJson.map { historyFromJson(it) },
+    ) { saved, history ->
+        (saved.flatMap { it.tags } + history.flatMap { it.tags })
+            .map { it.lowercase() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val listCovers: StateFlow<Map<String, String?>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
         val wallpapersByList = all.groupBy { it.listId }
@@ -237,6 +245,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         exitSelectionMode()
         _brokenEntryIds.update { emptySet() }
         checkLinksForCurrentList()
+        // Silently refresh smart collection on open so new matches are caught
+        // even if the observer missed additions while Browse was off-screen.
+        if (list.isSmartCollection) {
+            viewModelScope.launch { populateSmartCollection(list.id, list.smartRule!!) }
+        }
     }
 
     fun clearSelection() {
