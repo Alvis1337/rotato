@@ -512,6 +512,20 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         _selected.update { setOf(wallpaper.entryId) }
     }
 
+    fun enterSelectionMode() {
+        _selectionMode.update { true }
+    }
+
+    fun dragSelect(wallpaper: BrowseWallpaper) {
+        if (!_selectionMode.value) _selectionMode.update { true }
+        _selected.update { it + wallpaper.entryId }
+    }
+
+    fun selectAll() {
+        _selectionMode.update { true }
+        _selected.update { wallpapers.value.map { it.entryId }.toSet() }
+    }
+
     fun toggleSelection(wallpaper: BrowseWallpaper) {
         if (!_selectionMode.value) return
         _selected.update {

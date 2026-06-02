@@ -26,6 +26,9 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Smartphone
@@ -350,7 +353,15 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     }
                 },
                 actions = {
+                    if (selectionMode && selectedList != null) {
+                        IconButton(onClick = { vm.selectAll() }) {
+                            Icon(Icons.Default.DoneAll, contentDescription = "Select all")
+                        }
+                    }
                     if (!selectionMode && selectedList != null) {
+                        IconButton(onClick = { vm.enterSelectionMode() }) {
+                            Icon(Icons.Default.CheckBox, contentDescription = "Select images")
+                        }
                         Box {
                             IconButton(onClick = { showCollectionMenu = true }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "Collection actions")
@@ -668,6 +679,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                         else previewWallpaper = wp
                     },
                     onLongPress = { wp -> vm.enterSelectionMode(wp) },
+                    onDragSelect = { wp -> vm.dragSelect(wp) },
                     onPickFromDevice = selectedList?.let { list ->
                         {
                             pickerTargetListId = list.id
@@ -1284,6 +1296,7 @@ private fun WallpaperGridContent(
     gridState: LazyGridState = rememberLazyGridState(),
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
+    onDragSelect: ((BrowseWallpaper) -> Unit)? = null,
     onPickFromDevice: (() -> Unit)? = null,
     onGoToDiscover: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -1336,10 +1349,46 @@ private fun WallpaperGridContent(
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(listId) { gridState.animateScrollToItem(0) }
 
+    // Drag-to-select: in selection mode, swipe across thumbnails to bulk-select them.
+    // Uses Initial pass so we see events before the scrollable handler; we only consume
+    // after the pointer has moved past slop, so taps still fall through normally.
+    val dragSelectModifier = if (selectionMode && onDragSelect != null) {
+        Modifier.pointerInput(selectionMode, wallpapers) {
+            var lastDragIndex: Int? = null
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var isDragging = false
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull() ?: break
+                    if (!change.pressed) break
+                    val delta = change.position - down.position
+                    if (!isDragging && delta.getDistance() > viewConfiguration.touchSlop) {
+                        isDragging = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        lastDragIndex = null
+                    }
+                    if (isDragging) {
+                        change.consume()
+                        val pos = change.position
+                        val info = gridState.layoutInfo.visibleItemsInfo.find { item ->
+                            pos.x >= item.offset.x && pos.x < item.offset.x + item.size.width &&
+                            pos.y >= item.offset.y && pos.y < item.offset.y + item.size.height
+                        }
+                        if (info != null && info.index != lastDragIndex) {
+                            lastDragIndex = info.index
+                            wallpapers.getOrNull(info.index)?.let { onDragSelect(it) }
+                        }
+                    }
+                }
+            }
+        }
+    } else Modifier
+
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Fixed(3),
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().then(dragSelectModifier),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
