@@ -124,6 +124,9 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val restoreProgress by vm.restoreProgress.collectAsStateWithLifecycle()
     val downloadAllProgress by vm.downloadAllProgress.collectAsStateWithLifecycle()
     val allKnownTags by vm.allKnownTags.collectAsStateWithLifecycle()
+    val activeSources by vm.activeSources.collectAsStateWithLifecycle()
+    val fetchFillLoading by vm.fetchFillLoading.collectAsStateWithLifecycle()
+    var fetchFillFor by remember { mutableStateOf<LocalList?>(null) }
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -159,6 +162,11 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     }
     LaunchedEffect(restoreProgress) {
         restoreProgress?.let { snackbarHostState.showSnackbar(it) }
+    }
+    LaunchedEffect(vm) {
+        vm.fetchFillResult.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
     }
 
     if (showSaveRotationDialog) {
@@ -277,6 +285,18 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             knownTags = allKnownTags,
             onConfirm = { rule -> vm.editSmartRule(list, rule); editRulesFor = null },
             onDismiss = { editRulesFor = null }
+        )
+    }
+
+    fetchFillFor?.let { list ->
+        FetchFromSourcesDialog(
+            list = list,
+            activeSources = activeSources,
+            onConfirm = { tags, count, pluginId, instanceId ->
+                vm.fetchFill(list, tags, count, pluginId, instanceId)
+                fetchFillFor = null
+            },
+            onDismiss = { fetchFillFor = null }
         )
     }
 
@@ -499,6 +519,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     pickerTargetListId = list.id
                     photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
+                onFetchFromSources = { fetchFillFor = it },
                 onCreateList = { vm.showCreateDialog() },
                 modifier = Modifier.padding(padding)
             )
@@ -955,6 +976,7 @@ private fun ListPickerContent(
     onRelockForSession: (LocalList) -> Unit,
     onShowHidden: () -> Unit,
     onPickImages: (LocalList) -> Unit,
+    onFetchFromSources: (LocalList) -> Unit,
     onCreateList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1023,7 +1045,8 @@ private fun ListPickerContent(
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
                     onRelockForSession = { onRelockForSession(list) },
-                    onPickImages = { onPickImages(list) }
+                    onPickImages = { onPickImages(list) },
+                    onFetchFromSources = { onFetchFromSources(list) },
                 )
             }
             if (lockedHiddenCount > 0) {
@@ -1067,202 +1090,180 @@ private fun CollectionCard(
     onLock: () -> Unit,
     onUnlock: () -> Unit,
     onRelockForSession: () -> Unit,
-    onPickImages: () -> Unit
+    onPickImages: () -> Unit,
+    onFetchFromSources: () -> Unit,
 ) {
+    var showMoreMenu by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(3f / 4f)
             .combinedClickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (coverUrl != null) {
-                AsyncImage(
-                    model = coverUrl,
-                    contentDescription = "${list.name} cover",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    Icons.Default.FolderOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp).align(Alignment.Center),
-                    tint = MaterialTheme.colorScheme.outline
-                )
-            }
-
-            // Bottom gradient with name + count
+        Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
-                        )
-                    )
-                    .padding(12.dp)
+                    .height(140.dp)
             ) {
-                Column {
+                if (coverUrl != null) {
+                    AsyncImage(
+                        model = coverUrl,
+                        contentDescription = "${list.name} cover",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (list.useAsRotation) {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (list.isSmartCollection) {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("⚡ Smart", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (list.isLocked) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "Locked",
+                            tint = Color.White,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                                .padding(3.dp)
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, top = 6.dp, bottom = 4.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         list.name,
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         "$count image${if (count != 1) "s" else ""}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.75f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-
-            // Badges top-left: Library, Smart, Lock
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (list.useAsRotation) {
-                    Box(
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-                if (list.isSmartCollection) {
-                    Box(
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f), MaterialTheme.shapes.small)
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Text("⚡ Smart", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-                if (list.isLocked) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = "Locked",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
-            // Action icons top-right
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-            ) {
-                IconButton(onClick = onPickImages, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.AddPhotoAlternate,
-                        contentDescription = "Add photos",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
-                    )
-                }
-                IconButton(onClick = onToggleRotation, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = onToggleRotation) {
                     Icon(
                         if (list.useAsRotation) Icons.Default.Wallpaper else Icons.Outlined.Wallpaper,
-                        contentDescription = "Toggle Library",
-                        tint = if (list.useAsRotation) MaterialTheme.colorScheme.primaryContainer else Color.White,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                        contentDescription = if (list.useAsRotation) "Remove from Library" else "Add to Library",
+                        tint = if (list.useAsRotation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (list.useAsRotation || list.isSmartCollection) {
-                    var showMoreMenu by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                Icons.Default.MoreVert,
-                                contentDescription = "More options",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp).background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                Box {
+                    IconButton(onClick = { showMoreMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                    }
+                    DropdownMenu(
+                        expanded = showMoreMenu,
+                        onDismissRequest = { showMoreMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Add from device") },
+                            onClick = { onPickImages(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Fill from sources") },
+                            onClick = { onFetchFromSources(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
+                        )
+                        if (list.isSmartCollection) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Edit rules") },
+                                onClick = { onEditRules(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Autofill (25)") },
+                                onClick = { onAutofill(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Bolt, contentDescription = null) }
                             )
                         }
-                        DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
-                            if (list.useAsRotation) {
-                                com.chrisalvis.rotato.data.ScreenRotationTarget.entries.forEach { target ->
-                                    DropdownMenuItem(
-                                        text = { Text(target.label) },
-                                        onClick = { onSetRotationTarget(target); showMoreMenu = false },
-                                        leadingIcon = {
-                                            if (list.rotationTarget == target) Icon(Icons.Default.Check, contentDescription = null)
-                                        }
-                                    )
-                                }
-                            }
-                            if (list.isSmartCollection) {
+                        if (list.useAsRotation) {
+                            HorizontalDivider()
+                            com.chrisalvis.rotato.data.ScreenRotationTarget.entries.forEach { target ->
                                 DropdownMenuItem(
-                                    text = { Text("Edit rules") },
-                                    onClick = { onEditRules(); showMoreMenu = false },
-                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Autofill (25)") },
-                                    onClick = { onAutofill(); showMoreMenu = false },
-                                    leadingIcon = { Icon(Icons.Default.Bolt, contentDescription = null) }
+                                    text = { Text(target.label) },
+                                    onClick = { onSetRotationTarget(target); showMoreMenu = false },
+                                    leadingIcon = {
+                                        if (list.rotationTarget == target) Icon(Icons.Default.Check, contentDescription = null)
+                                        else Spacer(Modifier.size(24.dp))
+                                    }
                                 )
                             }
                         }
+                        HorizontalDivider()
+                        when {
+                            !list.isLocked -> DropdownMenuItem(
+                                text = { Text("Lock collection") },
+                                onClick = { onLock(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
+                            )
+                            isSessionUnlocked -> DropdownMenuItem(
+                                text = { Text("Re-hide for session") },
+                                onClick = { onRelockForSession(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) }
+                            )
+                            else -> DropdownMenuItem(
+                                text = { Text("Remove lock") },
+                                onClick = { onUnlock(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            onClick = { onDelete(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                        )
                     }
-                }
-                // Lock toggle: 3 states —
-                //   not locked  → white Lock,     tap to permanently lock
-                //   session-unlocked → white LockOpen, tap to re-hide for session
-                //   permanently locked (shouldn't appear here) → blue LockOpen, tap to permanently unlock
-                val lockIcon = when {
-                    !list.isLocked -> Icons.Default.Lock
-                    isSessionUnlocked -> Icons.Default.LockOpen
-                    else -> Icons.Default.LockOpen
-                }
-                val lockTint = when {
-                    !list.isLocked -> Color.White
-                    isSessionUnlocked -> Color.White
-                    else -> MaterialTheme.colorScheme.primaryContainer
-                }
-                val lockAction = when {
-                    !list.isLocked -> onLock
-                    isSessionUnlocked -> onRelockForSession
-                    else -> onUnlock
-                }
-                IconButton(
-                    onClick = lockAction,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        lockIcon,
-                        contentDescription = if (!list.isLocked) "Lock collection" else if (isSessionUnlocked) "Re-hide collection" else "Remove lock",
-                        tint = lockTint,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
-                    )
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(Color.Black.copy(alpha = 0.4f), MaterialTheme.shapes.small)
-                    )
                 }
             }
         }
@@ -1980,6 +1981,103 @@ private fun ZoomUrlImageDialog(imageUrl: String, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+private fun com.chrisalvis.rotato.data.LocalSource.displayName(): String {
+    val base = pluginId.lowercase().replaceFirstChar { it.uppercase() }
+    return if (instanceId.isNotBlank()) "$base / $instanceId" else base
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FetchFromSourcesDialog(
+    list: LocalList,
+    activeSources: List<com.chrisalvis.rotato.data.LocalSource>,
+    onConfirm: (tags: String, count: Int, pluginId: String?, instanceId: String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var tags by remember { mutableStateOf("") }
+    var count by remember { mutableIntStateOf(25) }
+    var selectedPluginId by remember { mutableStateOf<String?>(null) }
+    var selectedInstanceId by remember { mutableStateOf<String?>(null) }
+    var sourceExpanded by remember { mutableStateOf(false) }
+
+    val selectedSource = activeSources.find { it.pluginId == selectedPluginId && it.instanceId == (selectedInstanceId ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Fill from Sources") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags") },
+                    placeholder = { Text("e.g. hatsune_miku blue_hair") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("How many", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(10, 25, 50, 100).forEach { n ->
+                            FilterChip(
+                                selected = count == n,
+                                onClick = { count = n },
+                                label = { Text("$n") }
+                            )
+                        }
+                    }
+                }
+                if (activeSources.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("From source", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        ExposedDropdownMenuBox(
+                            expanded = sourceExpanded,
+                            onExpandedChange = { sourceExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedSource?.displayName() ?: "All active sources",
+                                onValueChange = {},
+                                readOnly = true,
+                                modifier = Modifier
+                                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .fillMaxWidth(),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sourceExpanded) }
+                            )
+                            ExposedDropdownMenu(
+                                expanded = sourceExpanded,
+                                onDismissRequest = { sourceExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("All active sources") },
+                                    onClick = { selectedPluginId = null; selectedInstanceId = null; sourceExpanded = false }
+                                )
+                                activeSources.forEach { src ->
+                                    DropdownMenuItem(
+                                        text = { Text(src.displayName()) },
+                                        onClick = {
+                                            selectedPluginId = src.pluginId
+                                            selectedInstanceId = src.instanceId
+                                            sourceExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(tags, count, selectedPluginId, selectedInstanceId.takeIf { it?.isNotBlank() == true }) },
+                enabled = tags.isNotBlank()
+            ) { Text("Fill") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -16,10 +16,13 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SmartRule
@@ -53,6 +56,8 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.plugins.PluginExecutor
+import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
 import java.util.UUID
@@ -68,6 +73,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val prefs = RotatoPreferences(application)
     private val imageDir = File(application.filesDir, "rotato_images").also { it.mkdirs() }
     private val feedRepo = FeedRepository(imageDir)
+    private val pluginRepo = PluginRepository(application)
+    private val localSources = LocalSourcesPreferences(application)
     private lateinit var processLifecycleObserver: DefaultLifecycleObserver
 
     // All lists including locked ones (source of truth)
@@ -102,6 +109,16 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             .distinct()
             .sorted()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val activeSources: StateFlow<List<LocalSource>> = localSources.sources
+        .map { it.filter { src -> src.enabled } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _fetchFillLoading = MutableStateFlow(false)
+    val fetchFillLoading: StateFlow<Boolean> = _fetchFillLoading.asStateFlow()
+
+    private val _fetchFillResult = MutableSharedFlow<String>()
+    val fetchFillResult: SharedFlow<String> = _fetchFillResult.asSharedFlow()
 
     val listCovers: StateFlow<Map<String, String?>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
         val wallpapersByList = all.groupBy { it.listId }
@@ -314,6 +331,55 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             val ctx = app.applicationContext
             withContext(Dispatchers.Main) {
                 Toast.makeText(ctx, if (added > 0) "Autofill added $added image${if (added != 1) "s" else ""}" else "No new matches found", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun fetchFill(list: LocalList, tags: String, count: Int, pluginId: String? = null, instanceId: String? = null) {
+        viewModelScope.launch {
+            _fetchFillLoading.update { true }
+            try {
+                val manifests = pluginRepo.installedManifests.first()
+                val allSources = localSources.sources.first()
+                val nsfw = prefs.nsfwMode.first()
+                val candidates = allSources.filter { src ->
+                    if (!src.enabled) return@filter false
+                    if (pluginId != null && src.pluginId != pluginId) return@filter false
+                    if (instanceId != null && src.instanceId != instanceId) return@filter false
+                    val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
+                    PluginExecutor.canServe(manifest, nsfw, src)
+                }
+                if (candidates.isEmpty()) {
+                    _fetchFillResult.emit("No compatible active sources found. Enable sources in Settings → Sources.")
+                    return@launch
+                }
+                var added = 0
+                for (src in candidates.shuffled()) {
+                    if (added >= count) break
+                    val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
+                    val remaining = count - added
+                    val effectiveNsfw = src.nsfwEnabled ?: nsfw
+                    val wallpapers = try {
+                        PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, BrainrotFilters(), remaining + 5)
+                    } catch (e: Exception) {
+                        Log.e("BrowseViewModel", "fetchFill error for ${src.pluginId}", e)
+                        emptyList()
+                    }
+                    for (wp in wallpapers) {
+                        if (added >= count) break
+                        val ok = localLists.addWallpaper(list.id, wp)
+                        if (ok) added++
+                    }
+                }
+                _fetchFillResult.emit(
+                    if (added > 0) "Added $added image${if (added != 1) "s" else ""} to \"${list.name}\""
+                    else "No new images found — try different tags or sources"
+                )
+            } catch (e: Exception) {
+                Log.e("BrowseViewModel", "fetchFill failed", e)
+                _fetchFillResult.emit("Error: ${e.message ?: "Unknown error"}")
+            } finally {
+                _fetchFillLoading.update { false }
             }
         }
     }
