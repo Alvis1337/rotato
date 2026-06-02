@@ -51,6 +51,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -112,6 +114,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rotatoPrefs = remember { RotatoPreferences(context) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val googleDriveBackupEnabled by viewModel.googleDriveBackupEnabled.collectAsStateWithLifecycle()
@@ -140,6 +143,14 @@ fun SettingsScreen(
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { viewModel.importSettings(it) } }
+
+    LaunchedEffect(backupState) {
+        when (backupState) {
+            BackupState.SUCCESS -> snackbarHostState.showSnackbar("Backup complete")
+            BackupState.ERROR -> snackbarHostState.showSnackbar("Backup failed — check storage permissions")
+            else -> {}
+        }
+    }
 
     if (showClearDialog) {
         AlertDialog(
@@ -335,6 +346,7 @@ fun SettingsScreen(
 
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -707,7 +719,7 @@ fun SettingsScreen(
                                 if (backupState == BackupState.BUSY) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
-                                    Text(if (backupState == BackupState.SUCCESS) "Exported!" else if (backupState == BackupState.ERROR) "Failed" else "Export")
+                                    Text("Export")
                                 }
                             }
                             OutlinedButton(
@@ -715,7 +727,7 @@ fun SettingsScreen(
                                 enabled = backupState == BackupState.IDLE,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text(if (backupState == BackupState.SUCCESS) "Imported!" else if (backupState == BackupState.ERROR) "Failed" else "Import")
+                                Text("Import")
                             }
                         }
                     }

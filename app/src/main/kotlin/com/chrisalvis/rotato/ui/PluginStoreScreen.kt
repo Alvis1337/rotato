@@ -23,6 +23,7 @@ import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.data.plugins.PluginStoreEntry
 import com.chrisalvis.rotato.data.plugins.PluginManifest
+import com.chrisalvis.rotato.data.plugins.StoreResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,12 +51,9 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
     private val _loadingState = MutableStateFlow(StoreLoadingState.Loading)
     val loadingState: StateFlow<StoreLoadingState> = _loadingState.asStateFlow()
 
-    /** Map of storeIndexUrl → list of entries from that store. */
-    private val _entriesByStore = MutableStateFlow<Map<String, List<PluginStoreEntry>>>(emptyMap())
-    val entriesByStore: StateFlow<Map<String, List<PluginStoreEntry>>> = _entriesByStore.asStateFlow()
-
-    /** Flat list of all entries across all stores, for update checking. */
-    val allEntries: List<PluginStoreEntry> get() = _entriesByStore.value.values.flatten()
+    /** Map of storeIndexUrl → fetch result for that store. */
+    private val _storeResults = MutableStateFlow<Map<String, StoreResult>>(emptyMap())
+    val storeResults: StateFlow<Map<String, StoreResult>> = _storeResults.asStateFlow()
 
     val installedManifests: StateFlow<List<PluginManifest>> = pluginRepository.installedManifests
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -88,9 +86,10 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _loadingState.update { StoreLoadingState.Loading }
             try {
-                val byStore = pluginRepository.fetchAllStoreEntries()
-                _entriesByStore.update { byStore }
-                _updateAvailable.update { pluginRepository.checkForUpdates(byStore.values.flatten()) }
+                val results = pluginRepository.fetchAllStoreEntries()
+                _storeResults.update { results }
+                val allEntries = results.values.filterIsInstance<StoreResult.Success>().flatMap { it.entries }
+                _updateAvailable.update { pluginRepository.checkForUpdates(allEntries) }
                 _loadingState.update { StoreLoadingState.Loaded }
             } catch (_: Exception) {
                 _loadingState.update { StoreLoadingState.Error }
@@ -120,6 +119,14 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
             pluginRepository.removeCustomStore(url)
             refresh()
         }
+    }
+
+    fun updateAll() {
+        val toUpdate = _storeResults.value.values
+            .filterIsInstance<StoreResult.Success>()
+            .flatMap { it.entries }
+            .filter { it.id in _updateAvailable.value }
+        toUpdate.forEach { entry -> install(entry) }
     }
 
     fun install(entry: PluginStoreEntry) {
@@ -180,7 +187,7 @@ class PluginStoreViewModel(app: Application) : AndroidViewModel(app) {
 fun PluginStoreScreen(onNavigateBack: () -> Unit) {
     val vm: PluginStoreViewModel = viewModel()
     val loadingState by vm.loadingState.collectAsStateWithLifecycle()
-    val entriesByStore by vm.entriesByStore.collectAsStateWithLifecycle()
+    val storeResults by vm.storeResults.collectAsStateWithLifecycle()
     val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
     val installStates by vm.installStates.collectAsStateWithLifecycle()
@@ -192,8 +199,12 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
     val addStoreError by vm.addStoreError.collectAsStateWithLifecycle()
 
     val installedIds = remember(installedManifests) { installedManifests.map { it.id }.toSet() }
-    val allEntries = remember(entriesByStore) { entriesByStore.values.flatten() }
-    val storeOrder = remember(entriesByStore) { entriesByStore.keys.toList() }
+    val storeOrder = remember(storeResults) { storeResults.keys.toList() }
+    val updatableEntries = remember(storeResults, updateAvailable) {
+        storeResults.values.filterIsInstance<StoreResult.Success>()
+            .flatMap { it.entries }
+            .filter { it.id in updateAvailable }
+    }
 
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -339,8 +350,12 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                         }
                         // Custom stores
                         customStoreUrls.forEach { storeUrl ->
-                            val storeName = remember(storeUrl, entriesByStore) {
-                                entriesByStore[storeUrl]?.firstOrNull()?.storeName ?: storeUrl
+                            val storeName = remember(storeUrl, storeResults) {
+                                when (val result = storeResults[storeUrl]) {
+                                    is StoreResult.Success -> result.name
+                                    is StoreResult.Failure -> result.name
+                                    null -> storeUrl
+                                }
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -409,45 +424,91 @@ fun PluginStoreScreen(onNavigateBack: () -> Unit) {
                     }
                 }
                 StoreLoadingState.Loaded -> {
+                    if (updatableEntries.isNotEmpty()) {
+                        item(key = "update_banner") {
+                            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "${updatableEntries.size} update${if (updatableEntries.size > 1) "s" else ""} available",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Button(onClick = { vm.updateAll() }) { Text("Update All") }
+                                }
+                            }
+                        }
+                    }
                     for (storeUrl in storeOrder) {
-                        val storeEntries = entriesByStore[storeUrl] ?: continue
-                        val storeName = storeEntries.firstOrNull()?.storeName ?: storeUrl
-                        val filtered = if (searchQuery.isBlank()) storeEntries
-                        else storeEntries.filter { entry ->
-                            entry.name.contains(searchQuery, ignoreCase = true) ||
-                                entry.description.contains(searchQuery, ignoreCase = true) ||
-                                entry.tags.any { it.contains(searchQuery, ignoreCase = true) }
-                        }
-                        if (filtered.isEmpty()) continue
+                        when (val result = storeResults[storeUrl]) {
+                            is StoreResult.Success -> {
+                                val storeName = result.name
+                                val storeEntries = result.entries
+                                val filtered = if (searchQuery.isBlank()) storeEntries
+                                else storeEntries.filter { entry ->
+                                    entry.name.contains(searchQuery, ignoreCase = true) ||
+                                        entry.description.contains(searchQuery, ignoreCase = true) ||
+                                        entry.tags.any { it.contains(searchQuery, ignoreCase = true) }
+                                }
+                                if (filtered.isEmpty()) continue
 
-                        item(key = "header_$storeUrl") {
-                            Text(
-                                storeName.uppercase(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                            )
+                                item(key = "header_$storeUrl") {
+                                    Text(
+                                        storeName.uppercase(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                    )
+                                }
+                                items(filtered, key = { "${storeUrl}:${it.id}" }) { entry ->
+                                    val isBundled = entry.isBundled || entry.id in PluginStoreViewModel.BUNDLED_IDS
+                                    val isInstalled = entry.id in installedIds
+                                    val hasUpdate = entry.id in updateAvailable
+                                    val installState = installStates[entry.id] ?: InstallPluginState.IDLE
+                                    val installError = installErrors[entry.id]
+                                    PluginStoreCard(
+                                        entry = entry,
+                                        isBundled = isBundled,
+                                        isInstalled = isInstalled,
+                                        hasUpdate = hasUpdate,
+                                        installState = installState,
+                                        installError = installError,
+                                        onInstall = { vm.install(entry) },
+                                        onUninstall = { vm.uninstall(entry.id) },
+                                    )
+                                }
+                            }
+                            is StoreResult.Failure -> {
+                                val isCustom = storeUrl != PluginRepository.STORE_INDEX_URL
+                                item(key = "error_$storeUrl") {
+                                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(result.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                                Text(result.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                            }
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                TextButton(onClick = { vm.refresh() }) { Text("Retry") }
+                                                if (isCustom) {
+                                                    TextButton(onClick = { vm.removeStore(storeUrl) }) {
+                                                        Text("Remove", color = MaterialTheme.colorScheme.error)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            null -> {}
                         }
-
-                        items(filtered, key = { "${storeUrl}:${it.id}" }) { entry ->
-                            val isBundled = entry.isBundled || entry.id in PluginStoreViewModel.BUNDLED_IDS
-                            val isInstalled = entry.id in installedIds
-                            val hasUpdate = entry.id in updateAvailable
-                            val installState = installStates[entry.id] ?: InstallPluginState.IDLE
-                            val installError = installErrors[entry.id]
-
-                            PluginStoreCard(
-                                entry = entry,
-                                isBundled = isBundled,
-                                isInstalled = isInstalled,
-                                hasUpdate = hasUpdate,
-                                installState = installState,
-                                installError = installError,
-                                onInstall = { vm.install(entry) },
-                                onUninstall = { vm.uninstall(entry.id) },
-                            )
-                        }
-                    } // end for (storeOrder)
+                    }
                 }
             }
         }

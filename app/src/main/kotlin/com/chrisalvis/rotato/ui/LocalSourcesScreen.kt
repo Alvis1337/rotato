@@ -226,6 +226,10 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun disableAllSources() {
         viewModelScope.launch { prefs.disableAll() }
     }
+
+    fun setPluginEnabled(pluginId: String, enabled: Boolean) {
+        viewModelScope.launch { prefs.setPluginEnabled(pluginId, enabled) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -242,6 +246,9 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
     val showMigrationNotice by vm.showMigrationNotice.collectAsStateWithLifecycle()
 
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
+    val sourcesByPlugin = remember(sources) { sources.groupBy { it.pluginId } }
+    val activeSources = remember(sources) { sources.filter { it.enabled } }
+    val disabledSources = remember(sources) { sources.filterNot { it.enabled } }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -251,6 +258,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
     var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showDisabledSources by remember { mutableStateOf(false) }
 
     if (showAddRedditDialog) {
         val redditFocus = remember { FocusRequester() }
@@ -322,10 +330,6 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
             }
         )
     }
-    // Partition: non-Reddit free, Reddit instances, then premium
-    val freeSources = sources.filter { manifestMap[it.pluginId]?.isPremium != true && it.pluginId != "REDDIT" }
-    val redditSources = sources.filter { it.pluginId == "REDDIT" }
-    val premiumSources = sources.filter { manifestMap[it.pluginId]?.isPremium == true }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -358,7 +362,6 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
                 )
             }
 
-            // One-time plugin system migration notice
             if (showMigrationNotice) {
                 item {
                     Card(
@@ -402,145 +405,145 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
                     }
                 }
             }
-            if (freeSources.isNotEmpty()) {
-                item {
-                    Text(
-                        "FREE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                items(freeSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
-                    SourceCard(
-                        source = source,
-                        manifest = manifestMap[source.pluginId],
-                        health = healthMap[source.pluginId],
-                        keyValidation = keyValidationState[source.pluginId],
-                        keyNetworkError = keyNetworkError,
-                        isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
-                        onToggle = { vm.setEnabled(source.pluginId, source.instanceId, it) },
-                        onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
-                        onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
-                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
-                        onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
-                        onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
-                        onValidateWallhavenKey = vm::validateWallhavenKey,
-                        onTest = { vm.testSource(source) },
-                        onSaved = onSaved,
-                    )
+
+            item {
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = installedManifests.size.toString(),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "plugin${if (installedManifests.size == 1) "" else "s"} installed",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        VerticalDivider(modifier = Modifier.height(48.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = activeSources.size.toString(),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "source${if (activeSources.size == 1) "" else "s"} active",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
-            // Reddit multi-instance section
             item {
                 Text(
-                    "REDDIT",
+                    "INSTALLED PLUGINS",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
-            items(redditSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
-                SourceCard(
-                    source = source,
-                    manifest = manifestMap[source.pluginId],
-                    health = healthMap[source.pluginId],
-                    keyValidation = null,
-                    keyNetworkError = keyNetworkError,
-                    isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
-                    onToggle = { vm.setEnabled(source.pluginId, source.instanceId, it) },
-                    onSaveCredentials = { _, _ -> },
-                    onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
-                    onSaveWallhavenPurity = {},
-                    onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
-                    onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
-                    onValidateWallhavenKey = {},
-                    onTest = { vm.testSource(source) },
-                    onRemove = { confirmRemove = source.pluginId to source.instanceId },
-                    onSaved = onSaved,
-                )
-            }
-            item {
-                OutlinedButton(
-                    onClick = { showAddRedditDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("+ Add subreddit")
-                }
-            }
 
-            if (premiumSources.isNotEmpty()) {
+            if (installedManifests.isEmpty()) {
                 item {
-                    Text(
-                        "PREMIUM",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                items(premiumSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
-                    val manifest2 = manifestMap[source.pluginId]
-                    val unlocked = manifest2 == null || PluginEntitlement.isUnlocked(manifest2)
-                    SourceCard(
-                        source = source,
-                        manifest = manifestMap[source.pluginId],
-                        health = healthMap[source.pluginId],
-                        keyValidation = keyValidationState[source.pluginId],
-                        keyNetworkError = keyNetworkError,
-                        isPremium = true,
-                        isLocked = !unlocked,
-                        isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
-                        onToggle = { if (unlocked) vm.setEnabled(source.pluginId, source.instanceId, it) },
-                        onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
-                        onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
-                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
-                        onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
-                        onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
-                        onValidateWallhavenKey = vm::validateWallhavenKey,
-                        onTest = { if (unlocked) vm.testSource(source) },
-                        onSaved = onSaved,
-                    )
-                }
-            }
-
-            if (installedManifests.isNotEmpty()) {
-                item {
-                    Text(
-                        "INSTALLED PLUGINS",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                items(installedManifests, key = { "installed:${it.id}" }) { manifest ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(manifest.name, fontWeight = FontWeight.Medium)
-                                if (manifest.description.isNotBlank()) {
+                            Text("No plugins installed yet", fontWeight = FontWeight.Medium)
+                            Text(
+                                "Install a plugin from the Plugin Store to add local sources.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(installedManifests, key = { "installed:${it.id}" }) { manifest ->
+                    val pluginSources = sourcesByPlugin[manifest.id].orEmpty()
+                    val sourceCount = pluginSources.size
+                    val activeCount = pluginSources.count { it.enabled }
+                    val hasActiveSources = activeCount > 0
+                    val unlocked = !manifest.isPremium || PluginEntitlement.isUnlocked(manifest)
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(manifest.name, fontWeight = FontWeight.Medium)
+                                    val description = buildString {
+                                        append("$activeCount of $sourceCount active")
+                                        if (manifest.description.isNotBlank()) {
+                                            append(" • ")
+                                            append(manifest.description)
+                                        }
+                                    }
                                     Text(
-                                        manifest.description,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        description,
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        SuggestionChip(
+                                            onClick = {},
+                                            enabled = false,
+                                            label = { Text("$sourceCount source${if (sourceCount == 1) "" else "s"}") }
+                                        )
+                                        if (manifest.isPremium) {
+                                            SuggestionChip(
+                                                onClick = {},
+                                                enabled = false,
+                                                label = { Text(if (unlocked) "Premium" else "Locked") },
+                                                icon = if (!unlocked) {
+                                                    { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                                } else null
+                                            )
+                                        }
+                                    }
                                 }
-                                manifest.sourceUrl?.let { url ->
-                                    Text(
-                                        url,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                }
+                                Switch(
+                                    checked = hasActiveSources,
+                                    onCheckedChange = { vm.setPluginEnabled(manifest.id, it) },
+                                    enabled = sourceCount > 0 && unlocked
+                                )
                             }
-                            TextButton(onClick = { vm.uninstallPlugin(manifest.id) }) {
-                                Text("Uninstall", color = MaterialTheme.colorScheme.error)
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    onClick = { vm.setPluginEnabled(manifest.id, activeCount != sourceCount) },
+                                    enabled = sourceCount > 0 && unlocked
+                                ) {
+                                    Text(if (activeCount == sourceCount && sourceCount > 0) "Disable all" else "Enable all")
+                                }
+                                if (manifest.id == "REDDIT") {
+                                    OutlinedButton(onClick = { showAddRedditDialog = true }) {
+                                        Text("Add subreddit")
+                                    }
+                                }
+                                TextButton(
+                                    onClick = { vm.uninstallPlugin(manifest.id) },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Uninstall")
+                                }
                             }
                         }
                     }
@@ -548,8 +551,127 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
             }
 
             item {
+                Text(
+                    "ACTIVE SOURCES (${activeSources.size})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            if (activeSources.isEmpty()) {
+                item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "No active sources yet. Enable a source below to start fetching images.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                items(activeSources, key = { "${it.pluginId}:${it.instanceId}" }) { source ->
+                    val manifest = manifestMap[source.pluginId]
+                    val isPremium = manifest?.isPremium == true
+                    val unlocked = manifest == null || !isPremium || PluginEntitlement.isUnlocked(manifest)
+                    SourceCard(
+                        source = source,
+                        manifest = manifest,
+                        health = healthMap[source.pluginId],
+                        keyValidation = if (source.pluginId == "REDDIT") null else keyValidationState[source.pluginId],
+                        keyNetworkError = keyNetworkError,
+                        isPremium = isPremium,
+                        isLocked = !unlocked,
+                        isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
+                        onToggle = { vm.setEnabled(source.pluginId, source.instanceId, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
+                        onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
+                        onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
+                        onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
+                        onValidateWallhavenKey = if (source.pluginId == "REDDIT") ({ _ -> }) else vm::validateWallhavenKey,
+                        onTest = { if (unlocked) vm.testSource(source) },
+                        onRemove = if (source.pluginId == "REDDIT") {
+                            { confirmRemove = source.pluginId to source.instanceId }
+                        } else null,
+                        onSaved = onSaved,
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "DISABLED SOURCES (${disabledSources.size})",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (disabledSources.isNotEmpty()) {
+                        TextButton(onClick = { showDisabledSources = !showDisabledSources }) {
+                            Text(if (showDisabledSources) "Collapse" else "Expand")
+                        }
+                    }
+                }
+            }
+
+            when {
+                disabledSources.isEmpty() -> item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "No disabled sources.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                !showDisabledSources -> item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "Disabled sources are hidden until you expand this section.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                else -> items(disabledSources, key = { "disabled:${it.pluginId}:${it.instanceId}" }) { source ->
+                    val manifest = manifestMap[source.pluginId]
+                    val isPremium = manifest?.isPremium == true
+                    val unlocked = manifest == null || !isPremium || PluginEntitlement.isUnlocked(manifest)
+                    SourceCard(
+                        source = source,
+                        manifest = manifest,
+                        health = healthMap[source.pluginId],
+                        keyValidation = if (source.pluginId == "REDDIT") null else keyValidationState[source.pluginId],
+                        keyNetworkError = keyNetworkError,
+                        isPremium = isPremium,
+                        isLocked = !unlocked,
+                        isTesting = testingSource == "${source.pluginId}:${source.instanceId}",
+                        onToggle = { vm.setEnabled(source.pluginId, source.instanceId, it) },
+                        onSaveCredentials = { key, user -> vm.setCredentials(source.pluginId, source.instanceId, key, user) },
+                        onSaveTags = { vm.setTags(source.pluginId, source.instanceId, it) },
+                        onSaveWallhavenPurity = { vm.setWallhavenPurity(source.pluginId, source.instanceId, it) },
+                        onSaveBaseUrl = { vm.setBaseUrl(source.pluginId, source.instanceId, it) },
+                        onSaveExtraConfig = { key, value -> vm.setExtraConfig(source.pluginId, source.instanceId, key, value) },
+                        onValidateWallhavenKey = if (source.pluginId == "REDDIT") ({ _ -> }) else vm::validateWallhavenKey,
+                        onTest = { if (unlocked) vm.testSource(source) },
+                        onRemove = if (source.pluginId == "REDDIT") {
+                            { confirmRemove = source.pluginId to source.instanceId }
+                        } else null,
+                        onSaved = onSaved,
+                    )
+                }
+            }
+
+            item {
                 Spacer(Modifier.height(8.dp))
-                if (sources.any { it.enabled }) {
+                if (activeSources.isNotEmpty()) {
                     OutlinedButton(
                         onClick = { showDisableAllConfirm = true },
                         modifier = Modifier.fillMaxWidth(),

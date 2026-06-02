@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.chrisalvis.rotato.data.dataStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -16,6 +19,11 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+
+sealed class StoreResult {
+    data class Success(val name: String, val entries: List<PluginStoreEntry>) : StoreResult()
+    data class Failure(val name: String, val error: String) : StoreResult()
+}
 
 data class PluginStoreEntry(
     val id: String,
@@ -65,7 +73,7 @@ class PluginRepository(private val context: Context) {
     /** All available manifests: user-installed only. Bundled plugins are no longer auto-loaded. */
     val manifests: Flow<List<PluginManifest>> get() = installedManifests
 
-    /** Returns the manifest with [id], checking installed first then bundled. Null if not found. */
+    /** Returns the installed manifest with [id], or null if not installed. */
     suspend fun getManifest(id: String): PluginManifest? = manifests.first().firstOrNull { it.id == id }
 
     /**
@@ -116,21 +124,24 @@ class PluginRepository(private val context: Context) {
 
     /**
      * Fetches all store entries from the default index and every user-added index.
-     * Returns a map of indexUrl → entries so the UI can group by store.
+     * Returns a map of indexUrl → typed result so the UI can show per-store errors.
      */
-    suspend fun fetchAllStoreEntries(): Map<String, List<PluginStoreEntry>> = withContext(Dispatchers.IO) {
-        val result = linkedMapOf<String, List<PluginStoreEntry>>()
-        runCatching {
-            val (_, entries) = fetchFromIndexUrl(STORE_INDEX_URL)
-            result[STORE_INDEX_URL] = entries
+    suspend fun fetchAllStoreEntries(): Map<String, StoreResult> = withContext(Dispatchers.IO) {
+        val allUrls = listOf(STORE_INDEX_URL) + customStoreUrls.first()
+        coroutineScope {
+            allUrls.map { url ->
+                async {
+                    url to runCatching {
+                        val (name, entries) = fetchFromIndexUrl(url)
+                        StoreResult.Success(name, entries)
+                    }.getOrElse { e ->
+                        val fallbackName = if (url == STORE_INDEX_URL) DEFAULT_STORE_NAME
+                        else extractDomainName(url)
+                        StoreResult.Failure(fallbackName, e.message ?: "Failed to load store")
+                    }
+                }
+            }.awaitAll().toMap(LinkedHashMap())
         }
-        for (url in customStoreUrls.first()) {
-            runCatching {
-                val (_, entries) = fetchFromIndexUrl(url)
-                result[url] = entries
-            }
-        }
-        result
     }
 
     /**

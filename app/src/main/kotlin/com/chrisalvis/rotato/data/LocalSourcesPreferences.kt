@@ -83,6 +83,15 @@ class LocalSourcesPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setPluginEnabled(pluginId: String, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]")
+            prefs[SOURCES_KEY] = serialize(current.map {
+                if (it.pluginId == pluginId) it.copy(enabled = enabled) else it
+            })
+        }
+    }
+
     suspend fun updateSourceNsfw(pluginId: String, instanceId: String, nsfwEnabled: Boolean?) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]").toMutableList()
