@@ -302,7 +302,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         MalCollectionDialog(
             animeEntries = malAnimeEntries,
             activeSources = activeSources,
-            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary ->
+            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary, nsfwOverride, minResolution, aspectRatio, useMalFilter ->
                 vm.createMalCollection(
                     name = name,
                     animeTitle = animeTitle,
@@ -312,6 +312,10 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     fillCount = fillCount,
                     matchAny = matchAny,
                     autoAddToLibrary = autoAddToLibrary,
+                    nsfwOverride = nsfwOverride,
+                    minResolution = minResolution,
+                    aspectRatio = aspectRatio,
+                    useMalFilter = useMalFilter,
                 )
                 showCreateMalDialog = false
             },
@@ -336,7 +340,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             animeEntries = malAnimeEntries,
             activeSources = activeSources,
             existingList = list,
-            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary ->
+            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary, nsfwOverride, minResolution, aspectRatio, useMalFilter ->
                 vm.updateMalCollection(
                     list = list,
                     name = name,
@@ -347,6 +351,10 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     fillCount = fillCount,
                     matchAny = matchAny,
                     autoAddToLibrary = autoAddToLibrary,
+                    nsfwOverride = nsfwOverride,
+                    minResolution = minResolution,
+                    aspectRatio = aspectRatio,
+                    useMalFilter = useMalFilter,
                 )
                 editMalFor = null
             },
@@ -2207,6 +2215,10 @@ private fun MalCollectionDialog(
         fillCount: Int,
         matchAny: Boolean,
         autoAddToLibrary: Boolean,
+        nsfwOverride: Boolean?,
+        minResolution: MinResolution,
+        aspectRatio: AspectRatio,
+        useMalFilter: Boolean,
     ) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2221,6 +2233,10 @@ private fun MalCollectionDialog(
     var autoAddToLibrary by remember(existingList?.id) {
         mutableStateOf(existingConfig?.autoAddToLibrary ?: (existingList?.useAsRotation == true))
     }
+    var nsfwOverride by remember(existingList?.id) { mutableStateOf(existingConfig?.nsfwOverride) }
+    var minResolution by remember(existingList?.id) { mutableStateOf(existingConfig?.minResolution ?: MinResolution.ANY) }
+    var aspectRatio by remember(existingList?.id) { mutableStateOf(existingConfig?.aspectRatio ?: AspectRatio.ANY) }
+    var useMalFilter by remember(existingList?.id) { mutableStateOf(existingConfig?.useMalFilter ?: false) }
     var selectedPluginId by remember(existingList?.id) { mutableStateOf(existingConfig?.sourcePluginId) }
     var selectedInstanceId by remember(existingList?.id) {
         mutableStateOf(existingConfig?.sourceInstanceId?.takeIf { it.isNotBlank() })
@@ -2235,7 +2251,6 @@ private fun MalCollectionDialog(
         animeEntries
             .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
             .sortedByDescending { it.score }
-            .take(8)
     }
 
     fun selectAnime(entry: MalAnimeEntry) {
@@ -2268,7 +2283,7 @@ private fun MalCollectionDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 180.dp)
+                            .heightIn(max = 280.dp)
                             .border(
                                 BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                 shape = MaterialTheme.shapes.medium
@@ -2363,6 +2378,55 @@ private fun MalCollectionDialog(
                             )
                         }
                     }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("NSFW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = nsfwOverride == null, onClick = { nsfwOverride = null }, label = { Text("Auto") })
+                            FilterChip(selected = nsfwOverride == true, onClick = { nsfwOverride = true }, label = { Text("On") })
+                            FilterChip(selected = nsfwOverride == false, onClick = { nsfwOverride = false }, label = { Text("Off") })
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Min resolution", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            listOf(
+                                MinResolution.ANY,
+                                MinResolution.HD,
+                                MinResolution.FHD,
+                                MinResolution.QHD,
+                                MinResolution.UHD,
+                            ).forEach { res ->
+                                FilterChip(
+                                    selected = minResolution == res,
+                                    onClick = { minResolution = res },
+                                    label = { Text(res.label.substringBefore(' ')) }
+                                )
+                            }
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Aspect ratio", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            AspectRatio.entries.filter { it != AspectRatio.MY_PHONE }.forEach { ratio ->
+                                FilterChip(
+                                    selected = aspectRatio == ratio,
+                                    onClick = { aspectRatio = ratio },
+                                    label = { Text(ratio.label.substringBefore(' ')) }
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { useMalFilter = !useMalFilter }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Checkbox(checked = useMalFilter, onCheckedChange = { useMalFilter = it })
+                        Text("MAL list only", style = MaterialTheme.typography.bodyMedium)
+                    }
                     if (activeSources.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Preferred source", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2420,6 +2484,10 @@ private fun MalCollectionDialog(
                         count,
                         matchAny,
                         autoAddToLibrary,
+                        nsfwOverride,
+                        minResolution,
+                        aspectRatio,
+                        useMalFilter,
                     )
                 },
                 enabled = animeEntries.isNotEmpty() && selectedTitle.isNotBlank() && name.isNotBlank()

@@ -217,6 +217,14 @@ class LocalListsPreferences(private val context: Context) {
                     fillCount = malConfigObj.optInt("fillCount", 25).coerceAtLeast(1),
                     matchAny = malConfigObj.optBoolean("matchAny", false),
                     autoAddToLibrary = malConfigObj.optBoolean("autoAddToLibrary", false),
+                    nsfwOverride = malConfigObj.takeIf { it.has("nsfwOverride") }?.optBoolean("nsfwOverride"),
+                    minResolution = runCatching {
+                        MinResolution.valueOf(malConfigObj.optString("minResolution", MinResolution.ANY.name))
+                    }.getOrDefault(MinResolution.ANY),
+                    aspectRatio = runCatching {
+                        AspectRatio.valueOf(malConfigObj.optString("aspectRatio", AspectRatio.ANY.name))
+                    }.getOrDefault(AspectRatio.ANY),
+                    useMalFilter = malConfigObj.optBoolean("useMalFilter", false),
                 ).takeIf { it.animeTitle.isNotBlank() }
             } else null
             LocalList(
@@ -260,6 +268,10 @@ class LocalListsPreferences(private val context: Context) {
                             put("fillCount", l.malConfig.fillCount)
                             put("matchAny", l.malConfig.matchAny)
                             put("autoAddToLibrary", l.malConfig.autoAddToLibrary)
+                            l.malConfig.nsfwOverride?.let { put("nsfwOverride", it) }
+                            put("minResolution", l.malConfig.minResolution.name)
+                            put("aspectRatio", l.malConfig.aspectRatio.name)
+                            put("useMalFilter", l.malConfig.useMalFilter)
                         })
                     }
                 })
