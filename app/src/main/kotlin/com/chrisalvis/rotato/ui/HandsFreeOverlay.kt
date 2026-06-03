@@ -42,15 +42,19 @@ fun HandsFreeOverlay(
     val progress = remember { Animatable(0f) }
 
     // Auto-advance timer — restarts whenever page fully settles, pause state, or interval changes
-    LaunchedEffect(pagerState.settledPage, isPaused, intervalSecs) {
+    LaunchedEffect(pagerState.settledPage, isPaused, intervalSecs, items.size) {
         if (isPaused) return@LaunchedEffect
+        // Don't start timer if we're at the last page and can't advance
+        val next = pagerState.settledPage + 1
+        if (next >= items.size) return@LaunchedEffect
+        
         progress.snapTo(0f)
         progress.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = intervalSecs * 1000, easing = LinearEasing)
         )
         // Animation ran to completion (not cancelled) — advance page
-        val next = pagerState.settledPage + 1
+        // Double-check bounds in case items changed during animation
         if (next < items.size) pagerState.animateScrollToPage(next)
     }
 
