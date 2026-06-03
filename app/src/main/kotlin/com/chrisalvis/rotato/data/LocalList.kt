@@ -1,5 +1,6 @@
 package com.chrisalvis.rotato.data
 
+import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import java.util.UUID
 
 enum class ScreenRotationTarget(val label: String) {
@@ -41,6 +42,7 @@ data class SmartRule(
 
 data class MalCollectionConfig(
     val animeTitle: String,
+    val animeQuery: String = "",
     val characterTags: List<String> = emptyList(),
     val sourcePluginId: String? = null,
     val sourceInstanceId: String = "",
@@ -54,6 +56,7 @@ data class MalCollectionConfig(
     val useMalFilter: Boolean = false,
 ) {
     val hasSourceOverride: Boolean get() = !sourcePluginId.isNullOrBlank()
+    val resolvedAnimeQuery: String get() = animeQuery.ifBlank { normalizeBooruQuery(animeTitle) }
 }
 
 data class LocalList(
