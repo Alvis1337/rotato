@@ -161,8 +161,7 @@ object GelbooruEngine : PluginEngine() {
             }
         }
         return when (responseFormat) {
-            "object" -> (if (pid == 0) resp else getJson("$apiUrl&pid=$pid"))
-                ?.optJSONArray("post")
+            "object" -> resp?.optJSONArray("post")
             else -> getJsonArray("$apiUrl&pid=$pid")
         }
     }

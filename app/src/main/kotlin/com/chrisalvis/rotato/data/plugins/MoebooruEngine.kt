@@ -62,7 +62,7 @@ object MoebooruEngine : PluginEngine() {
         val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()
         if (tokens.isNotEmpty()) {
             if (filters.matchAny && tokens.size > 1) {
-                append(tokens.joinToString(" ~ "))
+                append(tokens.joinToString(" ") { "~$it" })
             } else {
                 append(tokens.joinToString(" "))
             }
