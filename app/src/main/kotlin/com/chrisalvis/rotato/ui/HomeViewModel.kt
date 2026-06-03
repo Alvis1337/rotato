@@ -629,6 +629,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             l.malConfig?.let { config ->
                                 put("malConfig", JSONObject().apply {
                                     put("animeTitle", config.animeTitle)
+                                    put("animeQuery", config.animeQuery)
                                     put("characterTags", JSONArray(config.characterTags))
                                     put("sourcePluginId", config.sourcePluginId ?: "")
                                     put("sourceInstanceId", config.sourceInstanceId)
@@ -791,6 +792,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 malConfig = malConfigObj?.let { obj ->
                                     com.chrisalvis.rotato.data.MalCollectionConfig(
                                         animeTitle = obj.optString("animeTitle", ""),
+                                        animeQuery = obj.optString("animeQuery", ""),
                                         characterTags = obj.optJSONArray("characterTags")
                                             ?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() } }
                                             ?: emptyList(),

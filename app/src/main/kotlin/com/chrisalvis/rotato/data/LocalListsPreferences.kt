@@ -209,6 +209,7 @@ class LocalListsPreferences(private val context: Context) {
             val malConfig = if (malConfigObj != null) {
                 MalCollectionConfig(
                     animeTitle = malConfigObj.optString("animeTitle", ""),
+                    animeQuery = malConfigObj.optString("animeQuery", ""),
                     characterTags = malConfigObj.optJSONArray("characterTags")
                         ?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } }
                         ?: emptyList(),
@@ -262,6 +263,7 @@ class LocalListsPreferences(private val context: Context) {
                     if (l.malConfig != null && l.malConfig.animeTitle.isNotBlank()) {
                         put("malConfig", JSONObject().apply {
                             put("animeTitle", l.malConfig.animeTitle)
+                            put("animeQuery", l.malConfig.animeQuery)
                             put("characterTags", JSONArray(l.malConfig.characterTags))
                             put("sourcePluginId", l.malConfig.sourcePluginId ?: "")
                             put("sourceInstanceId", l.malConfig.sourceInstanceId)

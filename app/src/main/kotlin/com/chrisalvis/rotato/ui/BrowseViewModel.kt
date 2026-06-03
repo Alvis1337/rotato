@@ -363,6 +363,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val config = MalCollectionConfig(
                 animeTitle = trimmedAnimeTitle,
+                animeQuery = normalizeBooruQuery(trimmedAnimeTitle),
                 characterTags = characterTags.map { it.trim() }.filter { it.isNotBlank() },
                 sourcePluginId = pluginId?.takeIf { it.isNotBlank() },
                 sourceInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: "",
@@ -423,6 +424,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             }
             val config = MalCollectionConfig(
                 animeTitle = trimmedAnimeTitle,
+                animeQuery = normalizeBooruQuery(trimmedAnimeTitle),
                 characterTags = characterTags.map { it.trim() }.filter { it.isNotBlank() },
                 sourcePluginId = pluginId?.takeIf { it.isNotBlank() },
                 sourceInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: "",
@@ -494,7 +496,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun buildManagedMalQuery(config: MalCollectionConfig): String =
-        (listOf(config.animeTitle) + config.characterTags)
+        (listOf(config.resolvedAnimeQuery.ifBlank { config.animeTitle }) + config.characterTags)
             .map { normalizeBooruQuery(it) }
             .filter { it.isNotBlank() }
             .joinToString(" ")
@@ -959,6 +961,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     val malConfig = malConfigObj?.let { obj ->
                         MalCollectionConfig(
                             animeTitle = obj.optString("animeTitle", ""),
+                            animeQuery = obj.optString("animeQuery", ""),
                             characterTags = obj.optJSONArray("characterTags")
                                 ?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() } }
                                 ?: emptyList(),
