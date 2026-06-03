@@ -22,6 +22,8 @@ import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.MalCollectionConfig
+import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
@@ -60,6 +62,7 @@ import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginRepository
+import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
 import java.net.URLEncoder
@@ -78,6 +81,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val feedRepo = FeedRepository(imageDir)
     private val pluginRepo = PluginRepository(application)
     private val localSources = LocalSourcesPreferences(application)
+    private val malPrefs = MalPreferences(application)
     private lateinit var processLifecycleObserver: DefaultLifecycleObserver
 
     // All lists including locked ones (source of truth)
@@ -116,6 +120,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     val activeSources: StateFlow<List<LocalSource>> = localSources.sources
         .map { it.filter { src -> src.enabled } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val malAnimeEntries = malPrefs.animeEntries
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val managedMalCollectionCount: StateFlow<Int> = _allLists
+        .map { lists -> lists.count { it.isMalManaged } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     private val _fetchFillLoading = MutableStateFlow(false)
     val fetchFillLoading: StateFlow<Boolean> = _fetchFillLoading.asStateFlow()
@@ -332,6 +343,96 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun createMalCollection(
+        name: String,
+        animeTitle: String,
+        characterTags: List<String>,
+        pluginId: String?,
+        instanceId: String?,
+        fillCount: Int,
+        matchAny: Boolean,
+        autoAddToLibrary: Boolean,
+    ) {
+        val trimmedName = name.trim()
+        val trimmedAnimeTitle = animeTitle.trim()
+        if (trimmedName.isBlank() || trimmedAnimeTitle.isBlank()) return
+        viewModelScope.launch {
+            val config = MalCollectionConfig(
+                animeTitle = trimmedAnimeTitle,
+                characterTags = characterTags.map { it.trim() }.filter { it.isNotBlank() },
+                sourcePluginId = pluginId?.takeIf { it.isNotBlank() },
+                sourceInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: "",
+                fillCount = fillCount.coerceAtLeast(1),
+                matchAny = matchAny,
+                autoAddToLibrary = autoAddToLibrary,
+            )
+            val list = localLists.createList(
+                name = trimmedName,
+                useAsRotation = autoAddToLibrary,
+                malConfig = config,
+            )
+            if (list == null) {
+                _fetchFillResult.emit("Collection name already taken")
+                return@launch
+            }
+            _selectedListId.update { list.id }
+            val added = refreshManagedMalCollectionInternal(list.copy(malConfig = config, useAsRotation = autoAddToLibrary))
+            _fetchFillResult.emit(
+                if (added > 0) {
+                    "Created \"${list.name}\" from MAL and added $added image${if (added != 1) "s" else ""}"
+                } else {
+                    "Created \"${list.name}\" from MAL"
+                }
+            )
+        }
+    }
+
+    fun updateMalCollection(
+        list: LocalList,
+        name: String,
+        animeTitle: String,
+        characterTags: List<String>,
+        pluginId: String?,
+        instanceId: String?,
+        fillCount: Int,
+        matchAny: Boolean,
+        autoAddToLibrary: Boolean,
+    ) {
+        val trimmedName = name.trim()
+        val trimmedAnimeTitle = animeTitle.trim()
+        if (trimmedName.isBlank() || trimmedAnimeTitle.isBlank()) return
+        viewModelScope.launch {
+            if (!trimmedName.equals(list.name, ignoreCase = false)) {
+                val renamed = localLists.renameList(list.id, trimmedName)
+                if (!renamed) {
+                    _fetchFillResult.emit("Collection name already taken")
+                    return@launch
+                }
+            }
+            val config = MalCollectionConfig(
+                animeTitle = trimmedAnimeTitle,
+                characterTags = characterTags.map { it.trim() }.filter { it.isNotBlank() },
+                sourcePluginId = pluginId?.takeIf { it.isNotBlank() },
+                sourceInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: "",
+                fillCount = fillCount.coerceAtLeast(1),
+                matchAny = matchAny,
+                autoAddToLibrary = autoAddToLibrary,
+            )
+            localLists.setUseAsRotation(list.id, autoAddToLibrary)
+            localLists.setMalConfig(list.id, config)
+            val updatedList = localLists.lists.first().firstOrNull { it.id == list.id }
+                ?: list.copy(name = trimmedName, useAsRotation = autoAddToLibrary, malConfig = config)
+            val added = refreshManagedMalCollectionInternal(updatedList)
+            _fetchFillResult.emit(
+                if (added > 0) {
+                    "Updated MAL settings for \"${trimmedName}\" and added $added image${if (added != 1) "s" else ""}"
+                } else {
+                    "Updated MAL settings for \"${trimmedName}\""
+                }
+            )
+        }
+    }
+
     private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE): Int {
         val allEntries = localLists.allWallpapers.first()
         val smartIds = localLists.lists.first().filter { it.isSmartCollection }.map { it.id }.toSet()
@@ -376,6 +477,138 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun buildManagedMalQuery(config: MalCollectionConfig): String =
+        (listOf(config.animeTitle) + config.characterTags)
+            .map { normalizeBooruQuery(it) }
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+
+    private suspend fun fillCollectionFromSources(
+        list: LocalList,
+        tags: String,
+        count: Int,
+        pluginId: String? = null,
+        instanceId: String? = null,
+        matchAny: Boolean = false,
+        nsfwOverride: Boolean? = null,
+        minResolution: MinResolution = MinResolution.ANY,
+        aspectRatio: AspectRatio = AspectRatio.ANY,
+        useMalFilter: Boolean = false,
+    ): Int {
+        val manifests = pluginRepo.installedManifests.first()
+        val allSources = localSources.sources.first()
+        val globalNsfw = prefs.nsfwMode.first()
+        val effectiveGlobalNsfw = nsfwOverride ?: globalNsfw
+        val candidates = allSources.filter { src ->
+            if (!src.enabled) return@filter false
+            if (pluginId != null && src.pluginId != pluginId) return@filter false
+            if (instanceId != null && src.instanceId != instanceId) return@filter false
+            val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
+            PluginExecutor.canServe(manifest, effectiveGlobalNsfw, src)
+        }
+        if (candidates.isEmpty()) {
+            throw IllegalStateException("No compatible active sources found. Enable sources in Settings → Sources.")
+        }
+        val filters = BrainrotFilters(
+            minResolution = minResolution,
+            aspectRatio = aspectRatio,
+            useMalFilter = useMalFilter,
+            matchAny = matchAny,
+        )
+        var added = 0
+        for (src in candidates.shuffled()) {
+            if (added >= count) break
+            val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
+            val remaining = count - added
+            val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+            val wallpapers = try {
+                PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, filters, remaining + 5)
+            } catch (e: Exception) {
+                Log.e("BrowseViewModel", "fetchFill error for ${src.pluginId}", e)
+                emptyList()
+            }
+            for (wp in wallpapers) {
+                if (added >= count) break
+                val ok = localLists.addWallpaper(list.id, wp)
+                if (ok) added++
+            }
+        }
+        return added
+    }
+
+    private suspend fun refreshManagedMalCollectionInternal(list: LocalList): Int {
+        val config = list.malConfig ?: return 0
+        val malTitles = malPrefs.animeEntries.first().map { it.title }.toSet()
+        if (malTitles.isNotEmpty() && config.animeTitle !in malTitles) return 0
+        return fillCollectionFromSources(
+            list = list,
+            tags = buildManagedMalQuery(config),
+            count = config.fillCount,
+            pluginId = config.sourcePluginId,
+            instanceId = config.sourceInstanceId.takeIf { it.isNotBlank() },
+            matchAny = config.matchAny,
+        )
+    }
+
+    fun refreshManagedMalCollection(list: LocalList) {
+        if (!list.isMalManaged) return
+        viewModelScope.launch {
+            _fetchFillLoading.update { true }
+            try {
+                val added = refreshManagedMalCollectionInternal(list)
+                _fetchFillResult.emit(
+                    if (added > 0) {
+                        "MAL refresh added $added image${if (added != 1) "s" else ""} to \"${list.name}\""
+                    } else {
+                        "No new MAL matches found for \"${list.name}\""
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("BrowseViewModel", "refreshManagedMalCollection failed", e)
+                _fetchFillResult.emit("Error: ${e.message ?: "Unknown error"}")
+            } finally {
+                _fetchFillLoading.update { false }
+            }
+        }
+    }
+
+    fun syncManagedMalCollections() {
+        viewModelScope.launch {
+            _fetchFillLoading.update { true }
+            try {
+                val malTitles = malPrefs.animeEntries.first().map { it.title }.toSet()
+                val managed = _allLists.value.filter { it.isMalManaged }
+                if (managed.isEmpty()) {
+                    _fetchFillResult.emit("No MAL-managed collections yet")
+                    return@launch
+                }
+                var totalAdded = 0
+                var refreshed = 0
+                var skipped = 0
+                managed.forEach { list ->
+                    val config = list.malConfig ?: return@forEach
+                    if (malTitles.isNotEmpty() && config.animeTitle !in malTitles) {
+                        skipped++
+                        return@forEach
+                    }
+                    totalAdded += refreshManagedMalCollectionInternal(list)
+                    refreshed++
+                }
+                val message = when {
+                    refreshed == 0 && skipped > 0 -> "No managed MAL collections matched your current MAL list"
+                    skipped > 0 -> "Synced $refreshed MAL collection${if (refreshed != 1) "s" else ""}, added $totalAdded image${if (totalAdded != 1) "s" else ""}, skipped $skipped"
+                    else -> "Synced $refreshed MAL collection${if (refreshed != 1) "s" else ""}, added $totalAdded image${if (totalAdded != 1) "s" else ""}"
+                }
+                _fetchFillResult.emit(message)
+            } catch (e: Exception) {
+                Log.e("BrowseViewModel", "syncManagedMalCollections failed", e)
+                _fetchFillResult.emit("Error: ${e.message ?: "Unknown error"}")
+            } finally {
+                _fetchFillLoading.update { false }
+            }
+        }
+    }
+
     fun fetchFill(
         list: LocalList,
         tags: String,
@@ -391,45 +624,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _fetchFillLoading.update { true }
             try {
-                val manifests = pluginRepo.installedManifests.first()
-                val allSources = localSources.sources.first()
-                val globalNsfw = prefs.nsfwMode.first()
-                val effectiveGlobalNsfw = nsfwOverride ?: globalNsfw
-                val candidates = allSources.filter { src ->
-                    if (!src.enabled) return@filter false
-                    if (pluginId != null && src.pluginId != pluginId) return@filter false
-                    if (instanceId != null && src.instanceId != instanceId) return@filter false
-                    val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
-                    PluginExecutor.canServe(manifest, effectiveGlobalNsfw, src)
-                }
-                if (candidates.isEmpty()) {
-                    _fetchFillResult.emit("No compatible active sources found. Enable sources in Settings → Sources.")
-                    return@launch
-                }
-                val filters = BrainrotFilters(
+                val added = fillCollectionFromSources(
+                    list = list,
+                    tags = tags,
+                    count = count,
+                    pluginId = pluginId,
+                    instanceId = instanceId,
+                    matchAny = matchAny,
+                    nsfwOverride = nsfwOverride,
                     minResolution = minResolution,
                     aspectRatio = aspectRatio,
                     useMalFilter = useMalFilter,
-                    matchAny = matchAny,
                 )
-                var added = 0
-                for (src in candidates.shuffled()) {
-                    if (added >= count) break
-                    val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
-                    val remaining = count - added
-                    val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
-                    val wallpapers = try {
-                        PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, filters, remaining + 5)
-                    } catch (e: Exception) {
-                        Log.e("BrowseViewModel", "fetchFill error for ${src.pluginId}", e)
-                        emptyList()
-                    }
-                    for (wp in wallpapers) {
-                        if (added >= count) break
-                        val ok = localLists.addWallpaper(list.id, wp)
-                        if (ok) added++
-                    }
-                }
                 _fetchFillResult.emit(
                     if (added > 0) "Added $added image${if (added != 1) "s" else ""} to \"${list.name}\""
                     else "No new images found — try different tags or sources"
@@ -729,8 +935,26 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     val name = item.optString("name").trim()
                     if (name.isBlank()) continue
                     val oldId = item.optString("id").ifBlank { name }
+                    val malConfigObj = item.optJSONObject("malConfig")
+                    val malConfig = malConfigObj?.let { obj ->
+                        MalCollectionConfig(
+                            animeTitle = obj.optString("animeTitle", ""),
+                            characterTags = obj.optJSONArray("characterTags")
+                                ?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() } }
+                                ?: emptyList(),
+                            sourcePluginId = obj.optString("sourcePluginId").ifBlank { null },
+                            sourceInstanceId = obj.optString("sourceInstanceId", ""),
+                            fillCount = obj.optInt("fillCount", 25).coerceAtLeast(1),
+                            matchAny = obj.optBoolean("matchAny", false),
+                            autoAddToLibrary = obj.optBoolean("autoAddToLibrary", false),
+                        ).takeIf { it.animeTitle.isNotBlank() }
+                    }
                     val existing = existingByName[name.lowercase()]
-                    val target = existing ?: localLists.createList(name)?.also { created ->
+                    val target = existing ?: localLists.createList(
+                        name = name,
+                        useAsRotation = item.optBoolean("useAsRotation", false),
+                        malConfig = malConfig,
+                    )?.also { created ->
                         restoredCollections++
                         existingByName[name.lowercase()] = created
                         if (item.optBoolean("isLocked", false)) {

@@ -39,6 +39,18 @@ data class SmartRule(
     val isEmpty: Boolean get() = requireAll.isEmpty() && requireAny.isEmpty() && excludeAny.isEmpty()
 }
 
+data class MalCollectionConfig(
+    val animeTitle: String,
+    val characterTags: List<String> = emptyList(),
+    val sourcePluginId: String? = null,
+    val sourceInstanceId: String = "",
+    val fillCount: Int = 25,
+    val matchAny: Boolean = false,
+    val autoAddToLibrary: Boolean = false,
+) {
+    val hasSourceOverride: Boolean get() = !sourcePluginId.isNullOrBlank()
+}
+
 data class LocalList(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -51,8 +63,11 @@ data class LocalList(
     val coverUrl: String = "",
     /** Non-null for smart/dynamic collections — wallpapers auto-populate when they match the rule. */
     val smartRule: SmartRule? = null,
+    /** Non-null for MAL-backed collections that can be refreshed from a saved anime query config. */
+    val malConfig: MalCollectionConfig? = null,
 ) {
     val isSmartCollection: Boolean get() = smartRule != null && !smartRule.isEmpty
+    val isMalManaged: Boolean get() = malConfig?.animeTitle?.isNotBlank() == true
 }
 
 data class LocalWallpaperEntry(
