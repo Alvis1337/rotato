@@ -62,6 +62,7 @@ import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 import java.io.File
+import java.net.URLEncoder
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
@@ -121,6 +122,44 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _fetchFillResult = MutableSharedFlow<String>()
     val fetchFillResult: SharedFlow<String> = _fetchFillResult.asSharedFlow()
+
+    private val _tagSuggestions = MutableStateFlow<List<String>>(emptyList())
+    val tagSuggestions: StateFlow<List<String>> = _tagSuggestions.asStateFlow()
+    private var tagSuggestionsJob: Job? = null
+
+    fun fetchTagSuggestions(query: String) {
+        val token = query.trimEnd().substringAfterLast(' ').trim()
+        if (token.length < 2) {
+            clearTagSuggestions()
+            return
+        }
+        tagSuggestionsJob?.cancel()
+        tagSuggestionsJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val encodedToken = URLEncoder.encode(token, Charsets.UTF_8.name())
+                val url = "https://danbooru.donmai.us/tags.json?search[name_matches]=${encodedToken}*&search[order]=count&limit=8"
+                val req = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Rotato/1.0")
+                    .build()
+                healthClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) { _tagSuggestions.update { emptyList() }; return@use }
+                    val arr = JSONArray(resp.body?.string().orEmpty())
+                    val tags = (0 until arr.length()).mapNotNull { i ->
+                        arr.optJSONObject(i)?.optString("name")?.takeIf { it.isNotBlank() }
+                    }
+                    _tagSuggestions.update { tags }
+                }
+            } catch (_: Exception) {
+                _tagSuggestions.update { emptyList() }
+            }
+        }
+    }
+
+    fun clearTagSuggestions() {
+        tagSuggestionsJob?.cancel()
+        _tagSuggestions.update { emptyList() }
+    }
 
     val listCovers: StateFlow<Map<String, String?>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
         val wallpapersByList = all.groupBy { it.listId }
