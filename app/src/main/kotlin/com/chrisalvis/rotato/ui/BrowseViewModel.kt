@@ -755,7 +755,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             Log.d("BrowseViewModel", "applyPendingSchedules: listIds=$listIds allEntries=${allEntries.size}")
             listIds.forEach { listId ->
                 val matching = allEntries.filter {
-                    it.enabled && it.listId == listId && isInScheduleWindow(it)
+                    it.enabled && listId in it.listIds && isInScheduleWindow(it)
                 }
                 Log.d("BrowseViewModel", "  listId=$listId matching=${matching.size}")
                 matching.forEach { entry ->

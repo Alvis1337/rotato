@@ -158,7 +158,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                         return@withTimeout
                     }
 
-                    Log.d(TAG, "  listId=${fired.listId}")
+                    Log.d(TAG, "  listIds=${fired.listIds}")
                     applyEntry(context, fired, entries, schedPrefs, listPrefs)
                 }
             } catch (e: TimeoutCancellationException) {
