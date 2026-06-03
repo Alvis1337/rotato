@@ -41,6 +41,18 @@ fun HandsFreeOverlay(
     var isPaused by remember { mutableStateOf(false) }
     val progress = remember { Animatable(0f) }
 
+    // Dismiss overlay if items list becomes empty or current page becomes invalid
+    LaunchedEffect(items.size) {
+        if (items.isEmpty()) {
+            onDismiss()
+            return@LaunchedEffect
+        }
+        // If current page is out of bounds, scroll to last valid page
+        if (pagerState.currentPage >= items.size) {
+            pagerState.scrollToPage((items.size - 1).coerceAtLeast(0))
+        }
+    }
+
     // Auto-advance timer — restarts whenever page fully settles, pause state, or interval changes
     LaunchedEffect(pagerState.settledPage, isPaused, intervalSecs, items.size) {
         if (isPaused) return@LaunchedEffect
@@ -59,8 +71,11 @@ fun HandsFreeOverlay(
     }
 
     // Trigger load more when approaching the end
-    LaunchedEffect(pagerState.settledPage) {
-        if (pagerState.settledPage >= items.size - 3) onLoadMore()
+    LaunchedEffect(pagerState.settledPage, items.size) {
+        // Only trigger loadMore if we have enough items and we're near the end
+        if (items.size >= 3 && pagerState.settledPage >= items.size - 3) {
+            onLoadMore()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
