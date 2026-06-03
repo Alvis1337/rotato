@@ -71,7 +71,7 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
-import LocalSource
+import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.SmartRule
