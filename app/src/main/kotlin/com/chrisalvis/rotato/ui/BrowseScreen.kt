@@ -69,6 +69,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
+import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalSource
@@ -299,8 +300,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         FetchFromSourcesDialog(
             list = list,
             activeSources = activeSources,
-            onConfirm = { tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, useMalFilter ->
-                vm.fetchFill(list, tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, useMalFilter)
+            onConfirm = { tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, aspectRatio, useMalFilter ->
+                vm.fetchFill(list, tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, aspectRatio, useMalFilter)
                 fetchFillFor = null
             },
             onDismiss = { fetchFillFor = null }
@@ -2054,6 +2055,7 @@ private fun FetchFromSourcesDialog(
         matchAny: Boolean,
         nsfwOverride: Boolean?,
         minResolution: MinResolution,
+        aspectRatio: AspectRatio,
         useMalFilter: Boolean,
     ) -> Unit,
     onDismiss: () -> Unit,
@@ -2067,6 +2069,7 @@ private fun FetchFromSourcesDialog(
     // null = Auto (use global setting), true = Force ON, false = Force OFF
     var nsfwOverride by remember { mutableStateOf<Boolean?>(null) }
     var minResolution by remember { mutableStateOf(MinResolution.ANY) }
+    var aspectRatio by remember { mutableStateOf(AspectRatio.ANY) }
     var useMalFilter by remember { mutableStateOf(false) }
 
     val selectedSource = activeSources.find { it.pluginId == selectedPluginId && it.instanceId == (selectedInstanceId ?: "") }
@@ -2122,6 +2125,18 @@ private fun FetchFromSourcesDialog(
                                 selected = minResolution == res,
                                 onClick = { minResolution = res },
                                 label = { Text(res.label.substringBefore(' ')) }
+                            )
+                        }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Aspect ratio", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        AspectRatio.entries.filter { it != AspectRatio.MY_PHONE }.forEach { ratio ->
+                            FilterChip(
+                                selected = aspectRatio == ratio,
+                                onClick = { aspectRatio = ratio },
+                                label = { Text(ratio.label.substringBefore(' ')) }
                             )
                         }
                     }
@@ -2195,6 +2210,7 @@ private fun FetchFromSourcesDialog(
                         matchAny,
                         nsfwOverride,
                         minResolution,
+                        aspectRatio,
                         useMalFilter,
                     )
                 },

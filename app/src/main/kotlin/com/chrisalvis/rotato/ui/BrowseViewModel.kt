@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.FeedRepository
@@ -345,6 +346,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         matchAny: Boolean = false,
         nsfwOverride: Boolean? = null,
         minResolution: MinResolution = MinResolution.ANY,
+        aspectRatio: AspectRatio = AspectRatio.ANY,
         useMalFilter: Boolean = false,
     ) {
         viewModelScope.launch {
@@ -367,6 +369,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 val filters = BrainrotFilters(
                     minResolution = minResolution,
+                    aspectRatio = aspectRatio,
                     useMalFilter = useMalFilter,
                     matchAny = matchAny,
                 )
