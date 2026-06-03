@@ -635,6 +635,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                     put("fillCount", config.fillCount)
                                     put("matchAny", config.matchAny)
                                     put("autoAddToLibrary", config.autoAddToLibrary)
+                                    config.nsfwOverride?.let { put("nsfwOverride", it) }
+                                    put("minResolution", config.minResolution.name)
+                                    put("aspectRatio", config.aspectRatio.name)
+                                    put("useMalFilter", config.useMalFilter)
                                 })
                             }
                         })
@@ -795,6 +799,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                         fillCount = obj.optInt("fillCount", 25),
                                         matchAny = obj.optBoolean("matchAny", false),
                                         autoAddToLibrary = obj.optBoolean("autoAddToLibrary", false),
+                                        nsfwOverride = obj.takeIf { it.has("nsfwOverride") }?.optBoolean("nsfwOverride"),
+                                        minResolution = runCatching {
+                                            MinResolution.valueOf(obj.optString("minResolution", MinResolution.ANY.name))
+                                        }.getOrDefault(MinResolution.ANY),
+                                        aspectRatio = runCatching {
+                                            AspectRatio.valueOf(obj.optString("aspectRatio", AspectRatio.ANY.name))
+                                        }.getOrDefault(AspectRatio.ANY),
+                                        useMalFilter = obj.optBoolean("useMalFilter", false),
                                     ).takeIf { it.animeTitle.isNotBlank() }
                                 },
                             )

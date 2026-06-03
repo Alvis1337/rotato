@@ -47,6 +47,11 @@ data class MalCollectionConfig(
     val fillCount: Int = 25,
     val matchAny: Boolean = false,
     val autoAddToLibrary: Boolean = false,
+    // null = follow global/source defaults, true = force ON, false = force OFF
+    val nsfwOverride: Boolean? = null,
+    val minResolution: MinResolution = MinResolution.ANY,
+    val aspectRatio: AspectRatio = AspectRatio.ANY,
+    val useMalFilter: Boolean = false,
 ) {
     val hasSourceOverride: Boolean get() = !sourcePluginId.isNullOrBlank()
 }

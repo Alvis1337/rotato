@@ -352,6 +352,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         fillCount: Int,
         matchAny: Boolean,
         autoAddToLibrary: Boolean,
+        nsfwOverride: Boolean?,
+        minResolution: MinResolution,
+        aspectRatio: AspectRatio,
+        useMalFilter: Boolean,
     ) {
         val trimmedName = name.trim()
         val trimmedAnimeTitle = animeTitle.trim()
@@ -365,6 +369,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 fillCount = fillCount.coerceAtLeast(1),
                 matchAny = matchAny,
                 autoAddToLibrary = autoAddToLibrary,
+                nsfwOverride = nsfwOverride,
+                minResolution = minResolution,
+                aspectRatio = aspectRatio,
+                useMalFilter = useMalFilter,
             )
             val list = localLists.createList(
                 name = trimmedName,
@@ -397,6 +405,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         fillCount: Int,
         matchAny: Boolean,
         autoAddToLibrary: Boolean,
+        nsfwOverride: Boolean?,
+        minResolution: MinResolution,
+        aspectRatio: AspectRatio,
+        useMalFilter: Boolean,
     ) {
         val trimmedName = name.trim()
         val trimmedAnimeTitle = animeTitle.trim()
@@ -417,6 +429,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 fillCount = fillCount.coerceAtLeast(1),
                 matchAny = matchAny,
                 autoAddToLibrary = autoAddToLibrary,
+                nsfwOverride = nsfwOverride,
+                minResolution = minResolution,
+                aspectRatio = aspectRatio,
+                useMalFilter = useMalFilter,
             )
             localLists.setUseAsRotation(list.id, autoAddToLibrary)
             localLists.setMalConfig(list.id, config)
@@ -547,6 +563,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             pluginId = config.sourcePluginId,
             instanceId = config.sourceInstanceId.takeIf { it.isNotBlank() },
             matchAny = config.matchAny,
+            nsfwOverride = config.nsfwOverride,
+            minResolution = config.minResolution,
+            aspectRatio = config.aspectRatio,
+            useMalFilter = config.useMalFilter,
         )
     }
 
@@ -947,6 +967,14 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                             fillCount = obj.optInt("fillCount", 25).coerceAtLeast(1),
                             matchAny = obj.optBoolean("matchAny", false),
                             autoAddToLibrary = obj.optBoolean("autoAddToLibrary", false),
+                            nsfwOverride = obj.takeIf { it.has("nsfwOverride") }?.optBoolean("nsfwOverride"),
+                            minResolution = runCatching {
+                                MinResolution.valueOf(obj.optString("minResolution", MinResolution.ANY.name))
+                            }.getOrDefault(MinResolution.ANY),
+                            aspectRatio = runCatching {
+                                AspectRatio.valueOf(obj.optString("aspectRatio", AspectRatio.ANY.name))
+                            }.getOrDefault(AspectRatio.ANY),
+                            useMalFilter = obj.optBoolean("useMalFilter", false),
                         ).takeIf { it.animeTitle.isNotBlank() }
                     }
                     val existing = existingByName[name.lowercase()]
