@@ -116,17 +116,17 @@ class WallpaperWorker(
             }
         }
 
-        val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, lists)
-        val scheduledEntry = activeScheduledListIds.takeIf { it.isNotEmpty() }?.let { listIds ->
-            val wallpapers = allWallpapers.filter { it.listId in listIds }
-            selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
-        }
-
-        val allImages = withContext(Dispatchers.IO) { repository.getImages() }
-
-        // Determine if any rotation collections have per-screen targets.
         val rotationLists = lists.filter { it.useAsRotation }
         val hasPerScreen = rotationLists.any { it.rotationTarget != ScreenRotationTarget.BOTH }
+        val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, lists)
+        val scheduledEntry = activeScheduledListIds
+            .takeIf { it.isNotEmpty() && !(hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH) }
+            ?.let { listIds ->
+                val wallpapers = allWallpapers.filter { it.listId in listIds }
+                selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
+            }
+
+        val allImages = withContext(Dispatchers.IO) { repository.getImages() }
 
         // Build per-screen file sets when per-screen pools are configured and target is BOTH.
         val homeFiles: List<File>
