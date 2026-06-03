@@ -128,6 +128,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .map { lists -> lists.count { it.isMalManaged } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val scheduleEntries: StateFlow<List<ScheduleEntry>> = SchedulePreferences(application).entries
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _fetchFillLoading = MutableStateFlow(false)
     val fetchFillLoading: StateFlow<Boolean> = _fetchFillLoading.asStateFlow()
 

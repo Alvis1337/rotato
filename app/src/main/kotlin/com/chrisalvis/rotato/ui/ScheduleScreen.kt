@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -166,17 +167,28 @@ fun ScheduleScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(entries, key = { it.id }) { entry ->
-                    val targetList = lists.find { it.id == entry.listId }
-                    val isListDeleted = entry.listId.isNotBlank() && targetList == null
+                    val listMap = remember(lists) { lists.associateBy { it.id } }
+                    val selectedLists = entry.listIds.mapNotNull { listMap[it] }
+                    val deletedCount = entry.listIds.count { it !in listMap }
+                    val lockedCount = selectedLists.count { it.isLocked }
+                    val collectionSummary = when {
+                        entry.usesMainQueue -> "Main rotation queue"
+                        entry.listIds.size == 1 && deletedCount == 0 -> selectedLists.firstOrNull()?.name ?: "Deleted collection"
+                        deletedCount == entry.listIds.size -> "$deletedCount deleted collection${if (deletedCount != 1) "s" else ""}"
+                        else -> "${entry.listIds.size} collections"
+                    }
+                    val collectionDetails = buildList {
+                        addAll(selectedLists.map { it.name })
+                        if (deletedCount > 0) {
+                            add("$deletedCount deleted")
+                        }
+                    }.joinToString(" · ")
                     ScheduleEntryCard(
                         entry = entry,
-                        listName = when {
-                            entry.listId.isBlank() -> "Main rotation queue"
-                            targetList != null -> targetList.name
-                            else -> "Deleted collection"
-                        },
-                        isListDeleted = isListDeleted,
-                        isListLocked = entry.listId.isNotBlank() && targetList?.isLocked == true,
+                        collectionSummary = collectionSummary,
+                        collectionDetails = collectionDetails,
+                        deletedCount = deletedCount,
+                        lockedCount = lockedCount,
                         wasBlockedByLock = entry.lastLockedMs > 0L,
                         lastFiredMs = entry.lastFiredMs,
                         lastFiredResult = entry.lastFiredResult,
@@ -184,7 +196,7 @@ fun ScheduleScreen(
                         onDelete = { vm.delete(entry) },
                         onToggleEnabled = { vm.setEnabled(entry, it) },
                         onTriggerNow = { vm.triggerNow(entry) },
-                        onResetCollection = { vm.resetCollection(entry) },
+                        onResetCollection = { vm.resetCollections(entry, listMap.keys) },
                     )
                 }
             }
@@ -196,9 +208,10 @@ fun ScheduleScreen(
 @Composable
 private fun ScheduleEntryCard(
     entry: ScheduleEntry,
-    listName: String,
-    isListDeleted: Boolean,
-    isListLocked: Boolean,
+    collectionSummary: String,
+    collectionDetails: String,
+    deletedCount: Int,
+    lockedCount: Int,
     wasBlockedByLock: Boolean,
     lastFiredMs: Long,
     lastFiredResult: String,
@@ -214,12 +227,12 @@ private fun ScheduleEntryCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            listName,
+                            collectionSummary,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (isListDeleted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            color = if (deletedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                         )
-                        if (isListLocked) {
+                        if (lockedCount > 0) {
                             Icon(
                                 Icons.Default.Lock,
                                 contentDescription = "Locked",
@@ -227,7 +240,7 @@ private fun ScheduleEntryCard(
                                 tint = MaterialTheme.colorScheme.error,
                             )
                         }
-                        if (isListDeleted) {
+                        if (deletedCount > 0) {
                             Icon(
                                 Icons.Default.Warning,
                                 contentDescription = "Collection deleted",
@@ -241,16 +254,23 @@ private fun ScheduleEntryCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    if (collectionDetails.isNotBlank()) {
+                        Text(
+                            collectionDetails,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Switch(checked = entry.enabled, onCheckedChange = onToggleEnabled)
             }
-            if (isListDeleted) {
+            if (deletedCount > 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        "This collection was deleted — the schedule won't run until you fix it.",
+                        "Some scheduled collections were deleted — remove them or switch back to the main queue.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.weight(1f),
@@ -259,7 +279,7 @@ private fun ScheduleEntryCard(
                         onClick = onResetCollection,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     ) {
-                        Text("Use main queue", style = MaterialTheme.typography.labelSmall)
+                        Text("Remove deleted", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -295,10 +315,10 @@ private fun ScheduleEntryCard(
                     Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
                 }
             }
-            if (entry.enabled && (isListLocked || wasBlockedByLock)) {
+            if (entry.enabled && (lockedCount > 0 || wasBlockedByLock)) {
                 Text(
-                    if (isListLocked)
-                        "Collection is locked — unlock it in Collections for the schedule to apply"
+                    if (lockedCount > 0)
+                        "A scheduled collection is locked — unlock it in Collections for the schedule to apply"
                     else
                         "Last trigger was blocked by a locked collection — unlock it in Collections",
                     style = MaterialTheme.typography.labelSmall,
@@ -351,9 +371,8 @@ private fun ScheduleEditDialog(
     var days by remember(entry.id) { mutableStateOf(entry.days) }
     var hour by remember(entry.id) { mutableIntStateOf(entry.startHour) }
     var minute by remember(entry.id) { mutableIntStateOf(entry.startMinute) }
-    var selectedListId by remember(entry.id) { mutableStateOf(entry.listId) }
+    var selectedListIds by remember(entry.id) { mutableStateOf(entry.listIds) }
     var showTimePicker by remember { mutableStateOf(false) }
-    var expandListDropdown by remember { mutableStateOf(false) }
 
     if (showTimePicker) {
         val state = rememberTimePickerState(initialHour = hour, initialMinute = minute)
@@ -403,39 +422,93 @@ private fun ScheduleEditDialog(
                     Text(formatTime(hour, minute))
                 }
 
-                // List picker dropdown
-                Text("Use collection", style = MaterialTheme.typography.labelMedium)
-                ExposedDropdownMenuBox(
-                    expanded = expandListDropdown,
-                    onExpandedChange = { expandListDropdown = it },
+                Text("Collections", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "Pick one or more collections. Leave them all off to use the main rotation queue.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedTextField(
-                        value = lists.find { it.id == selectedListId }?.name ?: "Main rotation queue",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Use collection") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandListDropdown) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandListDropdown,
-                        onDismissRequest = { expandListDropdown = false },
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        tonalElevation = if (selectedListIds.isEmpty()) 2.dp else 0.dp,
+                        color = if (selectedListIds.isEmpty()) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Main rotation queue") },
-                            onClick = {
-                                selectedListId = ""
-                                expandListDropdown = false
-                            },
-                        )
-                        lists.forEach { list ->
-                            DropdownMenuItem(
-                                text = { Text(list.name) },
-                                onClick = {
-                                    selectedListId = list.id
-                                    expandListDropdown = false
-                                },
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = selectedListIds.isEmpty(),
+                                    onValueChange = { selectedListIds = emptySet() },
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Checkbox(
+                                checked = selectedListIds.isEmpty(),
+                                onCheckedChange = null,
                             )
+                            Column {
+                                Text("Main rotation queue", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Keep the current Library links active",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    lists.forEach { list ->
+                        val selected = list.id in selectedListIds
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            tonalElevation = if (selected) 2.dp else 0.dp,
+                            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .toggleable(
+                                        value = selected,
+                                        onValueChange = {
+                                            selectedListIds = if (selected) {
+                                                selectedListIds - list.id
+                                            } else {
+                                                selectedListIds + list.id
+                                            }
+                                        },
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Checkbox(
+                                    checked = selected,
+                                    onCheckedChange = null,
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(list.name, style = MaterialTheme.typography.bodyMedium)
+                                    val details = buildList {
+                                        if (list.useAsRotation) add("Already linked to Library")
+                                        if (list.isLocked) add("Locked")
+                                    }.joinToString(" · ")
+                                    if (details.isNotBlank()) {
+                                        Text(
+                                            details,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -445,7 +518,7 @@ private fun ScheduleEditDialog(
             TextButton(
                 onClick = {
                     if (days.isNotEmpty()) {
-                        onSave(entry.copy(days = days, startHour = hour, startMinute = minute, listId = selectedListId))
+                        onSave(entry.copy(days = days, startHour = hour, startMinute = minute, listIds = selectedListIds))
                     }
                 },
                 enabled = days.isNotEmpty(),

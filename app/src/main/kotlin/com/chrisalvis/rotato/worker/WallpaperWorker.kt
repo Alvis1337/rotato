@@ -116,9 +116,9 @@ class WallpaperWorker(
             }
         }
 
-        val activeScheduledListId = findActiveScheduledListId(scheduleEntries, lists)
-        val scheduledEntry = activeScheduledListId?.let { listId ->
-            val wallpapers = listPrefs.wallpapersForList(listId).first()
+        val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, lists)
+        val scheduledEntry = activeScheduledListIds.takeIf { it.isNotEmpty() }?.let { listIds ->
+            val wallpapers = allWallpapers.filter { it.listId in listIds }
             selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
         }
 
@@ -308,14 +308,14 @@ class WallpaperWorker(
         }
     }
 
-    private fun findActiveScheduledListId(entries: List<ScheduleEntry>, lists: List<LocalList>): String? {
+    private fun findActiveScheduledListIds(entries: List<ScheduleEntry>, lists: List<LocalList>): Set<String> {
         val scheduledListIds = entries.asSequence()
             .filter { it.enabled }
-            .map { it.listId }
+            .flatMap { it.listIds.asSequence() }
             .filter { it.isNotBlank() }
             .toSet()
-        if (scheduledListIds.isEmpty()) return null
-        return lists.firstOrNull { it.useAsRotation && it.id in scheduledListIds }?.id
+        if (scheduledListIds.isEmpty()) return emptySet()
+        return lists.filter { it.useAsRotation && it.id in scheduledListIds }.mapTo(linkedSetOf()) { it.id }
     }
 
     private suspend fun selectScheduledWallpaper(

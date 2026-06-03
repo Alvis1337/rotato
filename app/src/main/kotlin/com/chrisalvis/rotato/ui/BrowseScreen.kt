@@ -120,6 +120,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
     val listCovers by vm.listCovers.collectAsStateWithLifecycle()
+    val scheduleEntries by vm.scheduleEntries.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
@@ -609,6 +610,17 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                 lists = lists,
                 listCounts = listCounts,
                 listCovers = listCovers,
+                scheduleLinkCounts = remember(scheduleEntries) {
+                    buildMap {
+                        scheduleEntries.filter { it.enabled }.forEach { entry ->
+                            entry.listIds.forEach { listId ->
+                                if (listId.isNotBlank()) {
+                                    put(listId, (get(listId) ?: 0) + 1)
+                                }
+                            }
+                        }
+                    }
+                },
                 lockedHiddenCount = lockedHiddenCount,
                 unlockedListIds = unlockedListIds,
                 onSelectList = { vm.selectList(it) },
@@ -1110,6 +1122,7 @@ private fun ListPickerContent(
     lists: List<LocalList>,
     listCounts: Map<String, Int>,
     listCovers: Map<String, String?>,
+    scheduleLinkCounts: Map<String, Int>,
     lockedHiddenCount: Int,
     unlockedListIds: Set<String>,
     onSelectList: (LocalList) -> Unit,
@@ -1184,6 +1197,7 @@ private fun ListPickerContent(
                     list = list,
                     count = count,
                     coverUrl = coverUrl,
+                    scheduleCount = scheduleLinkCounts[list.id] ?: 0,
                     isSessionUnlocked = list.isLocked && list.id in unlockedListIds,
                     onClick = { onSelectList(list) },
                     onDelete = { listToDelete = list },
@@ -1231,6 +1245,7 @@ private fun CollectionCard(
     list: LocalList,
     count: Int,
     coverUrl: String?,
+    scheduleCount: Int,
     isSessionUnlocked: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
@@ -1299,6 +1314,20 @@ private fun CollectionCard(
                             Text("Library", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
+                    if (scheduleCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f), MaterialTheme.shapes.small)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                "Schedule ×$scheduleCount",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
                     if (list.isSmartCollection) {
                         Box(
                             modifier = Modifier
@@ -1350,6 +1379,19 @@ private fun CollectionCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    val statusLine = buildList {
+                        if (list.useAsRotation) add("Linked to Library")
+                        if (scheduleCount > 0) add("In $scheduleCount schedule${if (scheduleCount != 1) "s" else ""}")
+                    }.joinToString(" · ")
+                    if (statusLine.isNotBlank()) {
+                        Text(
+                            statusLine,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 IconButton(onClick = onToggleRotation) {
                     Icon(
@@ -2372,7 +2414,7 @@ private fun MalCollectionDialog(
                         Column {
                             Text("Auto-add to Library", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "New collection wallpapers will feed the Library rotation pool",
+                                "Multiple collections can be linked to the Library, and schedules can turn on several at once.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
