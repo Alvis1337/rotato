@@ -68,6 +68,8 @@ class RotatoPreferences(private val context: Context) {
         val COLLECTION_SORT_ORDER = stringPreferencesKey("collection_sort_order")
         val WIFI_ONLY_DISCOVER = booleanPreferencesKey("wifi_only_discover")
         val PLUGIN_SYSTEM_INTRO_SHOWN = booleanPreferencesKey("plugin_system_intro_shown")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -171,6 +173,24 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setWidgetCollectionId(id: String) {
         context.dataStore.edit { it[WIDGET_COLLECTION_ID] = id }
+    }
+
+    /** User-selected theme mode: SYSTEM (default), LIGHT, DARK, or AMOLED. */
+    val themeMode: Flow<com.chrisalvis.rotato.ui.theme.ThemeMode> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { com.chrisalvis.rotato.ui.theme.ThemeMode.fromName(it[THEME_MODE]) }
+
+    suspend fun setThemeMode(mode: com.chrisalvis.rotato.ui.theme.ThemeMode) {
+        context.dataStore.edit { it[THEME_MODE] = mode.name }
+    }
+
+    /** Whether to derive the Material You palette from the device wallpaper (Android 12+). */
+    val dynamicColor: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[DYNAMIC_COLOR] ?: true }
+
+    suspend fun setDynamicColor(enabled: Boolean) {
+        context.dataStore.edit { it[DYNAMIC_COLOR] = enabled }
     }
 
     val nsfwMode: Flow<Boolean> = context.dataStore.data
