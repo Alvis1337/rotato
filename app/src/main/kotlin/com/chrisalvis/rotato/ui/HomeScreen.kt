@@ -159,7 +159,7 @@ fun HomeScreen(
     val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
-    val linkedCollection = collections.firstOrNull { it.useAsRotation }
+    val linkedCollections = remember(collections) { collections.filter { it.useAsRotation } }
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
@@ -236,7 +236,7 @@ fun HomeScreen(
                     isLoading = isLoading,
                     setNowState = setNowState,
                     lastRotationMs = lastRotationMs,
-                    linkedCollection = linkedCollection,
+                    linkedCollections = linkedCollections,
                     collections = collections,
                     dragSelectState = dragSelectState,
                     inSelectionMode = inSelectionMode,
@@ -262,7 +262,7 @@ private fun LibraryContent(
     isLoading: Boolean,
     setNowState: SetNowState,
     lastRotationMs: Long,
-    linkedCollection: LocalList?,
+    linkedCollections: List<LocalList>,
     collections: List<LocalList>,
     dragSelectState: DragSelectState<File>,
     inSelectionMode: Boolean,
@@ -293,7 +293,7 @@ private fun LibraryContent(
             imageCount = images.size,
             intervalMinutes = settings.intervalMinutes,
             lastRotationMs = lastRotationMs,
-            linkedCollection = linkedCollection,
+            linkedCollections = linkedCollections,
             onToggle = { viewModel.setRotationEnabled(!settings.isEnabled) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
@@ -559,7 +559,7 @@ private fun RotationStatusCard(
     imageCount: Int,
     intervalMinutes: Int,
     lastRotationMs: Long,
-    linkedCollection: LocalList?,
+    linkedCollections: List<LocalList>,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -622,7 +622,9 @@ private fun RotationStatusCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                if (linkedCollection != null) {
+                if (linkedCollections.isNotEmpty()) {
+                    val namesPreview = linkedCollections.take(3).joinToString(", ") { "\"${it.name}\"" }
+                    val moreCount = (linkedCollections.size - 3).coerceAtLeast(0)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -634,11 +636,25 @@ private fun RotationStatusCard(
                             tint = MaterialTheme.colorScheme.outline
                         )
                         Text(
-                            text = "Linked to \"${linkedCollection.name}\"",
+                            text = if (linkedCollections.size == 1) {
+                                "Linked to $namesPreview"
+                            } else {
+                                "${linkedCollections.size} linked collections"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
                     }
+                    Text(
+                        text = buildString {
+                            append(namesPreview)
+                            if (moreCount > 0) append(" +$moreCount more")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
                 }
             }
             Switch(

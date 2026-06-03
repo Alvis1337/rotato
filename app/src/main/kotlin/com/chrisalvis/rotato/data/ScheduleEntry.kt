@@ -8,7 +8,7 @@ data class ScheduleEntry(
     val days: Set<Int>,
     val startHour: Int,
     val startMinute: Int,
-    val listId: String = "",
+    val listIds: Set<String> = emptySet(),
     val enabled: Boolean = true,
     /** Non-zero when the last fire was blocked by a locked collection (epoch ms). Cleared on success. */
     val lastLockedMs: Long = 0L,
@@ -16,4 +16,6 @@ data class ScheduleEntry(
     val lastFiredMs: Long = 0L,
     /** Human-readable result of the last receiver run, e.g. "applied", "locked", "empty pool". */
     val lastFiredResult: String = "",
-)
+) {
+    val usesMainQueue: Boolean get() = listIds.isEmpty()
+}

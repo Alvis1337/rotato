@@ -129,10 +129,10 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** Reset a schedule whose collection was deleted back to the main rotation queue. */
-    fun resetCollection(entry: ScheduleEntry) {
+    /** Remove missing collections from a schedule, falling back to the main rotation queue if none remain. */
+    fun resetCollections(entry: ScheduleEntry, validListIds: Set<String>) {
         viewModelScope.launch {
-            val updated = entry.copy(listId = "")
+            val updated = entry.copy(listIds = entry.listIds.filterTo(linkedSetOf()) { it in validListIds })
             schedPrefs.upsert(updated)
             if (updated.enabled) ScheduleManager.schedule(getApplication(), updated)
         }

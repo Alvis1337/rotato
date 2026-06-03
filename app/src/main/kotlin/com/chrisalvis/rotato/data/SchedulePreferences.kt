@@ -70,12 +70,16 @@ class SchedulePreferences(private val context: Context) {
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             val daysArr = o.getJSONArray("days")
+            val listIds = o.optJSONArray("listIds")
+                ?.let { ids -> (0 until ids.length()).map { ids.optString(it) }.filter { it.isNotBlank() }.toSet() }
+                ?: o.optString("listId", "").takeIf { it.isNotBlank() }?.let(::setOf)
+                ?: emptySet()
             ScheduleEntry(
                 id = o.getString("id"),
                 days = (0 until daysArr.length()).map { daysArr.getInt(it) }.toSet(),
                 startHour = o.getInt("startHour"),
                 startMinute = o.getInt("startMinute"),
-                listId = o.optString("listId", ""),
+                listIds = listIds,
                 enabled = o.optBoolean("enabled", true),
                 lastLockedMs = o.optLong("lastLockedMs", 0L),
                 lastFiredMs = o.optLong("lastFiredMs", 0L),
@@ -92,7 +96,8 @@ class SchedulePreferences(private val context: Context) {
                     put("days", JSONArray(e.days.toList()))
                     put("startHour", e.startHour)
                     put("startMinute", e.startMinute)
-                    put("listId", e.listId)
+                    put("listIds", JSONArray(e.listIds.sorted()))
+                    put("listId", e.listIds.firstOrNull().orEmpty())
                     put("enabled", e.enabled)
                     put("lastLockedMs", e.lastLockedMs)
                     put("lastFiredMs", e.lastFiredMs)

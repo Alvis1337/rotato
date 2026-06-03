@@ -45,15 +45,19 @@ class ScheduleReceiver : BroadcastReceiver() {
         ): String {
             schedPrefs.clearLockedEvent(entry.id)
 
-            val scheduledListIds = allEntries.filter { it.enabled }.map { it.listId }.toSet()
+            val scheduledListIds = allEntries
+                .asSequence()
+                .filter { it.enabled }
+                .flatMap { it.listIds.asSequence() }
+                .filter { it.isNotBlank() }
+                .toSet()
             scheduledListIds.forEach { listId ->
-                val active = listId == entry.listId
+                val active = listId in entry.listIds
                 listPrefs.setUseAsRotation(listId, active)
                 if (!active) removeRotationFiles(context, listId, listPrefs)
             }
 
-            // Count only images belonging to the active list (not all files in the dir).
-            val imagesInPool = syncRotationPool(context, entry.listId, listPrefs)
+            val imagesInPool = syncRotationPool(context, entry.listIds, listPrefs)
             val triggerResult = if (imagesInPool == 0) "applied (empty pool!)" else "applied ($imagesInPool images)"
             schedPrefs.recordTrigger(entry.id, triggerResult)
 
@@ -70,11 +74,14 @@ class ScheduleReceiver : BroadcastReceiver() {
 
         private suspend fun syncRotationPool(
             context: Context,
-            listId: String,
+            listIds: Set<String>,
             listPrefs: LocalListsPreferences,
         ): Int {
-            val wallpapers = listPrefs.wallpapersForList(listId).first()
             val imageDir = File(context.filesDir, "rotato_images").also { it.mkdirs() }
+            if (listIds.isEmpty()) {
+                return imageDir.listFiles()?.count() ?: 0
+            }
+            val wallpapers = listPrefs.allWallpapers.first().filter { it.listId in listIds }
             val feedRepo = FeedRepository(imageDir)
 
             // Download any missing wallpapers
@@ -100,7 +107,7 @@ class ScheduleReceiver : BroadcastReceiver() {
             // cannot be identified without a per-file manifest and are left in place.
             val validKeys = wallpapers.map { sanitizeFilename(it.sourceId) }.toSet()
             val otherCollectionKeys = listPrefs.allWallpapers.first()
-                .filter { it.listId != listId }
+                .filter { it.listId !in listIds }
                 .map { sanitizeFilename(it.sourceId) }
                 .toSet()
             imageDir.listFiles()?.forEach { file ->
