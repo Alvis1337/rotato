@@ -626,6 +626,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             put("createdAt", l.createdAt)
                             put("useAsRotation", l.useAsRotation)
                             put("isLocked", l.isLocked)
+                            l.malConfig?.let { config ->
+                                put("malConfig", JSONObject().apply {
+                                    put("animeTitle", config.animeTitle)
+                                    put("characterTags", JSONArray(config.characterTags))
+                                    put("sourcePluginId", config.sourcePluginId ?: "")
+                                    put("sourceInstanceId", config.sourceInstanceId)
+                                    put("fillCount", config.fillCount)
+                                    put("matchAny", config.matchAny)
+                                    put("autoAddToLibrary", config.autoAddToLibrary)
+                                })
+                            }
                         })
                     }
                 }
@@ -766,12 +777,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         val o = collectionsArr.getJSONObject(i)
                         val id = o.optString("id") ?: continue
                         if (id !in existingIds) {
+                            val malConfigObj = o.optJSONObject("malConfig")
                             val list = LocalList(
                                 id = id,
                                 name = o.optString("name", "Imported"),
                                 createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                                 useAsRotation = o.optBoolean("useAsRotation", false),
                                 isLocked = o.optBoolean("isLocked", false),
+                                malConfig = malConfigObj?.let { obj ->
+                                    com.chrisalvis.rotato.data.MalCollectionConfig(
+                                        animeTitle = obj.optString("animeTitle", ""),
+                                        characterTags = obj.optJSONArray("characterTags")
+                                            ?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() } }
+                                            ?: emptyList(),
+                                        sourcePluginId = obj.optString("sourcePluginId").ifBlank { null },
+                                        sourceInstanceId = obj.optString("sourceInstanceId", ""),
+                                        fillCount = obj.optInt("fillCount", 25),
+                                        matchAny = obj.optBoolean("matchAny", false),
+                                        autoAddToLibrary = obj.optBoolean("autoAddToLibrary", false),
+                                    ).takeIf { it.animeTitle.isNotBlank() }
+                                },
                             )
                             localLists.createListWithId(list)
                         }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -72,6 +73,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.MalAnimeEntry
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.MinResolution
@@ -133,6 +135,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val downloadAllProgress by vm.downloadAllProgress.collectAsStateWithLifecycle()
     val allKnownTags by vm.allKnownTags.collectAsStateWithLifecycle()
     val activeSources by vm.activeSources.collectAsStateWithLifecycle()
+    val malAnimeEntries by vm.malAnimeEntries.collectAsStateWithLifecycle()
+    val managedMalCollectionCount by vm.managedMalCollectionCount.collectAsStateWithLifecycle()
     val fetchFillLoading by vm.fetchFillLoading.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     var fetchFillFor by remember { mutableStateOf<LocalList?>(null) }
@@ -153,6 +157,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showCollectionMenu by remember { mutableStateOf(false) }
+    var showCreateMenu by remember { mutableStateOf(false) }
+    var showCreateMalDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedList?.id) {
         vm.setCollectionSearch("")
@@ -215,6 +221,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var previewWallpaper by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var editRulesFor by remember { mutableStateOf<LocalList?>(null) }
+    var editMalFor by remember { mutableStateOf<LocalList?>(null) }
     val gridState = rememberLazyGridState()
     val browseScope = rememberCoroutineScope()
 
@@ -291,6 +298,27 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         )
     }
 
+    if (showCreateMalDialog) {
+        MalCollectionDialog(
+            animeEntries = malAnimeEntries,
+            activeSources = activeSources,
+            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary ->
+                vm.createMalCollection(
+                    name = name,
+                    animeTitle = animeTitle,
+                    characterTags = characterTags,
+                    pluginId = pluginId,
+                    instanceId = instanceId,
+                    fillCount = fillCount,
+                    matchAny = matchAny,
+                    autoAddToLibrary = autoAddToLibrary,
+                )
+                showCreateMalDialog = false
+            },
+            onDismiss = { showCreateMalDialog = false }
+        )
+    }
+
     editRulesFor?.let { list ->
         EditRulesDialog(
             list = list,
@@ -300,6 +328,29 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             onClearTagSuggestions = { vm.clearTagSuggestions() },
             onConfirm = { rule -> vm.editSmartRule(list, rule); vm.clearTagSuggestions(); editRulesFor = null },
             onDismiss = { vm.clearTagSuggestions(); editRulesFor = null }
+        )
+    }
+
+    editMalFor?.let { list ->
+        MalCollectionDialog(
+            animeEntries = malAnimeEntries,
+            activeSources = activeSources,
+            existingList = list,
+            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary ->
+                vm.updateMalCollection(
+                    list = list,
+                    name = name,
+                    animeTitle = animeTitle,
+                    characterTags = characterTags,
+                    pluginId = pluginId,
+                    instanceId = instanceId,
+                    fillCount = fillCount,
+                    matchAny = matchAny,
+                    autoAddToLibrary = autoAddToLibrary,
+                )
+                editMalFor = null
+            },
+            onDismiss = { editMalFor = null }
         )
     }
 
@@ -420,8 +471,40 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                         IconButton(onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "*/*")) }) {
                             Icon(Icons.Default.SettingsBackupRestore, contentDescription = "Restore backup")
                         }
-                        IconButton(onClick = { vm.showCreateDialog() }) {
-                            Icon(Icons.Default.Add, contentDescription = "New collection")
+                        Box {
+                            IconButton(onClick = { showCreateMenu = true }) {
+                                Icon(Icons.Default.Add, contentDescription = "Create collection")
+                            }
+                            DropdownMenu(
+                                expanded = showCreateMenu,
+                                onDismissRequest = { showCreateMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("New collection") },
+                                    onClick = {
+                                        vm.showCreateDialog()
+                                        showCreateMenu = false
+                                    }
+                                )
+                                if (malAnimeEntries.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Create from MAL") },
+                                        onClick = {
+                                            showCreateMalDialog = true
+                                            showCreateMenu = false
+                                        }
+                                    )
+                                }
+                                if (managedMalCollectionCount > 0) {
+                                    DropdownMenuItem(
+                                        text = { Text("Sync MAL collections") },
+                                        onClick = {
+                                            vm.syncManagedMalCollections()
+                                            showCreateMenu = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -525,7 +608,9 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
                 onSetRotationTarget = { list, target -> vm.setRotationTarget(list, target) },
                 onEditRules = { editRulesFor = it },
+                onEditMal = { editMalFor = it },
                 onAutofill = { vm.autofillSmartCollection(it) },
+                onRefreshMal = { vm.refreshManagedMalCollection(it) },
                 onLockCollection = { vm.lockCollection(it.id) },
                 onUnlockCollection = { list ->
                     BiometricHelper.authenticate(
@@ -1024,7 +1109,9 @@ private fun ListPickerContent(
     onToggleRotation: (LocalList) -> Unit,
     onSetRotationTarget: (LocalList, com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
     onEditRules: (LocalList) -> Unit,
+    onEditMal: (LocalList) -> Unit,
     onAutofill: (LocalList) -> Unit,
+    onRefreshMal: (LocalList) -> Unit,
     onLockCollection: (LocalList) -> Unit,
     onUnlockCollection: (LocalList) -> Unit,
     onRelockForSession: (LocalList) -> Unit,
@@ -1095,7 +1182,9 @@ private fun ListPickerContent(
                     onToggleRotation = { onToggleRotation(list) },
                     onSetRotationTarget = { onSetRotationTarget(list, it) },
                     onEditRules = { onEditRules(list) },
+                    onEditMal = { onEditMal(list) },
                     onAutofill = { onAutofill(list) },
+                    onRefreshMal = { onRefreshMal(list) },
                     onLock = { onLockCollection(list) },
                     onUnlock = { onUnlockCollection(list) },
                     onRelockForSession = { onRelockForSession(list) },
@@ -1140,7 +1229,9 @@ private fun CollectionCard(
     onToggleRotation: () -> Unit,
     onSetRotationTarget: (com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
     onEditRules: () -> Unit,
+    onEditMal: () -> Unit,
     onAutofill: () -> Unit,
+    onRefreshMal: () -> Unit,
     onLock: () -> Unit,
     onUnlock: () -> Unit,
     onRelockForSession: () -> Unit,
@@ -1207,6 +1298,15 @@ private fun CollectionCard(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text("⚡ Smart", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (list.isMalManaged) {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.92f), MaterialTheme.shapes.small)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("MAL", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                     if (list.isLocked) {
@@ -1279,6 +1379,19 @@ private fun CollectionCard(
                                 text = { Text("Autofill (25)") },
                                 onClick = { onAutofill(); showMoreMenu = false },
                                 leadingIcon = { Icon(Icons.Default.Bolt, contentDescription = null) }
+                            )
+                        }
+                        if (list.isMalManaged) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Edit MAL settings") },
+                                onClick = { onEditMal(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Refresh from MAL") },
+                                onClick = { onRefreshMal(); showMoreMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
                             )
                         }
                         if (list.useAsRotation) {
@@ -2077,6 +2190,245 @@ private fun ZoomUrlImageDialog(imageUrl: String, onDismiss: () -> Unit) {
 private fun LocalSource.displayName(): String {
     val base = pluginId.lowercase().replaceFirstChar { it.uppercase() }
     return if (instanceId.isNotBlank()) "$base / $instanceId" else base
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MalCollectionDialog(
+    animeEntries: List<MalAnimeEntry>,
+    activeSources: List<LocalSource>,
+    existingList: LocalList? = null,
+    onConfirm: (
+        name: String,
+        animeTitle: String,
+        characterTags: List<String>,
+        pluginId: String?,
+        instanceId: String?,
+        fillCount: Int,
+        matchAny: Boolean,
+        autoAddToLibrary: Boolean,
+    ) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val existingConfig = existingList?.malConfig
+    val initialTitle = existingConfig?.animeTitle.orEmpty()
+    var search by remember(existingList?.id, animeEntries) { mutableStateOf(initialTitle) }
+    var selectedTitle by remember(existingList?.id, animeEntries) { mutableStateOf(initialTitle) }
+    var name by remember(existingList?.id, animeEntries) { mutableStateOf(existingList?.name ?: "") }
+    var characterText by remember(existingList?.id) { mutableStateOf(existingConfig?.characterTags?.joinToString(", ").orEmpty()) }
+    var count by remember(existingList?.id) { mutableIntStateOf(existingConfig?.fillCount ?: 25) }
+    var matchAny by remember(existingList?.id) { mutableStateOf(existingConfig?.matchAny ?: false) }
+    var autoAddToLibrary by remember(existingList?.id) {
+        mutableStateOf(existingConfig?.autoAddToLibrary ?: (existingList?.useAsRotation == true))
+    }
+    var selectedPluginId by remember(existingList?.id) { mutableStateOf(existingConfig?.sourcePluginId) }
+    var selectedInstanceId by remember(existingList?.id) {
+        mutableStateOf(existingConfig?.sourceInstanceId?.takeIf { it.isNotBlank() })
+    }
+    var sourceExpanded by remember { mutableStateOf(false) }
+
+    val selectedSource = activeSources.find {
+        it.pluginId == selectedPluginId && it.instanceId == (selectedInstanceId ?: "")
+    }
+    val filteredEntries = remember(search, animeEntries) {
+        val query = search.trim()
+        animeEntries
+            .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+            .sortedByDescending { it.score }
+            .take(8)
+    }
+
+    fun selectAnime(entry: MalAnimeEntry) {
+        val previousTitle = selectedTitle
+        selectedTitle = entry.title
+        search = entry.title
+        if (name.isBlank() || name == previousTitle || name == existingList?.name) {
+            name = entry.title
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existingList == null) "Create from MAL" else "Edit MAL collection") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (animeEntries.isEmpty()) {
+                    Text(
+                        "Refresh your MAL list in Settings first, then come back here to create a collection.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        label = { Text("Find anime") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .border(
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                shape = MaterialTheme.shapes.medium
+                            )
+                            .padding(vertical = 4.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (filteredEntries.isEmpty()) {
+                            Text(
+                                "No matching anime",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            filteredEntries.forEach { entry ->
+                                ListItem(
+                                    headlineContent = { Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    supportingContent = {
+                                        if (entry.score > 0) Text("MAL score ${entry.score}")
+                                    },
+                                    trailingContent = {
+                                        if (selectedTitle == entry.title) {
+                                            Icon(Icons.Default.Check, contentDescription = null)
+                                        }
+                                    },
+                                    modifier = Modifier.clickable { selectAnime(entry) }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Collection name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = characterText,
+                        onValueChange = { characterText = it },
+                        label = { Text("Character tags") },
+                        placeholder = { Text("Optional, comma-separated") },
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = {
+                            Text("Example: gojo_satoru, makima")
+                        }
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Initial fill", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(10, 25, 50, 100).forEach { n ->
+                                FilterChip(
+                                    selected = count == n,
+                                    onClick = { count = n },
+                                    label = { Text("$n") }
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = !matchAny,
+                            onClick = { matchAny = false },
+                            label = { Text("All tags") }
+                        )
+                        FilterChip(
+                            selected = matchAny,
+                            onClick = { matchAny = true },
+                            label = { Text("Any tag") }
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { autoAddToLibrary = !autoAddToLibrary }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Checkbox(checked = autoAddToLibrary, onCheckedChange = { autoAddToLibrary = it })
+                        Column {
+                            Text("Auto-add to Library", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "New collection wallpapers will feed the Library rotation pool",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    if (activeSources.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Preferred source", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            ExposedDropdownMenuBox(
+                                expanded = sourceExpanded,
+                                onExpandedChange = { sourceExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedSource?.displayName() ?: "All active sources",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    modifier = Modifier
+                                        .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                        .fillMaxWidth(),
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sourceExpanded) }
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = sourceExpanded,
+                                    onDismissRequest = { sourceExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("All active sources") },
+                                        onClick = {
+                                            selectedPluginId = null
+                                            selectedInstanceId = null
+                                            sourceExpanded = false
+                                        }
+                                    )
+                                    activeSources.forEach { src ->
+                                        DropdownMenuItem(
+                                            text = { Text(src.displayName()) },
+                                            onClick = {
+                                                selectedPluginId = src.pluginId
+                                                selectedInstanceId = src.instanceId.takeIf { it.isNotBlank() }
+                                                sourceExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(
+                        name.trim(),
+                        selectedTitle,
+                        characterText.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                        selectedPluginId,
+                        selectedInstanceId,
+                        count,
+                        matchAny,
+                        autoAddToLibrary,
+                    )
+                },
+                enabled = animeEntries.isNotEmpty() && selectedTitle.isNotBlank() && name.isNotBlank()
+            ) {
+                Text(if (existingList == null) "Create" else "Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

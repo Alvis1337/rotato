@@ -29,10 +29,18 @@ class LocalListsPreferences(private val context: Context) {
     fun wallpapersForList(listId: String): Flow<List<LocalWallpaperEntry>> =
         allWallpapers.map { all -> all.filter { it.listId == listId } }
 
-    suspend fun createList(name: String): LocalList? {
+    suspend fun createList(
+        name: String,
+        useAsRotation: Boolean = false,
+        malConfig: MalCollectionConfig? = null,
+    ): LocalList? {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return null
-        val list = LocalList(name = trimmed)
+        val list = LocalList(
+            name = trimmed,
+            useAsRotation = useAsRotation,
+            malConfig = malConfig,
+        )
         context.dataStore.edit { prefs ->
             val current = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
             if (current.any { it.name.equals(trimmed, ignoreCase = true) }) return@edit
@@ -121,6 +129,15 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setMalConfig(listId: String, config: MalCollectionConfig?) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(malConfig = config) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
     suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
         var added = false
         context.dataStore.edit { prefs ->
@@ -188,6 +205,20 @@ class LocalListsPreferences(private val context: Context) {
                 requireAny = smartRuleObj.optJSONArray("requireAny")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
                 excludeAny = smartRuleObj.optJSONArray("excludeAny")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             ) else null
+            val malConfigObj = o.optJSONObject("malConfig")
+            val malConfig = if (malConfigObj != null) {
+                MalCollectionConfig(
+                    animeTitle = malConfigObj.optString("animeTitle", ""),
+                    characterTags = malConfigObj.optJSONArray("characterTags")
+                        ?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } }
+                        ?: emptyList(),
+                    sourcePluginId = malConfigObj.optString("sourcePluginId").ifBlank { null },
+                    sourceInstanceId = malConfigObj.optString("sourceInstanceId", ""),
+                    fillCount = malConfigObj.optInt("fillCount", 25).coerceAtLeast(1),
+                    matchAny = malConfigObj.optBoolean("matchAny", false),
+                    autoAddToLibrary = malConfigObj.optBoolean("autoAddToLibrary", false),
+                ).takeIf { it.animeTitle.isNotBlank() }
+            } else null
             LocalList(
                 id = o.getString("id"),
                 name = o.getString("name"),
@@ -197,6 +228,7 @@ class LocalListsPreferences(private val context: Context) {
                 isLocked = o.optBoolean("isLocked", false),
                 coverUrl = o.optString("coverUrl", ""),
                 smartRule = smartRule,
+                malConfig = malConfig,
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -217,6 +249,17 @@ class LocalListsPreferences(private val context: Context) {
                             put("requireAll", JSONArray(l.smartRule.requireAll))
                             put("requireAny", JSONArray(l.smartRule.requireAny))
                             put("excludeAny", JSONArray(l.smartRule.excludeAny))
+                        })
+                    }
+                    if (l.malConfig != null && l.malConfig.animeTitle.isNotBlank()) {
+                        put("malConfig", JSONObject().apply {
+                            put("animeTitle", l.malConfig.animeTitle)
+                            put("characterTags", JSONArray(l.malConfig.characterTags))
+                            put("sourcePluginId", l.malConfig.sourcePluginId ?: "")
+                            put("sourceInstanceId", l.malConfig.sourceInstanceId)
+                            put("fillCount", l.malConfig.fillCount)
+                            put("matchAny", l.malConfig.matchAny)
+                            put("autoAddToLibrary", l.malConfig.autoAddToLibrary)
                         })
                     }
                 })
