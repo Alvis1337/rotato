@@ -79,6 +79,7 @@ import com.chrisalvis.rotato.data.UpdateCheckResult
 import com.chrisalvis.rotato.data.UpdateInfo
 import com.chrisalvis.rotato.data.UpdateRepository
 import com.chrisalvis.rotato.data.WallpaperTarget
+import com.chrisalvis.rotato.ui.theme.ThemeMode
 import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -376,6 +377,51 @@ fun SettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
+                    SettingsSection(title = "Appearance") {
+                        val themeMode by rotatoPrefs.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+                        val dynamicColor by rotatoPrefs.dynamicColor.collectAsStateWithLifecycle(initialValue = true)
+                        val themeOptions = listOf(
+                            ThemeMode.SYSTEM to "Follow system",
+                            ThemeMode.LIGHT to "Light",
+                            ThemeMode.DARK to "Dark",
+                            ThemeMode.AMOLED to "AMOLED black",
+                        )
+                        themeOptions.forEach { (mode, label) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = themeMode == mode,
+                                    onClick = { scope.launch { rotatoPrefs.setThemeMode(mode) } }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(label)
+                            }
+                        }
+                        Spacer(Modifier.size(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Dynamic color")
+                                Text(
+                                    "Use the Material You palette from your wallpaper (Android 12+)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = dynamicColor,
+                                onCheckedChange = { value ->
+                                    scope.launch { rotatoPrefs.setDynamicColor(value) }
+                                }
+                            )
+                        }
+                    }
+
                     SettingsSection(title = "Rotation Interval") {
                         RotationInterval.entries.forEach { interval ->
                             Row(

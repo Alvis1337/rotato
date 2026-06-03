@@ -47,6 +47,7 @@ import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.SourceHealthScreen
 import com.chrisalvis.rotato.ui.StatsScreen
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
+import com.chrisalvis.rotato.ui.theme.ThemeMode
 import com.chrisalvis.rotato.worker.ScheduleReceiver
 
 class MainActivity : AppCompatActivity() {
@@ -61,7 +62,10 @@ class MainActivity : AppCompatActivity() {
         _pendingNavigate.value = intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)
         _pendingSharedImages.value = extractSharedImages(intent)
         setContent {
-            RotatoTheme {
+            val themePrefs = remember { RotatoPreferences(applicationContext) }
+            val themeMode by themePrefs.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+            val dynamicColor by themePrefs.dynamicColor.collectAsStateWithLifecycle(initialValue = true)
+            RotatoTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
                 val rotatoPrefs = remember { RotatoPreferences(applicationContext) }
                 val setupDone by rotatoPrefs.setupDone.collectAsStateWithLifecycle(initialValue = null)
 
