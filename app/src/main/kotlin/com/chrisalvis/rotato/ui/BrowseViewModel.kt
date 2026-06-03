@@ -24,6 +24,7 @@ import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.SmartRule
 import com.chrisalvis.rotato.data.ScheduleEntry
@@ -335,32 +336,48 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun fetchFill(list: LocalList, tags: String, count: Int, pluginId: String? = null, instanceId: String? = null) {
+    fun fetchFill(
+        list: LocalList,
+        tags: String,
+        count: Int,
+        pluginId: String? = null,
+        instanceId: String? = null,
+        matchAny: Boolean = false,
+        nsfwOverride: Boolean? = null,
+        minResolution: MinResolution = MinResolution.ANY,
+        useMalFilter: Boolean = false,
+    ) {
         viewModelScope.launch {
             _fetchFillLoading.update { true }
             try {
                 val manifests = pluginRepo.installedManifests.first()
                 val allSources = localSources.sources.first()
-                val nsfw = prefs.nsfwMode.first()
+                val globalNsfw = prefs.nsfwMode.first()
+                val effectiveGlobalNsfw = nsfwOverride ?: globalNsfw
                 val candidates = allSources.filter { src ->
                     if (!src.enabled) return@filter false
                     if (pluginId != null && src.pluginId != pluginId) return@filter false
                     if (instanceId != null && src.instanceId != instanceId) return@filter false
                     val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
-                    PluginExecutor.canServe(manifest, nsfw, src)
+                    PluginExecutor.canServe(manifest, effectiveGlobalNsfw, src)
                 }
                 if (candidates.isEmpty()) {
                     _fetchFillResult.emit("No compatible active sources found. Enable sources in Settings → Sources.")
                     return@launch
                 }
+                val filters = BrainrotFilters(
+                    minResolution = minResolution,
+                    useMalFilter = useMalFilter,
+                    matchAny = matchAny,
+                )
                 var added = 0
                 for (src in candidates.shuffled()) {
                     if (added >= count) break
                     val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
                     val remaining = count - added
-                    val effectiveNsfw = src.nsfwEnabled ?: nsfw
+                    val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
                     val wallpapers = try {
-                        PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, BrainrotFilters(), remaining + 5)
+                        PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, filters, remaining + 5)
                     } catch (e: Exception) {
                         Log.e("BrowseViewModel", "fetchFill error for ${src.pluginId}", e)
                         emptyList()

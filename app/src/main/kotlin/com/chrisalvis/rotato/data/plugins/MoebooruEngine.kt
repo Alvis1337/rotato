@@ -19,7 +19,7 @@ object MoebooruEngine : PluginEngine() {
     ): BrainrotWallpaper? = onIO {
         if (!canServe(manifest, nsfw, source)) return@onIO null
         val base = baseUrl(manifest, source)
-        val tagQuery = buildTagQuery(query, nsfw)
+        val tagQuery = buildTagQuery(query, nsfw, filters)
         val arr = getJsonArray("$base/post.json?tags=${tagQuery.urlEncode()}&limit=20") ?: return@onIO null
         val post = run {
             for (i in (0 until arr.length()).shuffled()) {
@@ -45,7 +45,7 @@ object MoebooruEngine : PluginEngine() {
     ): List<BrainrotWallpaper> = onIO {
         if (!canServe(manifest, nsfw, source)) return@onIO emptyList()
         val base = baseUrl(manifest, source)
-        val tagQuery = buildTagQuery(query, nsfw)
+        val tagQuery = buildTagQuery(query, nsfw, filters)
         val arr = getJsonArray("$base/post.json?tags=${tagQuery.urlEncode()}&limit=$limit") ?: return@onIO emptyList()
         (0 until arr.length()).mapNotNull { i ->
             val obj = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -57,10 +57,19 @@ object MoebooruEngine : PluginEngine() {
         }
     }
 
-    private fun buildTagQuery(query: String, nsfw: Boolean): String = buildString {
+    private fun buildTagQuery(query: String, nsfw: Boolean, filters: BrainrotFilters = BrainrotFilters()): String = buildString {
         val normalized = normalizeUserQuery(query)
-        if (normalized.isNotBlank()) { append(normalized); append(' ') }
-        append(if (nsfw) "rating:explicit" else "rating:safe")
+        val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()
+        if (tokens.isNotEmpty()) {
+            if (filters.matchAny && tokens.size > 1) {
+                append(tokens.joinToString(" ~ "))
+            } else {
+                append(tokens.joinToString(" "))
+            }
+            append(' ')
+        }
+        // Use -rating:s to allow questionable + explicit for NSFW (not just explicit)
+        append(if (nsfw) "-rating:s" else "rating:s")
         append(" order:random")
     }.trim()
 

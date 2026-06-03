@@ -34,6 +34,8 @@ data class BrainrotFilters(
     val phoneScreenWidth: Int = 0,
     val phoneScreenHeight: Int = 0,
     val useMalFilter: Boolean = true,
+    /** If true, space-separated tags are OR'd (any match) instead of AND'd (all must match). */
+    val matchAny: Boolean = false,
 )
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */

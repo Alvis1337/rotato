@@ -50,7 +50,7 @@ object GelbooruEngine : PluginEngine() {
         val base = baseUrl(manifest, source)
         val apiBase = "$base/index.php?page=dapi&s=post&q=index&json=1"
         val extras = manifest.extras
-        val tagQuery = buildTagQuery(query, nsfw, extras)
+        val tagQuery = buildTagQuery(query, nsfw, extras, filters)
         val authSuffix = buildAuthSuffix(source)
         val url = "$apiBase&limit=$limit&tags=${tagQuery.urlEncode()}$authSuffix"
 
@@ -76,7 +76,7 @@ object GelbooruEngine : PluginEngine() {
         val base = baseUrl(manifest, source)
         val apiBase = "$base/index.php?page=dapi&s=post&q=index&json=1"
         val extras = manifest.extras
-        val tagQuery = buildTagQuery(query, nsfw, extras)
+        val tagQuery = buildTagQuery(query, nsfw, extras, filters)
         val authSuffix = buildAuthSuffix(source)
         val url = "$apiBase&limit=$limit&tags=${tagQuery.urlEncode()}$authSuffix"
 
@@ -92,13 +92,23 @@ object GelbooruEngine : PluginEngine() {
         }
     }
 
-    private fun buildTagQuery(query: String, nsfw: Boolean, extras: Map<String, String>): String {
+    private fun buildTagQuery(query: String, nsfw: Boolean, extras: Map<String, String>, filters: BrainrotFilters = BrainrotFilters()): String {
         val normalized = normalizeUserQuery(query)
-        val safeTag = if (nsfw) "rating:explicit"
+        val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()
+        // rating:sensitive is Gelbooru's borderline-safe tier; allow q+e for NSFW
+        val safeTag = if (nsfw) "-rating:general -rating:safe"
                       else if ((extras["ratingTag"] ?: "general") == "safe") "rating:safe"
                       else "rating:general"
         return buildString {
-            if (normalized.isNotBlank()) { append(normalized); append(' ') }
+            if (tokens.isNotEmpty()) {
+                if (filters.matchAny && tokens.size > 1) {
+                    // Gelbooru uses OR with `( tag1 ~ tag2 )` syntax
+                    append("( ${tokens.joinToString(" ~ ")} )")
+                } else {
+                    append(tokens.joinToString(" "))
+                }
+                append(' ')
+            }
             append(safeTag)
         }.trim()
     }

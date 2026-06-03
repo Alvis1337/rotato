@@ -26,7 +26,7 @@ object DanbooruEngine : PluginEngine() {
         val base = baseUrl(manifest, source)
         val auth = authHeader(source)
         val isPremium = auth != null && accountLevel(source, auth, base) >= GOLD_LEVEL
-        val tagQuery = buildTagQuery(query, nsfw, isPremium, exclude)
+        val tagQuery = buildTagQuery(query, nsfw, isPremium, exclude, filters)
         val url = "$base/posts.json?tags=${tagQuery.urlEncode()}&limit=20&random=true"
         val req = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
             .apply { if (auth != null) addHeader("Authorization", auth) }.build()
@@ -64,7 +64,7 @@ object DanbooruEngine : PluginEngine() {
         val base = baseUrl(manifest, source)
         val auth = authHeader(source)
         val isPremium = auth != null && accountLevel(source, auth, base) >= GOLD_LEVEL
-        val tagQuery = buildTagQuery(query, nsfw, isPremium, exclude)
+        val tagQuery = buildTagQuery(query, nsfw, isPremium, exclude, filters)
         val url = "$base/posts.json?tags=${tagQuery.urlEncode()}&limit=$limit&random=true"
         val req = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
             .apply { if (auth != null) addHeader("Authorization", auth) }.build()
@@ -109,14 +109,23 @@ object DanbooruEngine : PluginEngine() {
         return level
     }
 
-    private fun buildTagQuery(query: String, nsfw: Boolean, isPremium: Boolean, exclude: List<String>): String {
+    private fun buildTagQuery(query: String, nsfw: Boolean, isPremium: Boolean, exclude: List<String>, filters: BrainrotFilters = BrainrotFilters()): String {
         val normalized = normalizeUserQuery(query)
         return buildString {
             val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()
             val maxTokens = if (isPremium) tokens.size else 1
-            val effective = tokens.take(maxTokens).joinToString(" ")
-            if (effective.isNotBlank()) { append(effective); append(' ') }
-            append(if (nsfw) "rating:explicit" else "rating:general")
+            if (maxTokens > 0 && tokens.isNotEmpty()) {
+                val effective = tokens.take(maxTokens)
+                if (filters.matchAny && effective.size > 1) {
+                    // Danbooru OR syntax: prefix each tag with ~
+                    append(effective.joinToString(" ") { "~$it" })
+                } else {
+                    append(effective.joinToString(" "))
+                }
+                append(' ')
+            }
+            // Use -rating:g to allow questionable + explicit (not just explicit)
+            append(if (nsfw) "-rating:g" else "rating:g")
             if (isPremium && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }

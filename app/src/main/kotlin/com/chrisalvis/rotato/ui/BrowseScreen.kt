@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -69,7 +71,9 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import com.chrisalvis.rotato.data.BrowseWallpaper
 import com.chrisalvis.rotato.data.LocalList
+import LocalSource
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
+import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.SmartRule
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.BorderStroke
@@ -295,8 +299,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         FetchFromSourcesDialog(
             list = list,
             activeSources = activeSources,
-            onConfirm = { tags, count, pluginId, instanceId ->
-                vm.fetchFill(list, tags, count, pluginId, instanceId)
+            onConfirm = { tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, useMalFilter ->
+                vm.fetchFill(list, tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, useMalFilter)
                 fetchFillFor = null
             },
             onDismiss = { fetchFillFor = null }
@@ -2032,7 +2036,7 @@ private fun ZoomUrlImageDialog(imageUrl: String, onDismiss: () -> Unit) {
     }
 }
 
-private fun com.chrisalvis.rotato.data.LocalSource.displayName(): String {
+private fun LocalSource.displayName(): String {
     val base = pluginId.lowercase().replaceFirstChar { it.uppercase() }
     return if (instanceId.isNotBlank()) "$base / $instanceId" else base
 }
@@ -2041,8 +2045,17 @@ private fun com.chrisalvis.rotato.data.LocalSource.displayName(): String {
 @Composable
 private fun FetchFromSourcesDialog(
     list: LocalList,
-    activeSources: List<com.chrisalvis.rotato.data.LocalSource>,
-    onConfirm: (tags: String, count: Int, pluginId: String?, instanceId: String?) -> Unit,
+    activeSources: List<LocalSource>,
+    onConfirm: (
+        tags: String,
+        count: Int,
+        pluginId: String?,
+        instanceId: String?,
+        matchAny: Boolean,
+        nsfwOverride: Boolean?,
+        minResolution: MinResolution,
+        useMalFilter: Boolean,
+    ) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var tags by remember { mutableStateOf("") }
@@ -2050,8 +2063,14 @@ private fun FetchFromSourcesDialog(
     var selectedPluginId by remember { mutableStateOf<String?>(null) }
     var selectedInstanceId by remember { mutableStateOf<String?>(null) }
     var sourceExpanded by remember { mutableStateOf(false) }
+    var matchAny by remember { mutableStateOf(false) }
+    // null = Auto (use global setting), true = Force ON, false = Force OFF
+    var nsfwOverride by remember { mutableStateOf<Boolean?>(null) }
+    var minResolution by remember { mutableStateOf(MinResolution.ANY) }
+    var useMalFilter by remember { mutableStateOf(false) }
 
     val selectedSource = activeSources.find { it.pluginId == selectedPluginId && it.instanceId == (selectedInstanceId ?: "") }
+    val multiTag = tags.trim().contains(' ')
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2067,6 +2086,16 @@ private fun FetchFromSourcesDialog(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 )
+                // Tag match mode — only meaningful with multiple tags
+                if (multiTag) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Tag matching", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = !matchAny, onClick = { matchAny = false }, label = { Text("All (AND)") })
+                            FilterChip(selected = matchAny, onClick = { matchAny = true }, label = { Text("Any (OR)") })
+                        }
+                    }
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("How many", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2078,6 +2107,43 @@ private fun FetchFromSourcesDialog(
                             )
                         }
                     }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Min resolution", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        listOf(
+                            MinResolution.ANY,
+                            MinResolution.HD,
+                            MinResolution.FHD,
+                            MinResolution.QHD,
+                            MinResolution.UHD,
+                        ).forEach { res ->
+                            FilterChip(
+                                selected = minResolution == res,
+                                onClick = { minResolution = res },
+                                label = { Text(res.label.substringBefore(' ')) }
+                            )
+                        }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("NSFW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = nsfwOverride == null, onClick = { nsfwOverride = null }, label = { Text("Auto") })
+                        FilterChip(selected = nsfwOverride == true, onClick = { nsfwOverride = true }, label = { Text("On") })
+                        FilterChip(selected = nsfwOverride == false, onClick = { nsfwOverride = false }, label = { Text("Off") })
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { useMalFilter = !useMalFilter }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Checkbox(checked = useMalFilter, onCheckedChange = { useMalFilter = it })
+                    Text("MAL list only", style = MaterialTheme.typography.bodyMedium)
                 }
                 if (activeSources.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2121,7 +2187,17 @@ private fun FetchFromSourcesDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(tags, count, selectedPluginId, selectedInstanceId.takeIf { it?.isNotBlank() == true }) },
+                onClick = {
+                    onConfirm(
+                        tags, count,
+                        selectedPluginId,
+                        selectedInstanceId.takeIf { it?.isNotBlank() == true },
+                        matchAny,
+                        nsfwOverride,
+                        minResolution,
+                        useMalFilter,
+                    )
+                },
                 enabled = tags.isNotBlank()
             ) { Text("Fill") }
         },
