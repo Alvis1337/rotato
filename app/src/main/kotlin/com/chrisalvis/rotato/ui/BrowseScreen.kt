@@ -134,6 +134,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val allKnownTags by vm.allKnownTags.collectAsStateWithLifecycle()
     val activeSources by vm.activeSources.collectAsStateWithLifecycle()
     val fetchFillLoading by vm.fetchFillLoading.collectAsStateWithLifecycle()
+    val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     var fetchFillFor by remember { mutableStateOf<LocalList?>(null) }
 
     val context = LocalContext.current
@@ -282,8 +283,11 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     if (showCreateDialog) {
         CreateListDialog(
             onConfirm = { name, rule -> vm.createList(name, rule) },
-            onDismiss = { vm.dismissCreateDialog() },
-            knownTags = allKnownTags
+            onDismiss = { vm.dismissCreateDialog(); vm.clearTagSuggestions() },
+            knownTags = allKnownTags,
+            tagSuggestions = tagSuggestions,
+            onFetchTagSuggestions = { vm.fetchTagSuggestions(it) },
+            onClearTagSuggestions = { vm.clearTagSuggestions() },
         )
     }
 
@@ -291,8 +295,11 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         EditRulesDialog(
             list = list,
             knownTags = allKnownTags,
-            onConfirm = { rule -> vm.editSmartRule(list, rule); editRulesFor = null },
-            onDismiss = { editRulesFor = null }
+            tagSuggestions = tagSuggestions,
+            onFetchTagSuggestions = { vm.fetchTagSuggestions(it) },
+            onClearTagSuggestions = { vm.clearTagSuggestions() },
+            onConfirm = { rule -> vm.editSmartRule(list, rule); vm.clearTagSuggestions(); editRulesFor = null },
+            onDismiss = { vm.clearTagSuggestions(); editRulesFor = null }
         )
     }
 
@@ -300,11 +307,15 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         FetchFromSourcesDialog(
             list = list,
             activeSources = activeSources,
+            tagSuggestions = tagSuggestions,
+            onTagsChange = { vm.fetchTagSuggestions(it) },
+            onClearTagSuggestions = { vm.clearTagSuggestions() },
             onConfirm = { tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, aspectRatio, useMalFilter ->
+                vm.clearTagSuggestions()
                 vm.fetchFill(list, tags, count, pluginId, instanceId, matchAny, nsfwOverride, minResolution, aspectRatio, useMalFilter)
                 fetchFillFor = null
             },
-            onDismiss = { fetchFillFor = null }
+            onDismiss = { vm.clearTagSuggestions(); fetchFillFor = null }
         )
     }
 
@@ -784,7 +795,14 @@ private fun WallpaperDetailSheet(
 }
 
 @Composable
-private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss: () -> Unit, knownTags: List<String> = emptyList()) {
+private fun CreateListDialog(
+    onConfirm: (String, SmartRule?) -> Unit,
+    onDismiss: () -> Unit,
+    knownTags: List<String> = emptyList(),
+    tagSuggestions: List<String> = emptyList(),
+    onFetchTagSuggestions: (String) -> Unit = {},
+    onClearTagSuggestions: () -> Unit = {},
+) {
     var name by remember { mutableStateOf("") }
     var isSmart by remember { mutableStateOf(false) }
     var requireAllText by remember { mutableStateOf("") }
@@ -847,6 +865,9 @@ private fun CreateListDialog(onConfirm: (String, SmartRule?) -> Unit, onDismiss:
                         onRequireAnyChange = { requireAnyText = it },
                         onExcludeAnyChange = { excludeAnyText = it },
                         knownTags = knownTags,
+                        tagSuggestions = tagSuggestions,
+                        onFetchTagSuggestions = onFetchTagSuggestions,
+                        onClearTagSuggestions = onClearTagSuggestions,
                     )
                 }
             }
@@ -877,19 +898,28 @@ private fun TagRuleFields(
     onRequireAnyChange: (String) -> Unit,
     onExcludeAnyChange: (String) -> Unit,
     knownTags: List<String>,
+    tagSuggestions: List<String> = emptyList(),
+    onFetchTagSuggestions: (String) -> Unit = {},
+    onClearTagSuggestions: () -> Unit = {},
 ) {
     var showAdvanced by remember { mutableStateOf(requireAnyText.isNotBlank() || excludeAnyText.isNotBlank()) }
 
     @Composable
     fun TagField(value: String, onValueChange: (String) -> Unit, label: String, placeholder: String, supporting: String? = null) {
         val lastToken = value.substringAfterLast(",").trimStart()
-        val suggestions = if (lastToken.length >= 2) {
+        // Merge local known tags with live API suggestions, deduplicating
+        val localSuggestions = if (lastToken.length >= 2) {
             knownTags.filter { it.startsWith(lastToken.lowercase()) && it != lastToken.lowercase() }.take(5)
         } else emptyList()
+        val liveSuggestions = tagSuggestions.filter { it !in localSuggestions }
+        val suggestions = (localSuggestions + liveSuggestions).take(8)
         Column {
             OutlinedTextField(
                 value = value,
-                onValueChange = onValueChange,
+                onValueChange = {
+                    onValueChange(it)
+                    onFetchTagSuggestions(it.substringAfterLast(",").trimStart())
+                },
                 label = { Text(label) },
                 placeholder = { Text(placeholder) },
                 supportingText = if (supporting != null) ({ Text(supporting) }) else null,
@@ -898,12 +928,13 @@ private fun TagRuleFields(
                 modifier = Modifier.fillMaxWidth()
             )
             if (suggestions.isNotEmpty()) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     suggestions.forEach { tag ->
                         SuggestionChip(
                             onClick = {
                                 val prefix = if (value.contains(",")) value.substringBeforeLast(",") + ", " else ""
                                 onValueChange(prefix + tag + ", ")
+                                onClearTagSuggestions()
                             },
                             label = { Text(tag, style = MaterialTheme.typography.labelSmall) }
                         )
@@ -934,6 +965,9 @@ private fun TagRuleFields(
 private fun EditRulesDialog(
     list: LocalList,
     knownTags: List<String>,
+    tagSuggestions: List<String> = emptyList(),
+    onFetchTagSuggestions: (String) -> Unit = {},
+    onClearTagSuggestions: () -> Unit = {},
     onConfirm: (SmartRule?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -957,6 +991,9 @@ private fun EditRulesDialog(
                     onRequireAnyChange = { requireAnyText = it },
                     onExcludeAnyChange = { excludeAnyText = it },
                     knownTags = knownTags,
+                    tagSuggestions = tagSuggestions,
+                    onFetchTagSuggestions = onFetchTagSuggestions,
+                    onClearTagSuggestions = onClearTagSuggestions,
                 )
             }
         },
@@ -2047,6 +2084,9 @@ private fun LocalSource.displayName(): String {
 private fun FetchFromSourcesDialog(
     list: LocalList,
     activeSources: List<LocalSource>,
+    tagSuggestions: List<String> = emptyList(),
+    onTagsChange: (String) -> Unit = {},
+    onClearTagSuggestions: () -> Unit = {},
     onConfirm: (
         tags: String,
         count: Int,
@@ -2080,15 +2120,39 @@ private fun FetchFromSourcesDialog(
         title = { Text("Fill from Sources") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = tags,
-                    onValueChange = { tags = it },
-                    label = { Text("Tags") },
-                    placeholder = { Text("e.g. hatsune_miku blue_hair") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                )
+                Column {
+                    OutlinedTextField(
+                        value = tags,
+                        onValueChange = {
+                            tags = it
+                            onTagsChange(it)
+                        },
+                        label = { Text("Tags") },
+                        placeholder = { Text("e.g. hatsune_miku blue_hair") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    if (tagSuggestions.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            tagSuggestions.forEach { tag ->
+                                SuggestionChip(
+                                    onClick = {
+                                        val prefix = tags.trimEnd().substringBeforeLast(' ').let {
+                                            if (it.isBlank()) "" else "$it "
+                                        }
+                                        tags = "$prefix$tag "
+                                        onClearTagSuggestions()
+                                    },
+                                    label = { Text(tag, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                    }
+                }
                 // Tag match mode — only meaningful with multiple tags
                 if (multiTag) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
