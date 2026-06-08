@@ -388,7 +388,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             _selectedListId.update { list.id }
-            val added = refreshManagedMalCollectionInternal(list.copy(malConfig = config, useAsRotation = autoAddToLibrary))
+            val added = try {
+                refreshManagedMalCollectionInternal(list.copy(malConfig = config, useAsRotation = autoAddToLibrary))
+            } catch (e: Exception) {
+                Log.e("BrowseViewModel", "createMalCollection fill failed", e)
+                0
+            }
             _fetchFillResult.emit(
                 if (added > 0) {
                     "Created \"${list.name}\" from MAL and added $added image${if (added != 1) "s" else ""}"
@@ -443,7 +448,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             localLists.setMalConfig(list.id, config)
             val updatedList = localLists.lists.first().firstOrNull { it.id == list.id }
                 ?: list.copy(name = trimmedName, useAsRotation = autoAddToLibrary, malConfig = config)
-            val added = refreshManagedMalCollectionInternal(updatedList)
+            val added = try {
+                refreshManagedMalCollectionInternal(updatedList)
+            } catch (e: Exception) {
+                Log.e("BrowseViewModel", "updateMalCollection fill failed", e)
+                0
+            }
             _fetchFillResult.emit(
                 if (added > 0) {
                     "Updated MAL settings for \"${trimmedName}\" and added $added image${if (added != 1) "s" else ""}"
@@ -519,13 +529,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val manifests = pluginRepo.installedManifests.first()
         val allSources = localSources.sources.first()
         val globalNsfw = prefs.nsfwMode.first()
-        val effectiveGlobalNsfw = nsfwOverride ?: globalNsfw
         val candidates = allSources.filter { src ->
             if (!src.enabled) return@filter false
             if (pluginId != null && src.pluginId != pluginId) return@filter false
             if (instanceId != null && src.instanceId != instanceId) return@filter false
             val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
-            PluginExecutor.canServe(manifest, effectiveGlobalNsfw, src)
+            val effectiveNsfwForSource = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+            PluginExecutor.canServe(manifest, effectiveNsfwForSource, src)
         }
         if (candidates.isEmpty()) {
             throw IllegalStateException("No compatible active sources found. Enable sources in Settings → Sources.")
@@ -616,8 +626,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         skipped++
                         return@forEach
                     }
-                    totalAdded += refreshManagedMalCollectionInternal(list)
-                    refreshed++
+                    try {
+                        totalAdded += refreshManagedMalCollectionInternal(list)
+                        refreshed++
+                    } catch (e: Exception) {
+                        Log.e("BrowseViewModel", "syncManagedMalCollections: skipping ${list.name}", e)
+                        skipped++
+                    }
                 }
                 val message = when {
                     refreshed == 0 && skipped > 0 -> "No managed MAL collections matched your current MAL list"
