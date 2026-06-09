@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.matches
 import org.json.JSONObject
 
 /** Engine for public Reddit subreddits (`/r/{sub}/top.json`). */
@@ -18,7 +19,7 @@ object RedditEngine : PluginEngine() {
         filters: BrainrotFilters,
     ): BrainrotWallpaper? = onIO {
         val subreddit = source.instanceId.trim().ifBlank { return@onIO null }
-        fetchPosts(subreddit, nsfw, exclude, limit = 100).shuffled().firstOrNull()
+        fetchPosts(subreddit, nsfw, exclude, filters, limit = 100).shuffled().firstOrNull()
     }
 
     override suspend fun fetchPage(
@@ -31,10 +32,10 @@ object RedditEngine : PluginEngine() {
         limit: Int,
     ): List<BrainrotWallpaper> = onIO {
         val subreddit = source.instanceId.trim().ifBlank { return@onIO emptyList() }
-        fetchPosts(subreddit, nsfw, exclude, limit)
+        fetchPosts(subreddit, nsfw, exclude, filters, limit)
     }
 
-    private fun fetchPosts(subreddit: String, nsfw: Boolean, exclude: List<String>, limit: Int): List<BrainrotWallpaper> {
+    private fun fetchPosts(subreddit: String, nsfw: Boolean, exclude: List<String>, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> {
         val url = "https://www.reddit.com/r/${subreddit.urlEncode()}/top.json?limit=100&raw_json=1&t=month"
         val json = getJson(url) ?: return emptyList()
         val children = json.optJSONObject("data")?.optJSONArray("children") ?: return emptyList()
@@ -44,6 +45,10 @@ object RedditEngine : PluginEngine() {
             if (!isImagePost(post)) return@mapNotNull null
             val id = post.optString("id").ifBlank { return@mapNotNull null }
             if (id in exclude) return@mapNotNull null
+            val previewSource = post.optJSONObject("preview")?.optJSONArray("images")?.optJSONObject(0)?.optJSONObject("source")
+            val w = previewSource?.optInt("width") ?: 0
+            val h = previewSource?.optInt("height") ?: 0
+            if (!filters.matches(w, h)) return@mapNotNull null
             extractWallpaper(post, subreddit)
         }.take(limit)
     }
