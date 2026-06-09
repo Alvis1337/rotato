@@ -124,7 +124,7 @@ object DanbooruEngine : PluginEngine() {
                 }
                 append(' ')
             }
-            if (!nsfw) append("rating:g")
+            append(if (nsfw) "-rating:g" else "rating:g")
             if (isPremium && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }

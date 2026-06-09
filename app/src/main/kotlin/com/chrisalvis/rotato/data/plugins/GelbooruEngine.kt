@@ -95,9 +95,9 @@ object GelbooruEngine : PluginEngine() {
     private fun buildTagQuery(query: String, nsfw: Boolean, extras: Map<String, String>, filters: BrainrotFilters = BrainrotFilters()): String {
         val normalized = normalizeUserQuery(query)
         val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()
-        val safeTag = if (nsfw) null
-                      else if ((extras["ratingTag"] ?: "general") == "safe") "rating:safe"
-                      else "rating:general"
+        val ratingTag = extras["ratingTag"] ?: "general"
+        val safeTag = if (nsfw) "-rating:$ratingTag"
+                      else "rating:$ratingTag"
         return buildString {
             if (tokens.isNotEmpty()) {
                 if (filters.matchAny && tokens.size > 1) {
@@ -106,9 +106,9 @@ object GelbooruEngine : PluginEngine() {
                 } else {
                     append(tokens.joinToString(" "))
                 }
-                if (safeTag != null) append(' ')
+                append(' ')
             }
-            if (safeTag != null) append(safeTag)
+            append(safeTag)
         }.trim()
     }
 

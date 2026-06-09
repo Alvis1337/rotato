@@ -68,7 +68,7 @@ object MoebooruEngine : PluginEngine() {
             }
             append(' ')
         }
-        if (!nsfw) append("rating:s")
+        append(if (nsfw) "-rating:s" else "rating:s")
         append(" order:random")
     }.trim()
 
