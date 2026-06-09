@@ -140,6 +140,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val managedMalCollectionCount by vm.managedMalCollectionCount.collectAsStateWithLifecycle()
     val fetchFillLoading by vm.fetchFillLoading.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
+    val lastFillState by vm.lastFillState.collectAsStateWithLifecycle()
     var fetchFillFor by remember { mutableStateOf<LocalList?>(null) }
 
     val context = LocalContext.current
@@ -181,7 +182,15 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     }
     LaunchedEffect(vm) {
         vm.fetchFillResult.collectLatest { message ->
-            snackbarHostState.showSnackbar(message)
+            val undoable = vm.lastFillState.value != null
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = if (undoable) "Undo" else null,
+                duration = if (undoable) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
+            )
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                vm.undoLastFill()
+            }
         }
     }
 

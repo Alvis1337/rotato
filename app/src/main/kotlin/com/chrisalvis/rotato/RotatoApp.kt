@@ -66,6 +66,13 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply { description = "Alert when a scheduled collection is locked" }
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_FILL,
+                "Collection Fill",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "Progress while filling a collection from sources" }
+        )
     }
 
     companion object {
@@ -73,6 +80,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
         const val CHANNEL_LOW_QUEUE = "rotato_low_queue"
         const val CHANNEL_WORKER = "rotato_worker"
         const val CHANNEL_LOCKED_LIST = "rotato_locked_list"
+        const val CHANNEL_FILL = "rotato_fill"
     }
 }
 

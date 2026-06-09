@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
+import android.app.NotificationManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,9 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
+import com.chrisalvis.rotato.R
+import com.chrisalvis.rotato.RotatoApp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -136,6 +140,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _fetchFillResult = MutableSharedFlow<String>()
     val fetchFillResult: SharedFlow<String> = _fetchFillResult.asSharedFlow()
+
+    data class LastFillState(val listId: String, val listName: String, val entryIds: Set<String>)
+    private val _lastFillState = MutableStateFlow<LastFillState?>(null)
+    val lastFillState: StateFlow<LastFillState?> = _lastFillState.asStateFlow()
 
     private val _tagSuggestions = MutableStateFlow<List<String>>(emptyList())
     val tagSuggestions: StateFlow<List<String>> = _tagSuggestions.asStateFlow()
@@ -675,7 +683,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         viewModelScope.launch {
             _fetchFillLoading.update { true }
+            postFillProgressNotification(list.name)
             try {
+                val before = localLists.allWallpapers.first()
+                    .filter { it.listId == list.id }.map { it.id }.toSet()
                 val added = fillCollectionFromSources(
                     list = list,
                     tags = tags,
@@ -688,18 +699,55 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     aspectRatio = aspectRatio,
                     useMalFilter = useMalFilter,
                 )
+                cancelFillNotification()
+                val after = localLists.allWallpapers.first()
+                    .filter { it.listId == list.id }.map { it.id }.toSet()
+                val newIds = after - before
+                _lastFillState.update { if (newIds.isNotEmpty()) LastFillState(list.id, list.name, newIds) else null }
                 _fetchFillResult.emit(when {
                     added == 0 -> "No new images found — try different tags or sources"
                     added < count -> "Added $added of $count — pool exhausted"
                     else -> "Added $added image${if (added != 1) "s" else ""} to \"${list.name}\""
                 })
             } catch (e: Exception) {
+                cancelFillNotification()
                 Log.e("BrowseViewModel", "fetchFill failed", e)
                 _fetchFillResult.emit("Error: ${e.message ?: "Unknown error"}")
             } finally {
                 _fetchFillLoading.update { false }
             }
         }
+    }
+
+    fun undoLastFill() {
+        val state = _lastFillState.value ?: return
+        _lastFillState.update { null }
+        viewModelScope.launch {
+            state.entryIds.forEach { localLists.removeWallpaper(it) }
+            _fetchFillResult.emit("Removed ${state.entryIds.size} image${if (state.entryIds.size != 1) "s" else ""} from \"${state.listName}\"")
+        }
+    }
+
+    private fun postFillProgressNotification(listName: String) {
+        val nm = app.getSystemService(NotificationManager::class.java)
+        if (!nm.areNotificationsEnabled()) return
+        val notif = NotificationCompat.Builder(app, RotatoApp.CHANNEL_FILL)
+            .setContentTitle("Filling \"$listName\"")
+            .setContentText("Fetching images from sources…")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true)
+            .setProgress(0, 0, true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        nm.notify(FILL_NOTIF_ID, notif)
+    }
+
+    private fun cancelFillNotification() {
+        app.getSystemService(NotificationManager::class.java).cancel(FILL_NOTIF_ID)
+    }
+
+    companion object {
+        private const val FILL_NOTIF_ID = 2001
     }
 
     fun deleteList(list: LocalList) {

@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import com.chrisalvis.rotato.MainActivity
 import com.chrisalvis.rotato.R
 import com.chrisalvis.rotato.RotatoApp
+import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.sanitizeFilename
@@ -62,6 +63,13 @@ class DislikeWallpaperReceiver : BroadcastReceiver() {
                 imageDir.listFiles()?.firstOrNull {
                     it.isFile && it.nameWithoutExtension == sanitized
                 }?.delete()
+
+                // Remove from any collections that contain this wallpaper
+                val listPrefs = LocalListsPreferences(context)
+                val allWallpapers = listPrefs.allWallpapers.first()
+                allWallpapers
+                    .filter { it.sourceId == wallpaper.id || (wallpaper.fullUrl.isNotBlank() && it.fullUrl == wallpaper.fullUrl) }
+                    .forEach { listPrefs.removeWallpaper(it.id) }
 
                 postConfirmation(context, "Removed", "Won't show this wallpaper again")
             } finally {
