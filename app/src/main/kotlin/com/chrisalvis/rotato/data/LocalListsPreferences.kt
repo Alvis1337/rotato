@@ -142,7 +142,7 @@ class LocalListsPreferences(private val context: Context) {
         var added = false
         context.dataStore.edit { prefs ->
             val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            if (current.any { it.listId == listId && it.sourceId == wallpaper.id }) return@edit
+            if (current.any { it.listId == listId && (it.sourceId == wallpaper.id || (wallpaper.fullUrl.isNotBlank() && it.fullUrl == wallpaper.fullUrl)) }) return@edit
             val entry = LocalWallpaperEntry(
                 listId = listId,
                 sourceId = wallpaper.id,
