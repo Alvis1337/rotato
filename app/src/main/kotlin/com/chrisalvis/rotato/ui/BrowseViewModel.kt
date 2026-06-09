@@ -546,23 +546,28 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             useMalFilter = useMalFilter,
             matchAny = matchAny,
         )
+        Log.d("BrowseViewModel", "fillCollectionFromSources: tags=\"$tags\" count=$count candidates=${candidates.size} nsfwOverride=$nsfwOverride globalNsfw=$globalNsfw")
         var added = 0
         for (src in candidates.shuffled()) {
             if (added >= count) break
             val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
             val remaining = count - added
             val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+            Log.d("BrowseViewModel", "fillCollectionFromSources: trying src=${src.pluginId}/${src.instanceId} effectiveNsfw=$effectiveNsfw remaining=$remaining")
             val wallpapers = try {
                 PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, filters, remaining + 5)
             } catch (e: Exception) {
                 Log.e("BrowseViewModel", "fetchFill error for ${src.pluginId}", e)
                 emptyList()
             }
+            Log.d("BrowseViewModel", "fillCollectionFromSources: src=${src.pluginId} returned ${wallpapers.size} wallpapers")
+            var srcAdded = 0
             for (wp in wallpapers) {
                 if (added >= count) break
                 val ok = localLists.addWallpaper(list.id, wp)
-                if (ok) added++
+                if (ok) { added++; srcAdded++ }
             }
+            Log.d("BrowseViewModel", "fillCollectionFromSources: src=${src.pluginId} added $srcAdded (total $added/$count)")
         }
         return added
     }
