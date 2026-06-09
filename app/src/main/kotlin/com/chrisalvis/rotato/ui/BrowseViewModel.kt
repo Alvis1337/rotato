@@ -688,10 +688,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                     aspectRatio = aspectRatio,
                     useMalFilter = useMalFilter,
                 )
-                _fetchFillResult.emit(
-                    if (added > 0) "Added $added image${if (added != 1) "s" else ""} to \"${list.name}\""
-                    else "No new images found — try different tags or sources"
-                )
+                _fetchFillResult.emit(when {
+                    added == 0 -> "No new images found — try different tags or sources"
+                    added < count -> "Added $added of $count — pool exhausted"
+                    else -> "Added $added image${if (added != 1) "s" else ""} to \"${list.name}\""
+                })
             } catch (e: Exception) {
                 Log.e("BrowseViewModel", "fetchFill failed", e)
                 _fetchFillResult.emit("Error: ${e.message ?: "Unknown error"}")

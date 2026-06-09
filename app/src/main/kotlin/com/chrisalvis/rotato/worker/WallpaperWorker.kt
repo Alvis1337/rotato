@@ -23,6 +23,8 @@ import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.LocalSourcesPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.RotationError
@@ -126,6 +128,8 @@ class WallpaperWorker(
                 selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
             }
 
+        val allSources = LocalSourcesPreferences(applicationContext).sources.first()
+
         val allImages = withContext(Dispatchers.IO) { repository.getImages() }
 
         // Build per-screen file sets when per-screen pools are configured and target is BOTH.
@@ -149,7 +153,7 @@ class WallpaperWorker(
         }
 
         var mainQueueCount: Int? = null
-        val targetFile = resolveScheduledTargetFile(scheduledEntry, feedRepository, imageDir)
+        val targetFile = resolveScheduledTargetFile(scheduledEntry, feedRepository, imageDir, danbooruAuthHeader(scheduledEntry, allSources))
             ?: run {
                 mainQueueCount = homeFiles.size
                 if (homeFiles.isEmpty()) {
@@ -338,6 +342,7 @@ class WallpaperWorker(
         entry: LocalWallpaperEntry?,
         feedRepository: FeedRepository,
         imageDir: File,
+        authHeader: String? = null,
     ): File? {
         if (entry == null) return null
         return withContext(Dispatchers.IO) {
@@ -346,12 +351,24 @@ class WallpaperWorker(
                     File(applicationContext.filesDir, entry.fullUrl).takeIf { it.exists() }
                 }
                 entry.fullUrl.isBlank() -> null
-                !feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }) -> null
+                !feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, authHeader) -> null
                 else -> imageDir.listFiles()?.firstOrNull {
                     it.isFile && it.nameWithoutExtension == sanitizeFilename(entry.sourceId)
                 }
             }
         }
+    }
+
+    private fun danbooruAuthHeader(entry: LocalWallpaperEntry?, sources: List<LocalSource>): String? {
+        if (entry == null) return null
+        val url = entry.fullUrl
+        if (!url.contains("cdn.donmai.us") && !url.contains("danbooru.donmai.us")) return null
+        val src = sources.firstOrNull {
+            it.pluginId.equals("DANBOORU", ignoreCase = true) &&
+            it.apiKey.isNotBlank() && it.apiUser.isNotBlank()
+        } ?: return null
+        return "Basic ${android.util.Base64.encodeToString(
+            "${src.apiUser}:${src.apiKey}".toByteArray(), android.util.Base64.NO_WRAP)}"
     }
 
     private suspend fun selectMainQueueFile(
