@@ -94,9 +94,12 @@ object WallhavenEngine : PluginEngine() {
     }
 
     private fun effectivePurity(stored: String, nsfw: Boolean): String {
-        if (nsfw) return "001"
         val s = stored.takeIf { it.length == 3 } ?: "110"
-        val effective = "${s[0]}${s[1]}0"
-        return if (effective == "000") "100" else effective
+        return if (nsfw) {
+            "${s[0]}${s[1]}1"
+        } else {
+            val effective = "${s[0]}${s[1]}0"
+            if (effective == "000") "100" else effective
+        }
     }
 }
