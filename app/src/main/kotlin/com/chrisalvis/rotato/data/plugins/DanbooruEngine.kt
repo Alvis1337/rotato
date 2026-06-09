@@ -80,7 +80,7 @@ object DanbooruEngine : PluginEngine() {
             if (exclude.contains(id)) return@mapNotNull null
             val w = obj.optInt("image_width"); val h = obj.optInt("image_height")
             if (!filters.matches(w, h)) return@mapNotNull null
-            if (obj.optString("file_url").isBlank()) return@mapNotNull null
+            if (obj.optString("file_url").isBlank() && obj.optString("large_file_url").isBlank()) return@mapNotNull null
             buildWallpaper(obj, base, manifest)
         }
     }
@@ -124,8 +124,7 @@ object DanbooruEngine : PluginEngine() {
                 }
                 append(' ')
             }
-            // Use -rating:g to allow questionable + explicit (not just explicit)
-            append(if (nsfw) "-rating:g" else "rating:g")
+            if (!nsfw) append("rating:g")
             if (isPremium && exclude.isNotEmpty()) {
                 exclude.take(3).forEach { id -> append(" -id:$id") }
             }

@@ -68,8 +68,7 @@ object MoebooruEngine : PluginEngine() {
             }
             append(' ')
         }
-        // Use -rating:s to allow questionable + explicit for NSFW (not just explicit)
-        append(if (nsfw) "-rating:s" else "rating:s")
+        if (!nsfw) append("rating:s")
         append(" order:random")
     }.trim()
 
