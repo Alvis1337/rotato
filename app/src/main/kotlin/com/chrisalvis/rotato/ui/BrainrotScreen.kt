@@ -190,11 +190,11 @@ fun BrainrotScreen(
             if (gridMode) {
                 val lastVisible = compactGridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 val total = compactGridState.layoutInfo.totalItemsCount
-                total > 0 && lastVisible >= total - 7
+                total > 0 && lastVisible >= total - 16
             } else {
                 val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 val total = gridState.layoutInfo.totalItemsCount
-                total > 0 && lastVisible >= total - 4
+                total > 0 && lastVisible >= total - 10
             }
         }
     }
