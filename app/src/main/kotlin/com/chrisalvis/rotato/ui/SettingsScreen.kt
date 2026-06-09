@@ -112,6 +112,8 @@ fun SettingsScreen(
     val chargingTriggerEnabled by viewModel.chargingTriggerEnabled.collectAsStateWithLifecycle()
     val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
     val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
+    val autoRefillEnabled by viewModel.autoRefillEnabled.collectAsStateWithLifecycle()
+    val autoRefillMinCount by viewModel.autoRefillMinCount.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rotatoPrefs = remember { RotatoPreferences(context) }
@@ -506,9 +508,13 @@ fun SettingsScreen(
                             chargingTriggerEnabled = chargingTriggerEnabled,
                             autoFavoriteEnabled = autoFavoriteEnabled,
                             autoFavoriteMinutes = autoFavoriteMinutes,
+                            autoRefillEnabled = autoRefillEnabled,
+                            autoRefillMinCount = autoRefillMinCount,
                             onChargingTriggerToggle = { viewModel.setChargingTriggerEnabled(it) },
                             onAutoFavoriteToggle = { viewModel.setAutoFavoriteEnabled(it) },
-                            onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) }
+                            onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) },
+                            onAutoRefillToggle = { viewModel.setAutoRefillEnabled(it) },
+                            onAutoRefillMinCountChange = { viewModel.setAutoRefillMinCount(it) },
                         )
                     }
                 }
@@ -946,9 +952,13 @@ private fun RotationTriggersSection(
     chargingTriggerEnabled: Boolean,
     autoFavoriteEnabled: Boolean,
     autoFavoriteMinutes: Int,
+    autoRefillEnabled: Boolean,
+    autoRefillMinCount: Int,
     onChargingTriggerToggle: (Boolean) -> Unit,
     onAutoFavoriteToggle: (Boolean) -> Unit,
     onAutoFavoriteMinutesChange: (Int) -> Unit,
+    onAutoRefillToggle: (Boolean) -> Unit,
+    onAutoRefillMinCountChange: (Int) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
@@ -999,6 +1009,44 @@ private fun RotationTriggersSection(
                             selected = autoFavoriteMinutes == minutes,
                             onClick = { onAutoFavoriteMinutesChange(minutes) },
                             label = { Text("$minutes") }
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Auto-refill MAL collections")
+                Text(
+                    "Top up low MAL-managed collections after each rotation",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = autoRefillEnabled, onCheckedChange = onAutoRefillToggle)
+        }
+
+        AnimatedVisibility(visible = autoRefillEnabled) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Refill when below",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(5, 10, 20, 50).forEach { count ->
+                        FilterChip(
+                            selected = autoRefillMinCount == count,
+                            onClick = { onAutoRefillMinCountChange(count) },
+                            label = { Text("$count images") }
                         )
                     }
                 }

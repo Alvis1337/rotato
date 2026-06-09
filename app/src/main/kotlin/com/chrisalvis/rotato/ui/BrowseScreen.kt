@@ -12,6 +12,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -47,6 +49,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -636,6 +639,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                 onDeleteList = { vm.deleteList(it) },
                 onToggleRotation = { vm.toggleCollectionRotation(it) },
                 onSetRotationTarget = { list, target -> vm.setRotationTarget(list, target) },
+                onSetRotationInterval = { list, minutes -> vm.setRotationInterval(list, minutes) },
                 onEditRules = { editRulesFor = it },
                 onEditMal = { editMalFor = it },
                 onAutofill = { vm.autofillSmartCollection(it) },
@@ -1138,6 +1142,7 @@ private fun ListPickerContent(
     onDeleteList: (LocalList) -> Unit,
     onToggleRotation: (LocalList) -> Unit,
     onSetRotationTarget: (LocalList, com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
+    onSetRotationInterval: (LocalList, Int?) -> Unit,
     onEditRules: (LocalList) -> Unit,
     onEditMal: (LocalList) -> Unit,
     onAutofill: (LocalList) -> Unit,
@@ -1212,6 +1217,7 @@ private fun ListPickerContent(
                     onDelete = { listToDelete = list },
                     onToggleRotation = { onToggleRotation(list) },
                     onSetRotationTarget = { onSetRotationTarget(list, it) },
+                    onSetRotationInterval = { onSetRotationInterval(list, it) },
                     onEditRules = { onEditRules(list) },
                     onEditMal = { onEditMal(list) },
                     onAutofill = { onAutofill(list) },
@@ -1260,6 +1266,7 @@ private fun CollectionCard(
     onDelete: () -> Unit,
     onToggleRotation: () -> Unit,
     onSetRotationTarget: (com.chrisalvis.rotato.data.ScreenRotationTarget) -> Unit,
+    onSetRotationInterval: (Int?) -> Unit,
     onEditRules: () -> Unit,
     onEditMal: () -> Unit,
     onAutofill: () -> Unit,
@@ -1271,6 +1278,45 @@ private fun CollectionCard(
     onFetchFromSources: () -> Unit,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
+    var showIntervalDialog by remember { mutableStateOf(false) }
+
+    if (showIntervalDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showIntervalDialog = false },
+            title = { Text("Rotation interval") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Override the global interval for \"${list.name}\" only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf<Int?>(null, 15, 30, 60, 120, 360, 720, 1440).forEach { minutes ->
+                            FilterChip(
+                                selected = list.rotationIntervalMinutes == minutes,
+                                onClick = { onSetRotationInterval(minutes); showIntervalDialog = false },
+                                label = {
+                                    Text(when (minutes) {
+                                        null -> "Global"
+                                        in 1..59 -> "${minutes}m"
+                                        else -> "${minutes / 60}h"
+                                    })
+                                },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIntervalDialog = false }) { Text("Done") }
+            },
+        )
+    }
 
     Card(
         modifier = Modifier
@@ -1465,6 +1511,14 @@ private fun CollectionCard(
                                     }
                                 )
                             }
+                            val intervalLabel = list.rotationIntervalMinutes?.let { m ->
+                                if (m < 60) "${m}m" else "${m / 60}h"
+                            } ?: "Global"
+                            DropdownMenuItem(
+                                text = { Text("Interval: $intervalLabel") },
+                                onClick = { showMoreMenu = false; showIntervalDialog = true },
+                                leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
+                            )
                         }
                         HorizontalDivider()
                         when {

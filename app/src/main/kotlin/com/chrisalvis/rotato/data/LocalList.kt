@@ -73,6 +73,10 @@ data class LocalList(
     val smartRule: SmartRule? = null,
     /** Non-null for MAL-backed collections that can be refreshed from a saved anime query config. */
     val malConfig: MalCollectionConfig? = null,
+    /** If set, this collection only rotates every N minutes regardless of the global interval. */
+    val rotationIntervalMinutes: Int? = null,
+    /** Epoch ms when this collection last had a wallpaper set from it. Used for per-collection interval. */
+    val lastRotationMs: Long = 0L,
 ) {
     val isSmartCollection: Boolean get() = smartRule != null && !smartRule.isEmpty
     val isMalManaged: Boolean get() = malConfig?.animeTitle?.isNotBlank() == true

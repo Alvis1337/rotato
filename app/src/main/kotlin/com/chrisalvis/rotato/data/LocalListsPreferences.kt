@@ -129,6 +129,24 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setRotationInterval(listId: String, minutes: Int?) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(rotationIntervalMinutes = minutes) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
+    suspend fun setLastRotationMs(listId: String, ms: Long) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(lastRotationMs = ms) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
     suspend fun setMalConfig(listId: String, config: MalCollectionConfig?) {
         context.dataStore.edit { prefs ->
             val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
@@ -238,6 +256,8 @@ class LocalListsPreferences(private val context: Context) {
                 coverUrl = o.optString("coverUrl", ""),
                 smartRule = smartRule,
                 malConfig = malConfig,
+                rotationIntervalMinutes = o.takeIf { it.has("rotationIntervalMinutes") }?.optInt("rotationIntervalMinutes"),
+                lastRotationMs = o.optLong("lastRotationMs", 0L),
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -260,6 +280,8 @@ class LocalListsPreferences(private val context: Context) {
                             put("excludeAny", JSONArray(l.smartRule.excludeAny))
                         })
                     }
+                    l.rotationIntervalMinutes?.let { put("rotationIntervalMinutes", it) }
+                    if (l.lastRotationMs > 0L) put("lastRotationMs", l.lastRotationMs)
                     if (l.malConfig != null && l.malConfig.animeTitle.isNotBlank()) {
                         put("malConfig", JSONObject().apply {
                             put("animeTitle", l.malConfig.animeTitle)

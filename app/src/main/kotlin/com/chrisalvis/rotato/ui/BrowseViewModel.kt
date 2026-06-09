@@ -1450,6 +1450,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setRotationInterval(list: LocalList, minutes: Int?) {
+        viewModelScope.launch {
+            localLists.setRotationInterval(list.id, minutes)
+        }
+    }
+
     private fun saveLocalFileToGallery(ctx: android.content.Context, file: File): Boolean {
         if (!file.exists()) return false
         val ext = file.extension.lowercase()

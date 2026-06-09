@@ -70,6 +70,8 @@ class RotatoPreferences(private val context: Context) {
         val PLUGIN_SYSTEM_INTRO_SHOWN = booleanPreferencesKey("plugin_system_intro_shown")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val AUTO_REFILL_ENABLED = booleanPreferencesKey("auto_refill_enabled")
+        val AUTO_REFILL_MIN_COUNT = intPreferencesKey("auto_refill_min_count")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -562,5 +564,22 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun dismissPluginSystemIntro() {
         context.dataStore.edit { it[PLUGIN_SYSTEM_INTRO_SHOWN] = true }
+    }
+
+    val autoRefillEnabled: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[AUTO_REFILL_ENABLED] ?: false }
+
+    suspend fun setAutoRefillEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_REFILL_ENABLED] = enabled }
+    }
+
+    /** Minimum image count before auto-refill triggers. Default 10. */
+    val autoRefillMinCount: Flow<Int> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[AUTO_REFILL_MIN_COUNT] ?: 10 }
+
+    suspend fun setAutoRefillMinCount(count: Int) {
+        context.dataStore.edit { it[AUTO_REFILL_MIN_COUNT] = count.coerceAtLeast(1) }
     }
 }

@@ -20,6 +20,7 @@ import com.chrisalvis.rotato.MainActivity
 import com.chrisalvis.rotato.R
 import com.chrisalvis.rotato.RotatoApp
 import com.chrisalvis.rotato.data.FeedRepository
+import com.chrisalvis.rotato.data.FillHelper
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
@@ -118,7 +119,12 @@ class WallpaperWorker(
             }
         }
 
-        val rotationLists = lists.filter { it.useAsRotation }
+        val allRotationLists = lists.filter { it.useAsRotation }
+        val now = System.currentTimeMillis()
+        val rotationLists = allRotationLists.filter { list ->
+            val intervalMs = list.rotationIntervalMinutes?.let { it * 60_000L } ?: return@filter true
+            now - list.lastRotationMs >= intervalMs
+        }.ifEmpty { allRotationLists } // fallback: never stall rotation if all lists are on cooldown
         val hasPerScreen = rotationLists.any { it.rotationTarget != ScreenRotationTarget.BOTH }
         val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, lists)
         val scheduledEntry = activeScheduledListIds
@@ -249,6 +255,14 @@ class WallpaperWorker(
                 val matchingEntry = scheduledEntry
                     ?: allWallpapers.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
+                // Update lastRotationMs for per-collection interval tracking
+                matchingEntry?.listId?.let { listId ->
+                    val list = lists.find { it.id == listId }
+                    if (list?.rotationIntervalMinutes != null) {
+                        listPrefs.setLastRotationMs(listId, now)
+                    }
+                }
+
                 maybeAutoFavoritePreviousWallpaper(
                     listPrefs = listPrefs,
                     autoFavoriteEnabled = autoFavoriteEnabled,
@@ -293,6 +307,15 @@ class WallpaperWorker(
             val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, 0L)
             if (intervalMinutes in 1..14 && settings.isEnabled) {
                 scheduleNextRun(intervalMinutes)
+            }
+
+            if (prefs.autoRefillEnabled.first()) {
+                val minCount = prefs.autoRefillMinCount.first()
+                try {
+                    FillHelper(applicationContext).autoRefillLowCollections(minCount)
+                } catch (e: Exception) {
+                    android.util.Log.e("WallpaperWorker", "autoRefill failed", e)
+                }
             }
 
             prefs.setLastSkipReason(null)

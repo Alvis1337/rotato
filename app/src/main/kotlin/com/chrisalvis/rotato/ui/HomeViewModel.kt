@@ -116,6 +116,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val autoFavoriteMinutes: StateFlow<Int> = preferences.autoFavoriteMinutes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 120)
 
+    val autoRefillEnabled: StateFlow<Boolean> = preferences.autoRefillEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val autoRefillMinCount: StateFlow<Int> = preferences.autoRefillMinCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 10)
+
     val widgetCollectionId: StateFlow<String> = preferences.widgetCollectionId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
@@ -350,6 +356,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAutoFavoriteMinutes(minutes: Int) {
         viewModelScope.launch { preferences.setAutoFavoriteMinutes(minutes) }
+    }
+
+    fun setAutoRefillEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoRefillEnabled(enabled) }
+    }
+
+    fun setAutoRefillMinCount(count: Int) {
+        viewModelScope.launch { preferences.setAutoRefillMinCount(count) }
     }
 
     val discoverBatchSize: StateFlow<Int> = preferences.discoverBatchSize
