@@ -8,7 +8,7 @@
   "protocol": "WALLHAVEN",
   "defaultBaseUrl": "https://wallhaven.cc",
   "instanceUrlConfigurable": false,
-  "safeContent": true,
+  "safeContent": false,
   "isPremium": true,
   "auth": {
     "type": "api_key",
