@@ -37,6 +37,7 @@ import com.chrisalvis.rotato.data.plugins.http
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.toJson
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -591,6 +592,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 recordSourceSuccess(source)
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             recordSourceError(source, e.message ?: "Unknown error")
             Log.e("DiscoverFetch", "${source.pluginId} q=$query exception: ${e.message}", e)
             AppErrorLog.log("DiscoverFetch", "${source.pluginId} q=$query", e)
@@ -616,6 +618,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 recordSourceSuccess(source)
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             recordSourceError(source, e.message ?: "Unknown error")
             null
         }

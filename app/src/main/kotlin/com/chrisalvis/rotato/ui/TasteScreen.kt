@@ -123,9 +123,10 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
                     nsfwMode = nsfwMode,
                     onSetTier = { tag, tier, isNsfw -> vm.setTagTier(tag, tier, isNsfw) },
                     onRemove = { tag, isNsfw -> vm.removeTagTier(tag, isNsfw) },
+                    onMove = { tag, tier, fromIsNsfw -> vm.moveTagTier(tag, tier, fromIsNsfw) },
                 )
                 1 -> ProfilesTab(profiles = profiles, onEdit = { vm.startEditProfile(it) }, onDelete = { vm.deleteProfile(it) })
-                2 -> MyTasteTab(tasteProfile = tasteProfile, tagTiers = allTagTiers, onSetTier = { tag, tier -> vm.setTagTier(tag, tier) })
+                2 -> MyTasteTab(tasteProfile = tasteProfile, tagTiers = if (nsfwMode) allTagTiers else sfwTagTiers, onSetTier = { tag, tier -> vm.setTagTier(tag, tier) })
                 3 -> CoTagsTab(coTagMap = coTagMap)
             }
         }
@@ -141,6 +142,7 @@ private fun TiersTab(
     nsfwMode: Boolean,
     onSetTier: (String, TagTier, Boolean) -> Unit,
     onRemove: (String, Boolean) -> Unit,
+    onMove: (String, TagTier, Boolean) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
@@ -148,8 +150,10 @@ private fun TiersTab(
                 title = "SFW",
                 tagTiers = sfwTagTiers,
                 isNsfw = false,
+                nsfwMode = nsfwMode,
                 onSetTier = onSetTier,
                 onRemove = onRemove,
+                onMove = onMove,
             )
         }
         if (nsfwMode) {
@@ -158,8 +162,19 @@ private fun TiersTab(
                     title = "NSFW",
                     tagTiers = nsfwTagTiers,
                     isNsfw = true,
+                    nsfwMode = true,
                     onSetTier = onSetTier,
                     onRemove = onRemove,
+                    onMove = onMove,
+                )
+            }
+        } else {
+            item {
+                Text(
+                    "Enable NSFW in Settings to manage your NSFW tier.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
@@ -218,16 +233,23 @@ private fun CoTagsTab(coTagMap: Map<String, List<String>>) {
 
 // ─── Tag Tiers ───────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagTiersSection(
     title: String,
     tagTiers: Map<String, TagTier>,
     isNsfw: Boolean,
+    nsfwMode: Boolean,
     onSetTier: (String, TagTier, Boolean) -> Unit,
     onRemove: (String, Boolean) -> Unit,
+    onMove: (String, TagTier, Boolean) -> Unit,
 ) {
     var input by rememberSaveable(isNsfw) { mutableStateOf("") }
+    val regularTiers = tagTiers.entries
+        .filter { it.value != TagTier.NEVER }
+        .sortedWith(compareBy({ it.value.ordinal }, { it.key }))
+    val blacklisted = tagTiers.entries
+        .filter { it.value == TagTier.NEVER }
+        .sortedBy { it.key }
 
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(
@@ -266,20 +288,53 @@ private fun TagTiersSection(
             }
         )
         Spacer(Modifier.height(8.dp))
-        if (tagTiers.isEmpty()) {
+        if (regularTiers.isEmpty() && blacklisted.isEmpty()) {
             Text(
                 "No $title tags yet. Type a tag above and press Done.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            tagTiers.entries.sortedWith(compareBy({ it.value.ordinal }, { it.key })).forEach { (tag, tier) ->
+            regularTiers.forEach { (tag, tier) ->
                 TagTierRow(
                     tag = tag,
                     tier = tier,
                     isNsfw = isNsfw,
+                    showMoveButton = nsfwMode,
                     onSetTier = onSetTier,
                     onRemove = onRemove,
+                    onMove = { onMove(tag, tier, isNsfw) },
+                )
+            }
+        }
+        if (blacklisted.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Icon(
+                    Icons.Default.Block,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    "Blacklist",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            blacklisted.forEach { (tag, _) ->
+                BlacklistTagRow(
+                    tag = tag,
+                    isNsfw = isNsfw,
+                    showMoveButton = nsfwMode,
+                    onRestore = { onSetTier(tag, TagTier.LIKE, isNsfw) },
+                    onRemove = { onRemove(tag, isNsfw) },
+                    onMove = { onMove(tag, TagTier.NEVER, isNsfw) },
                 )
             }
         }
@@ -292,8 +347,10 @@ private fun TagTierRow(
     tag: String,
     tier: TagTier,
     isNsfw: Boolean,
+    showMoveButton: Boolean,
     onSetTier: (String, TagTier, Boolean) -> Unit,
     onRemove: (String, Boolean) -> Unit,
+    onMove: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -302,13 +359,58 @@ private fun TagTierRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        Text(tag, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        TierPicker(current = tier, onPick = { onSetTier(tag, it, isNsfw) })
+        if (showMoveButton) {
+            IconButton(onClick = onMove, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    if (isNsfw) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isNsfw) "Move to SFW" else "Move to NSFW",
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+        IconButton(onClick = { onRemove(tag, isNsfw) }, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun BlacklistTagRow(
+    tag: String,
+    isNsfw: Boolean,
+    showMoveButton: Boolean,
+    onRestore: () -> Unit,
+    onRemove: () -> Unit,
+    onMove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         Text(
             tag,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f)
         )
-        TierPicker(current = tier, onPick = { onSetTier(tag, it, isNsfw) })
-        IconButton(onClick = { onRemove(tag, isNsfw) }, modifier = Modifier.size(32.dp)) {
+        TextButton(onClick = onRestore, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+            Text("Restore", style = MaterialTheme.typography.labelSmall)
+        }
+        if (showMoveButton) {
+            IconButton(onClick = onMove, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    if (isNsfw) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isNsfw) "Move to SFW" else "Move to NSFW",
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+        IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
         }
     }

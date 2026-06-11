@@ -94,6 +94,13 @@ class TasteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { tastePrefs.removeTagTier(tag, isNsfw) }
     }
 
+    fun moveTagTier(tag: String, tier: TagTier, fromIsNsfw: Boolean) {
+        viewModelScope.launch {
+            tastePrefs.removeTagTier(tag, fromIsNsfw)
+            tastePrefs.setTagTier(tag, tier, !fromIsNsfw)
+        }
+    }
+
     fun saveProfile(profile: InterestProfile) {
         viewModelScope.launch {
             tastePrefs.saveProfile(profile)
