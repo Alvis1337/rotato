@@ -476,10 +476,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>, tierBoostTags: Set<String> = emptySet()): List<String> = when {
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
         source.tags.isNotBlank() -> listOf(source.tags)
-        // Tier boost tags drive preferred queries; a general "" query fetches filler so the feed
-        // isn't exclusively restricted to those tags. The reorder step surfaces tier-matched
-        // content to the top of each batch.
-        tierBoostTags.isNotEmpty() -> (tierBoostTags.toList().shuffled().take(3) + listOf("")).distinct()
+        // Tier boost tags drive preferred queries; MAL titles (if available) or a general ""
+        // query fill the rest so the feed isn't exclusively restricted to tier tags. The reorder
+        // step surfaces tier-matched content to the top of each batch.
+        tierBoostTags.isNotEmpty() -> {
+            val filler = if (malTitles.isNotEmpty())
+                malTitles.shuffled().take(2).map { normalizeBooruQuery(it) }
+            else
+                listOf("")
+            (tierBoostTags.toList().shuffled().take(3) + filler).distinct()
+        }
         // Pre-normalise MAL titles into compound booru tags (spaces → underscores) so
         // the plugins can apply per-token normalisation without breaking title lookups.
         malTitles.isNotEmpty() -> malTitles.shuffled().take(3).map { normalizeBooruQuery(it) }
@@ -498,8 +504,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         explicitQuery: String,
         tierBoostTags: Set<String> = emptySet(),
     ): List<DiscoverRequest> {
-        // Skip MAL when tier boost tags are driving queries — user's taste prefs take priority.
-        val malTitles = if (explicitQuery.isBlank() && filters.useMalFilter && tierBoostTags.isEmpty()) {
+        val malTitles = if (explicitQuery.isBlank() && filters.useMalFilter) {
             malPrefs.animeList.first()
         } else {
             emptyList()
