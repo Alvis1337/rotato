@@ -226,6 +226,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Page-level cache: keyed by "SOURCETYPE:query", populated in parallel at load time */
     private val pageCache = java.util.concurrent.ConcurrentHashMap<String, ArrayDeque<BrainrotWallpaper>>()
 
+    /**
+     * Stable discover requests for the current session — computed once on first load or after reset
+     * so MAL title shuffles and tier boost picks don't change between loadMore calls. Changing
+     * queries between calls creates cache misses and causes the 5-second stall on every scroll.
+     */
+    private var currentDiscoverRequests: List<DiscoverRequest>? = null
+
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
 
@@ -291,6 +298,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             clearBatchSelection()
             viewModelScope.launch(Dispatchers.IO) { prefs.clearSeenWallpaperKeys() }
             pageCache.clear()
+            currentDiscoverRequests = null
             _endReached.update { false }
             _noResults.update { false }
             _noResultsReason.update { null }
@@ -340,9 +348,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val batchSize = prefs.discoverBatchSize.first()
             val target = if (isInitial) batchSize * 2 else batchSize
 
-            // Compute queries once per source so pre-warm and drain use the same cache keys.
-            // queriesFor() shuffles MAL titles — calling it twice would produce different keys.
-            val sourcesWithQueries = buildDiscoverRequests(nsfw, filters, explicitQuery, tierBoostTags)
+            // Reuse stable queries for the session — MAL title shuffles / tier tag picks must not
+            // change between loadMore calls or every scroll triggers cache misses + fresh fetches.
+            val sourcesWithQueries = currentDiscoverRequests
+                ?: buildDiscoverRequests(nsfw, filters, explicitQuery, tierBoostTags).also { currentDiscoverRequests = it }
 
             // When a strict aspect-ratio filter is active most fetched items will be discarded
             // by the plugin-side matches() check. Fetch more candidates per call to compensate.
@@ -354,20 +363,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             var totalSkipped = 0
             var round = 0
             while (newItems.size < target && round < 3) {
-            // Step 1: fetch pages from ALL sources in parallel (network bound)
+            // Step 1: fetch pages — every (source, query) pair runs in its own coroutine so
+            // multiple MAL title queries for the same source don't block each other.
             val seenKeys = displayedKeys.toSet()
-            sourcesWithQueries.mapNotNull { request ->
+            sourcesWithQueries.flatMap { request ->
                 val source = request.source
-                val queries = request.queries
-                if (queries.all { q -> pageCache[cacheKey(source, q)]?.isNotEmpty() == true }) return@mapNotNull null
                 val sourceKey = source.pluginId.lowercase()
-                async(Dispatchers.IO) {
-                    for (q in queries) {
-                        val ck = cacheKey(source, q)
-                        if (pageCache[ck]?.isNotEmpty() == true) continue
-                        val excludes = seenKeys
-                            .filter { it.startsWith("$sourceKey:") }
-                            .map { it.removePrefix("$sourceKey:") }
+                val excludes = seenKeys
+                    .filter { it.startsWith("$sourceKey:") }
+                    .map { it.removePrefix("$sourceKey:") }
+                request.queries.mapNotNull { q ->
+                    val ck = cacheKey(source, q)
+                    if (pageCache[ck]?.isNotEmpty() == true) return@mapNotNull null
+                    async(Dispatchers.IO) {
                         val page = fetchPageForSource(source, q, excludes, request.effectiveNsfw, filters, fetchLimit)
                         Log.d("DiscoverFetch", "${source.pluginId} q=$q → ${page.size} items after filter (r${round+1})")
                         if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
