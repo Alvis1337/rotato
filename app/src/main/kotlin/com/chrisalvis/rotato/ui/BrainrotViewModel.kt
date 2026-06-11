@@ -162,18 +162,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private val neverTags: StateFlow<Set<String>> = tastePrefs.tagTiers
         .map { tiers -> tiers.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     val interestAlignEnabled: StateFlow<Boolean> = prefs.interestAlignEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val activeProfileExcludes: StateFlow<Set<String>> = tastePrefs.interestProfiles
         .map { profiles -> profiles.filter { it.isActive }.flatMap { it.excludeTags }.map { it.lowercase() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     private val activeProfileIncludes: StateFlow<Set<String>> = tastePrefs.interestProfiles
         .map { profiles -> profiles.filter { it.isActive }.flatMap { it.includeTags }.map { it.lowercase() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     fun setInterestAlignEnabled(enabled: Boolean) {
         viewModelScope.launch {
