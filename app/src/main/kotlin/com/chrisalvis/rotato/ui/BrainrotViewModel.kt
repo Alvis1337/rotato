@@ -486,9 +486,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 listOf("")
             (tierBoostTags.toList().shuffled().take(3) + filler).distinct()
         }
-        // Pre-normalise MAL titles into compound booru tags (spaces → underscores) so
-        // the plugins can apply per-token normalisation without breaking title lookups.
-        malTitles.isNotEmpty() -> malTitles.shuffled().take(3).map { normalizeBooruQuery(it) }
+        // MAL titles drive preferred queries; "" fills the rest so the feed doesn't run dry
+        // if the session's random MAL draw lands on niche titles with few booru images.
+        malTitles.isNotEmpty() -> (malTitles.shuffled().take(5).map { normalizeBooruQuery(it) } + listOf("")).distinct()
         else -> listOf("")
     }
 
