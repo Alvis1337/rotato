@@ -42,19 +42,27 @@ data class InterestProfile(
 class TastePreferences(private val context: Context) {
 
     companion object {
-        private val TAG_TIERS_KEY = stringPreferencesKey("tag_tiers_json")
+        // Historical key kept as the SFW tier for backward compatibility.
+        private val SFW_TAG_TIERS_KEY = stringPreferencesKey("tag_tiers_json")
+        private val NSFW_TAG_TIERS_KEY = stringPreferencesKey("nsfw_tag_tiers_json")
         private val INTEREST_PROFILES_KEY = stringPreferencesKey("interest_profiles_json")
     }
 
-    val tagTiers: Flow<Map<String, TagTier>> = context.dataStore.data
+    val sfwTagTiers: Flow<Map<String, TagTier>> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            val json = prefs[TAG_TIERS_KEY] ?: return@map emptyMap()
-            runCatching {
-                val obj = JSONObject(json)
-                buildMap { obj.keys().forEach { k -> put(k, TagTier.valueOf(obj.getString(k))) } }
-            }.getOrDefault(emptyMap())
-        }
+        .map { prefs -> parseTierMap(prefs[SFW_TAG_TIERS_KEY]) }
+
+    val nsfwTagTiers: Flow<Map<String, TagTier>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> parseTierMap(prefs[NSFW_TAG_TIERS_KEY]) }
+
+    private fun parseTierMap(json: String?): Map<String, TagTier> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return runCatching {
+            val obj = JSONObject(json)
+            buildMap { obj.keys().forEach { k -> put(k, TagTier.valueOf(obj.getString(k))) } }
+        }.getOrDefault(emptyMap())
+    }
 
     val interestProfiles: Flow<List<InterestProfile>> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
@@ -66,19 +74,21 @@ class TastePreferences(private val context: Context) {
             }.getOrDefault(emptyList())
         }
 
-    suspend fun setTagTier(tag: String, tier: TagTier) {
+    suspend fun setTagTier(tag: String, tier: TagTier, isNsfw: Boolean = false) {
+        val key = if (isNsfw) NSFW_TAG_TIERS_KEY else SFW_TAG_TIERS_KEY
         context.dataStore.edit { prefs ->
-            val obj = runCatching { JSONObject(prefs[TAG_TIERS_KEY] ?: "{}") }.getOrDefault(JSONObject())
+            val obj = runCatching { JSONObject(prefs[key] ?: "{}") }.getOrDefault(JSONObject())
             if (tier == TagTier.NEUTRAL) obj.remove(tag) else obj.put(tag, tier.name)
-            prefs[TAG_TIERS_KEY] = obj.toString()
+            prefs[key] = obj.toString()
         }
     }
 
-    suspend fun removeTagTier(tag: String) {
+    suspend fun removeTagTier(tag: String, isNsfw: Boolean = false) {
+        val key = if (isNsfw) NSFW_TAG_TIERS_KEY else SFW_TAG_TIERS_KEY
         context.dataStore.edit { prefs ->
-            val obj = runCatching { JSONObject(prefs[TAG_TIERS_KEY] ?: "{}") }.getOrDefault(JSONObject())
+            val obj = runCatching { JSONObject(prefs[key] ?: "{}") }.getOrDefault(JSONObject())
             obj.remove(tag)
-            prefs[TAG_TIERS_KEY] = obj.toString()
+            prefs[key] = obj.toString()
         }
     }
 

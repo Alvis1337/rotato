@@ -330,17 +330,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
             val alignInterests = prefs.interestAlignEnabled.first()
-            val tagTierMap = if (alignInterests) tastePrefs.tagTiers.first() else emptyMap()
-            val neverTagSet = tagTierMap.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+            val sfwTierMap = if (alignInterests) tastePrefs.sfwTagTiers.first() else emptyMap()
+            // NSFW tier tags only apply when NSFW mode is on
+            val nsfwTierMap = if (alignInterests && nsfw) tastePrefs.nsfwTagTiers.first() else emptyMap()
+            val combinedTierMap = sfwTierMap + nsfwTierMap
+            val neverTagSet = combinedTierMap.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
             val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
             val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
             val profileIncludes = activeProfiles.flatMap { it.includeTags }.map { it.lowercase() }.toSet()
             // When align is on but no profiles selected, fall back to tier-based boosting/deprioritizing
             val tierBoostTags = if (alignInterests && activeProfiles.isEmpty())
-                tagTierMap.filterValues { it == TagTier.LOVE || it == TagTier.LIKE }.keys.map { it.lowercase() }.toSet()
+                combinedTierMap.filterValues { it == TagTier.LOVE || it == TagTier.LIKE }.keys.map { it.lowercase() }.toSet()
             else emptySet()
             val tierDemoteTags = if (alignInterests && activeProfiles.isEmpty())
-                tagTierMap.filterValues { it == TagTier.DISLIKE }.keys.map { it.lowercase() }.toSet()
+                combinedTierMap.filterValues { it == TagTier.DISLIKE }.keys.map { it.lowercase() }.toSet()
             else emptySet()
             val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
             val blockedUrls = prefs.blockedUrls.first()
@@ -863,8 +866,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val nsfw = prefs.nsfwMode.first()
                 val filters = prefs.brainrotFilters.first()
                 val alignInterests = prefs.interestAlignEnabled.first()
-                val tagTierMap = if (alignInterests) tastePrefs.tagTiers.first() else emptyMap()
-                val neverTagSet = tagTierMap.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+                val sfwTierMap = if (alignInterests) tastePrefs.sfwTagTiers.first() else emptyMap()
+                val nsfwTierMap = if (alignInterests && nsfw) tastePrefs.nsfwTagTiers.first() else emptyMap()
+                val neverTagSet = (sfwTierMap + nsfwTierMap).filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
                 val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
                 val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
                 val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes

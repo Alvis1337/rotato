@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chrisalvis.rotato.data.InterestProfile
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.TagTier
 import com.chrisalvis.rotato.data.TastePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,13 +20,26 @@ import kotlinx.coroutines.launch
 class TasteViewModel(app: Application) : AndroidViewModel(app) {
 
     private val tastePrefs = TastePreferences(app)
+    private val rotatoPrefs = RotatoPreferences(app)
     private val listsPrefs = LocalListsPreferences(app)
 
-    val tagTiers: StateFlow<Map<String, TagTier>> = tastePrefs.tagTiers
+    val sfwTagTiers: StateFlow<Map<String, TagTier>> = tastePrefs.sfwTagTiers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val nsfwTagTiers: StateFlow<Map<String, TagTier>> = tastePrefs.nsfwTagTiers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val nsfwMode: StateFlow<Boolean> = rotatoPrefs.nsfwMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val interestProfiles: StateFlow<List<InterestProfile>> = tastePrefs.interestProfiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Combined map for My Taste tab — both SFW and NSFW tiers merged for display. */
+    val allTagTiers: StateFlow<Map<String, TagTier>> = combine(
+        tastePrefs.sfwTagTiers, tastePrefs.nsfwTagTiers
+    ) { sfw, nsfw -> sfw + nsfw }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** Tag → frequency count, sorted descending. Derived from all saved LocalWallpaperEntry tags. */
     val tasteProfile: StateFlow<List<Pair<String, Int>>> = listsPrefs.allWallpapers
@@ -41,10 +55,6 @@ class TasteViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * For each tag in the taste profile, the top 5 co-occurring tags from saved images.
-     * Only populated for tags that appear in at least 2 images.
-     */
     val coTagMap: StateFlow<Map<String, List<String>>> = listsPrefs.allWallpapers
         .map { entries ->
             val tagToImages = mutableMapOf<String, MutableSet<String>>()
@@ -73,16 +83,15 @@ class TasteViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    // UI state for the profile editor sheet
     private val _editingProfile = MutableStateFlow<InterestProfile?>(null)
     val editingProfile: StateFlow<InterestProfile?> = _editingProfile
 
-    fun setTagTier(tag: String, tier: TagTier) {
-        viewModelScope.launch { tastePrefs.setTagTier(tag, tier) }
+    fun setTagTier(tag: String, tier: TagTier, isNsfw: Boolean = false) {
+        viewModelScope.launch { tastePrefs.setTagTier(tag, tier, isNsfw) }
     }
 
-    fun removeTagTier(tag: String) {
-        viewModelScope.launch { tastePrefs.removeTagTier(tag) }
+    fun removeTagTier(tag: String, isNsfw: Boolean = false) {
+        viewModelScope.launch { tastePrefs.removeTagTier(tag, isNsfw) }
     }
 
     fun saveProfile(profile: InterestProfile) {

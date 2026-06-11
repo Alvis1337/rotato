@@ -77,7 +77,10 @@ import com.chrisalvis.rotato.data.TagTier
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasteScreen(vm: TasteViewModel = viewModel()) {
-    val tagTiers by vm.tagTiers.collectAsStateWithLifecycle()
+    val sfwTagTiers by vm.sfwTagTiers.collectAsStateWithLifecycle()
+    val nsfwTagTiers by vm.nsfwTagTiers.collectAsStateWithLifecycle()
+    val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
+    val allTagTiers by vm.allTagTiers.collectAsStateWithLifecycle()
     val profiles by vm.interestProfiles.collectAsStateWithLifecycle()
     val tasteProfile by vm.tasteProfile.collectAsStateWithLifecycle()
     val coTagMap by vm.coTagMap.collectAsStateWithLifecycle()
@@ -114,9 +117,15 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
                 Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Co-tags") })
             }
             when (selectedTab) {
-                0 -> TiersTab(tagTiers = tagTiers, onSetTier = vm::setTagTier, onRemove = vm::removeTagTier)
+                0 -> TiersTab(
+                    sfwTagTiers = sfwTagTiers,
+                    nsfwTagTiers = nsfwTagTiers,
+                    nsfwMode = nsfwMode,
+                    onSetTier = { tag, tier, isNsfw -> vm.setTagTier(tag, tier, isNsfw) },
+                    onRemove = { tag, isNsfw -> vm.removeTagTier(tag, isNsfw) },
+                )
                 1 -> ProfilesTab(profiles = profiles, onEdit = { vm.startEditProfile(it) }, onDelete = { vm.deleteProfile(it) })
-                2 -> MyTasteTab(tasteProfile = tasteProfile, tagTiers = tagTiers, onSetTier = vm::setTagTier)
+                2 -> MyTasteTab(tasteProfile = tasteProfile, tagTiers = allTagTiers, onSetTier = { tag, tier -> vm.setTagTier(tag, tier) })
                 3 -> CoTagsTab(coTagMap = coTagMap)
             }
         }
@@ -126,9 +135,34 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
 // ─── Tab wrappers ────────────────────────────────────────────────────────────
 
 @Composable
-private fun TiersTab(tagTiers: Map<String, TagTier>, onSetTier: (String, TagTier) -> Unit, onRemove: (String) -> Unit) {
+private fun TiersTab(
+    sfwTagTiers: Map<String, TagTier>,
+    nsfwTagTiers: Map<String, TagTier>,
+    nsfwMode: Boolean,
+    onSetTier: (String, TagTier, Boolean) -> Unit,
+    onRemove: (String, Boolean) -> Unit,
+) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item { TagTiersSection(tagTiers = tagTiers, onSetTier = onSetTier, onRemove = onRemove) }
+        item {
+            TagTiersSection(
+                title = "SFW",
+                tagTiers = sfwTagTiers,
+                isNsfw = false,
+                onSetTier = onSetTier,
+                onRemove = onRemove,
+            )
+        }
+        if (nsfwMode) {
+            item {
+                TagTiersSection(
+                    title = "NSFW",
+                    tagTiers = nsfwTagTiers,
+                    isNsfw = true,
+                    onSetTier = onSetTier,
+                    onRemove = onRemove,
+                )
+            }
+        }
     }
 }
 
@@ -187,24 +221,33 @@ private fun CoTagsTab(coTagMap: Map<String, List<String>>) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagTiersSection(
+    title: String,
     tagTiers: Map<String, TagTier>,
-    onSetTier: (String, TagTier) -> Unit,
-    onRemove: (String) -> Unit,
+    isNsfw: Boolean,
+    onSetTier: (String, TagTier, Boolean) -> Unit,
+    onRemove: (String, Boolean) -> Unit,
 ) {
-    var input by rememberSaveable { mutableStateOf("") }
+    var input by rememberSaveable(isNsfw) { mutableStateOf("") }
 
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (isNsfw) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
         OutlinedTextField(
             value = input,
             onValueChange = { input = it },
-            label = { Text("Add a tag") },
+            label = { Text("Add a $title tag") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = {
                 val tag = input.trim().lowercase()
                 if (tag.isNotBlank() && tag !in tagTiers) {
-                    onSetTier(tag, TagTier.LIKE)
+                    onSetTier(tag, TagTier.LIKE, isNsfw)
                     input = ""
                 }
             }),
@@ -213,7 +256,7 @@ private fun TagTiersSection(
                     IconButton(onClick = {
                         val tag = input.trim().lowercase()
                         if (tag.isNotBlank() && tag !in tagTiers) {
-                            onSetTier(tag, TagTier.LIKE)
+                            onSetTier(tag, TagTier.LIKE, isNsfw)
                             input = ""
                         }
                     }) {
@@ -225,15 +268,22 @@ private fun TagTiersSection(
         Spacer(Modifier.height(8.dp))
         if (tagTiers.isEmpty()) {
             Text(
-                "No tags yet. Type a tag above and press Done.",
+                "No $title tags yet. Type a tag above and press Done.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             tagTiers.entries.sortedWith(compareBy({ it.value.ordinal }, { it.key })).forEach { (tag, tier) ->
-                TagTierRow(tag = tag, tier = tier, onSetTier = onSetTier, onRemove = onRemove)
+                TagTierRow(
+                    tag = tag,
+                    tier = tier,
+                    isNsfw = isNsfw,
+                    onSetTier = onSetTier,
+                    onRemove = onRemove,
+                )
             }
         }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -241,8 +291,9 @@ private fun TagTiersSection(
 private fun TagTierRow(
     tag: String,
     tier: TagTier,
-    onSetTier: (String, TagTier) -> Unit,
-    onRemove: (String) -> Unit,
+    isNsfw: Boolean,
+    onSetTier: (String, TagTier, Boolean) -> Unit,
+    onRemove: (String, Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -256,8 +307,8 @@ private fun TagTierRow(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f)
         )
-        TierPicker(current = tier, onPick = { onSetTier(tag, it) })
-        IconButton(onClick = { onRemove(tag) }, modifier = Modifier.size(32.dp)) {
+        TierPicker(current = tier, onPick = { onSetTier(tag, it, isNsfw) })
+        IconButton(onClick = { onRemove(tag, isNsfw) }, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
         }
     }
