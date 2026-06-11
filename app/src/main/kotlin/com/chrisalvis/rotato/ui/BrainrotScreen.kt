@@ -175,6 +175,7 @@ fun BrainrotScreen(
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     val gridMode by vm.gridMode.collectAsStateWithLifecycle()
     val discoverHintSeen by vm.discoverHintSeen.collectAsStateWithLifecycle()
+    val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
     val gridState = rememberLazyStaggeredGridState()
@@ -367,12 +368,14 @@ fun BrainrotScreen(
                 globalBlacklist = globalBlacklist,
                 lists = lists,
                 selectedListId = selectedListId,
+                interestAlignEnabled = interestAlignEnabled,
                 onSelectList = { vm.setSelectedList(it) },
                 onSetNsfwMode = { vm.setNsfwMode(it) },
                 onSetMinResolution = { vm.setMinResolution(it) },
                 onSetAspectRatio = { vm.setAspectRatio(it) },
                 onSetUseMalFilter = { vm.setUseMalFilter(it) },
                 onSetGlobalBlacklist = { vm.setGlobalBlacklist(it) },
+                onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
                 onDismiss = { showSettings = false }
             )
         }
@@ -1792,12 +1795,14 @@ private fun DiscoverSettingsSheetContent(
     globalBlacklist: Set<String>,
     lists: List<LocalList>,
     selectedListId: String?,
+    interestAlignEnabled: Boolean,
     onSelectList: (String) -> Unit,
     onSetNsfwMode: (Boolean) -> Unit,
     onSetMinResolution: (MinResolution) -> Unit,
     onSetAspectRatio: (AspectRatio) -> Unit,
     onSetUseMalFilter: (Boolean) -> Unit,
     onSetGlobalBlacklist: (Set<String>) -> Unit,
+    onSetInterestAlign: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     var listExpanded by remember { mutableStateOf(false) }
@@ -1859,6 +1864,18 @@ private fun DiscoverSettingsSheetContent(
                 Text("Limit results to your anime list", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
             Switch(checked = filters.useMalFilter, onCheckedChange = onSetUseMalFilter)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Align with interests", style = MaterialTheme.typography.bodyMedium)
+                Text("Boost & filter by your active Taste profiles", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+            Switch(checked = interestAlignEnabled, onCheckedChange = onSetInterestAlign)
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

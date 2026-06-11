@@ -164,6 +164,24 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         .map { tiers -> tiers.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    val interestAlignEnabled: StateFlow<Boolean> = prefs.interestAlignEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    private val activeProfileExcludes: StateFlow<Set<String>> = tastePrefs.interestProfiles
+        .map { profiles -> profiles.filter { it.isActive }.flatMap { it.excludeTags }.map { it.lowercase() }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val activeProfileIncludes: StateFlow<Set<String>> = tastePrefs.interestProfiles
+        .map { profiles -> profiles.filter { it.isActive }.flatMap { it.includeTags }.map { it.lowercase() }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun setInterestAlignEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setInterestAlignEnabled(enabled)
+            loadMore(reset = true)
+        }
+    }
+
     val discoverHintSeen: StateFlow<Boolean> = prefs.discoverHintSeen
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
@@ -304,7 +322,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>().applicationContext
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
-            val blacklist = prefs.globalBlacklist.first() + neverTags.value
+            val alignInterests = interestAlignEnabled.value
+            val profileExcludes = if (alignInterests) activeProfileExcludes.value else emptySet()
+            val profileIncludes = if (alignInterests) activeProfileIncludes.value else emptySet()
+            val blacklist = prefs.globalBlacklist.first() + neverTags.value + profileExcludes
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
             val batchSize = prefs.discoverBatchSize.first()
@@ -392,7 +413,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } else {
                 consecutiveEmptyFetches = 0
-                _gridItems.update { it + newItems }  // single batch update → one recomposition
+                val orderedItems = if (profileIncludes.isNotEmpty()) {
+                    val (matching, rest) = newItems.partition { wp -> wp.tags.any { it.lowercase() in profileIncludes } }
+                    matching + rest
+                } else newItems
+                _gridItems.update { it + orderedItems }  // single batch update → one recomposition
                 _hasNewBatch.update { true }
                 viewModelScope.launch(Dispatchers.IO) {
                     prefs.addSeenWallpaperKeys(newItems.map { "${it.source}:${it.id}" }.toSet())
@@ -799,7 +824,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val nsfw = prefs.nsfwMode.first()
                 val filters = prefs.brainrotFilters.first()
-                val blacklist = prefs.globalBlacklist.first() + neverTags.value
+                val alignInterests = interestAlignEnabled.value
+                val profileExcludes = if (alignInterests) activeProfileExcludes.value else emptySet()
+                val blacklist = prefs.globalBlacklist.first() + neverTags.value + profileExcludes
                 val blockedUrls = prefs.blockedUrls.first()
                 val explicitQuery = _searchQuery.value
                 val requests = buildDiscoverRequests(nsfw, filters, explicitQuery)

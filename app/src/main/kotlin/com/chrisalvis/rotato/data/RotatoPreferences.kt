@@ -72,6 +72,7 @@ class RotatoPreferences(private val context: Context) {
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val AUTO_REFILL_ENABLED = booleanPreferencesKey("auto_refill_enabled")
         val AUTO_REFILL_MIN_COUNT = intPreferencesKey("auto_refill_min_count")
+        val INTEREST_ALIGN_ENABLED = booleanPreferencesKey("interest_align_enabled")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -201,6 +202,14 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setNsfwMode(enabled: Boolean) {
         context.dataStore.edit { it[NSFW_MODE] = enabled }
+    }
+
+    val interestAlignEnabled: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[INTEREST_ALIGN_ENABLED] ?: false }
+
+    suspend fun setInterestAlignEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[INTEREST_ALIGN_ENABLED] = enabled }
     }
 
     val brainrotFilters: Flow<BrainrotFilters> = context.dataStore.data

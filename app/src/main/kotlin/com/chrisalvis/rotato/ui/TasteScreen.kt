@@ -34,25 +34,26 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +81,7 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
     val tasteProfile by vm.tasteProfile.collectAsStateWithLifecycle()
     val coTagMap by vm.coTagMap.collectAsStateWithLifecycle()
     val editingProfile by vm.editingProfile.collectAsStateWithLifecycle()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     if (editingProfile != null) {
         ProfileEditorSheet(
@@ -92,60 +94,85 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
     Scaffold(
         topBar = { TopAppBar(title = { Text("Taste") }) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { vm.startEditProfile(null) }) {
-                Icon(Icons.Default.Add, contentDescription = "New profile")
+            if (selectedTab == 1) {
+                FloatingActionButton(onClick = { vm.startEditProfile(null) }) {
+                    Icon(Icons.Default.Add, contentDescription = "New profile")
+                }
             }
         }
     ) { innerPadding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(bottom = 88.dp),
+                .padding(innerPadding)
         ) {
-            item { SectionHeader("Tag Tiers") }
-            item { TagTiersSection(tagTiers = tagTiers, onSetTier = vm::setTagTier, onRemove = vm::removeTagTier) }
-
-            item { SectionHeader("Interest Profiles") }
-            if (profiles.isEmpty()) {
-                item {
-                    Text(
-                        "No profiles yet. Tap + to create one.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-            } else {
-                items(profiles, key = { it.id }) { profile ->
-                    ProfileRow(
-                        profile = profile,
-                        onToggle = { vm.toggleProfile(profile.id) },
-                        onEdit = { vm.startEditProfile(profile) },
-                        onDelete = { vm.deleteProfile(profile.id) },
-                    )
-                }
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Tiers") })
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Profiles") })
+                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("My Taste") })
+                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Co-tags") })
             }
+            when (selectedTab) {
+                0 -> TiersTab(tagTiers = tagTiers, onSetTier = vm::setTagTier, onRemove = vm::removeTagTier)
+                1 -> ProfilesTab(profiles = profiles, onToggle = { vm.toggleProfile(it) }, onEdit = { vm.startEditProfile(it) }, onDelete = { vm.deleteProfile(it) })
+                2 -> MyTasteTab(tasteProfile = tasteProfile, tagTiers = tagTiers, onSetTier = vm::setTagTier)
+                3 -> CoTagsTab(coTagMap = coTagMap)
+            }
+        }
+    }
+}
 
-            item { SectionHeader("My Taste") }
-            item { TasteProfileSection(tasteProfile = tasteProfile) }
+// ─── Tab wrappers ────────────────────────────────────────────────────────────
 
-            item { SectionHeader("Co-tag Explorer") }
-            item { CoTagExplorerSection(coTagMap = coTagMap) }
+@Composable
+private fun TiersTab(tagTiers: Map<String, TagTier>, onSetTier: (String, TagTier) -> Unit, onRemove: (String) -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+        item { TagTiersSection(tagTiers = tagTiers, onSetTier = onSetTier, onRemove = onRemove) }
+    }
+}
+
+@Composable
+private fun ProfilesTab(
+    profiles: List<InterestProfile>,
+    onToggle: (String) -> Unit,
+    onEdit: (InterestProfile) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
+        if (profiles.isEmpty()) {
+            item {
+                Text(
+                    "No profiles yet. Tap + to create one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        } else {
+            items(profiles, key = { it.id }) { profile ->
+                ProfileRow(
+                    profile = profile,
+                    onToggle = { onToggle(profile.id) },
+                    onEdit = { onEdit(profile) },
+                    onDelete = { onDelete(profile.id) },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp)
-    )
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+private fun MyTasteTab(tasteProfile: List<Pair<String, Int>>, tagTiers: Map<String, TagTier>, onSetTier: (String, TagTier) -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+        item { TasteProfileSection(tasteProfile = tasteProfile, tagTiers = tagTiers, onSetTier = onSetTier) }
+    }
+}
+
+@Composable
+private fun CoTagsTab(coTagMap: Map<String, List<String>>) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+        item { CoTagExplorerSection(coTagMap = coTagMap) }
+    }
 }
 
 // ─── Tag Tiers ───────────────────────────────────────────────────────────────
@@ -442,7 +469,11 @@ private fun TagInputRow(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TasteProfileSection(tasteProfile: List<Pair<String, Int>>) {
+private fun TasteProfileSection(
+    tasteProfile: List<Pair<String, Int>>,
+    tagTiers: Map<String, TagTier>,
+    onSetTier: (String, TagTier) -> Unit,
+) {
     if (tasteProfile.isEmpty()) {
         Text(
             "Save more images to generate your taste profile.",
@@ -452,19 +483,68 @@ private fun TasteProfileSection(tasteProfile: List<Pair<String, Int>>) {
         )
         return
     }
+    Text(
+        "Tap a tag to assign a tier.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+    )
     val maxCount = tasteProfile.firstOrNull()?.second?.toFloat() ?: 1f
     FlowRow(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         tasteProfile.take(60).forEach { (tag, count) ->
             val weight = (count / maxCount).coerceIn(0.4f, 1f)
             val fontSize = (10 + (weight * 8)).sp
-            SuggestionChip(
-                onClick = {},
-                label = { Text(tag, fontSize = fontSize) }
+            val currentTier = tagTiers[tag]
+            TasteTagChip(
+                tag = tag,
+                fontSize = fontSize,
+                currentTier = currentTier,
+                onSetTier = { onSetTier(tag, it) },
             )
+        }
+    }
+}
+
+@Composable
+private fun TasteTagChip(
+    tag: String,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    currentTier: TagTier?,
+    onSetTier: (TagTier) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val tierColor = when (currentTier) {
+        TagTier.LOVE -> Color(0xFFB71C1C)
+        else -> null
+    }
+    Box {
+        SuggestionChip(
+            onClick = { expanded = true },
+            label = { Text(tag, fontSize = fontSize) },
+            colors = if (currentTier != null) androidx.compose.material3.SuggestionChipDefaults.suggestionChipColors(
+                containerColor = when (currentTier) {
+                    TagTier.LOVE -> Color(0xFFB71C1C).copy(alpha = 0.15f)
+                    TagTier.LIKE -> MaterialTheme.colorScheme.primaryContainer
+                    TagTier.DISLIKE -> MaterialTheme.colorScheme.secondaryContainer
+                    TagTier.NEVER -> MaterialTheme.colorScheme.errorContainer
+                    else -> MaterialTheme.colorScheme.surface
+                }
+            ) else androidx.compose.material3.SuggestionChipDefaults.suggestionChipColors()
+        )
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            listOf(TagTier.LOVE to "♥ Love", TagTier.LIKE to "↑ Like", TagTier.DISLIKE to "↓ Dislike", TagTier.NEVER to "✕ Never").forEach { (tier, label) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, fontWeight = if (currentTier == tier) FontWeight.Bold else FontWeight.Normal) },
+                    onClick = { onSetTier(tier); expanded = false }
+                )
+            }
         }
     }
 }
