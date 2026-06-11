@@ -476,9 +476,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>, tierBoostTags: Set<String> = emptySet()): List<String> = when {
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
         source.tags.isNotBlank() -> listOf(source.tags)
-        // Tier boost tags drive the query when align-with-interests is on and no profiles selected.
-        // Takes precedence over MAL so the user's explicit taste preferences win.
-        tierBoostTags.isNotEmpty() -> tierBoostTags.toList().shuffled().take(5)
+        // Tier boost tags drive preferred queries; a general "" query fetches filler so the feed
+        // isn't exclusively restricted to those tags. The reorder step surfaces tier-matched
+        // content to the top of each batch.
+        tierBoostTags.isNotEmpty() -> (tierBoostTags.toList().shuffled().take(3) + listOf("")).distinct()
         // Pre-normalise MAL titles into compound booru tags (spaces → underscores) so
         // the plugins can apply per-token normalisation without breaking title lookups.
         malTitles.isNotEmpty() -> malTitles.shuffled().take(3).map { normalizeBooruQuery(it) }
