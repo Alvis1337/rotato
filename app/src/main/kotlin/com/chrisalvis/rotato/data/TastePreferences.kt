@@ -2,8 +2,10 @@ package com.chrisalvis.rotato.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -44,21 +46,25 @@ class TastePreferences(private val context: Context) {
         private val INTEREST_PROFILES_KEY = stringPreferencesKey("interest_profiles_json")
     }
 
-    val tagTiers: Flow<Map<String, TagTier>> = context.dataStore.data.map { prefs ->
-        val json = prefs[TAG_TIERS_KEY] ?: return@map emptyMap()
-        runCatching {
-            val obj = JSONObject(json)
-            buildMap { obj.keys().forEach { k -> put(k, TagTier.valueOf(obj.getString(k))) } }
-        }.getOrDefault(emptyMap())
-    }
+    val tagTiers: Flow<Map<String, TagTier>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val json = prefs[TAG_TIERS_KEY] ?: return@map emptyMap()
+            runCatching {
+                val obj = JSONObject(json)
+                buildMap { obj.keys().forEach { k -> put(k, TagTier.valueOf(obj.getString(k))) } }
+            }.getOrDefault(emptyMap())
+        }
 
-    val interestProfiles: Flow<List<InterestProfile>> = context.dataStore.data.map { prefs ->
-        val json = prefs[INTEREST_PROFILES_KEY] ?: return@map emptyList()
-        runCatching {
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { InterestProfile.fromJson(arr.getJSONObject(it)) }
-        }.getOrDefault(emptyList())
-    }
+    val interestProfiles: Flow<List<InterestProfile>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            val json = prefs[INTEREST_PROFILES_KEY] ?: return@map emptyList()
+            runCatching {
+                val arr = JSONArray(json)
+                (0 until arr.length()).map { InterestProfile.fromJson(arr.getJSONObject(it)) }
+            }.getOrDefault(emptyList())
+        }
 
     suspend fun setTagTier(tag: String, tier: TagTier) {
         context.dataStore.edit { prefs ->

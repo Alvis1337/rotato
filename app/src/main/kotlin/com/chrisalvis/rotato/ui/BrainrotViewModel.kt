@@ -160,20 +160,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val globalBlacklist: StateFlow<Set<String>> = prefs.globalBlacklist
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    private val neverTags: StateFlow<Set<String>> = tastePrefs.tagTiers
-        .map { tiers -> tiers.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
-
     val interestAlignEnabled: StateFlow<Boolean> = prefs.interestAlignEnabled
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private val activeProfileExcludes: StateFlow<Set<String>> = tastePrefs.interestProfiles
-        .map { profiles -> profiles.filter { it.isActive }.flatMap { it.excludeTags }.map { it.lowercase() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
-
-    private val activeProfileIncludes: StateFlow<Set<String>> = tastePrefs.interestProfiles
-        .map { profiles -> profiles.filter { it.isActive }.flatMap { it.includeTags }.map { it.lowercase() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun setInterestAlignEnabled(enabled: Boolean) {
         viewModelScope.launch {
@@ -322,10 +310,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>().applicationContext
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
-            val alignInterests = interestAlignEnabled.value
-            val profileExcludes = if (alignInterests) activeProfileExcludes.value else emptySet()
-            val profileIncludes = if (alignInterests) activeProfileIncludes.value else emptySet()
-            val blacklist = prefs.globalBlacklist.first() + neverTags.value + profileExcludes
+            val alignInterests = prefs.interestAlignEnabled.first()
+            val neverTagSet = tastePrefs.tagTiers.first()
+                .filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+            val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
+            val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
+            val profileIncludes = activeProfiles.flatMap { it.includeTags }.map { it.lowercase() }.toSet()
+            val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
             val batchSize = prefs.discoverBatchSize.first()
@@ -466,11 +457,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val effectiveNsfw = source.nsfwEnabled ?: nsfw
                 if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
-                val queries = queriesFor(source, explicitQuery, malTitles)
-                // Skip sources whose tag limit is exceeded by every query we'd send
-                if (manifest.maxTagCount != Int.MAX_VALUE &&
-                    queries.all { q -> q.trim().split(Regex("\\s+")).count { it.isNotBlank() } > manifest.maxTagCount }
-                ) return@mapNotNull null
+                val rawQueries = queriesFor(source, explicitQuery, malTitles)
+                val queries = if (manifest.maxTagCount == Int.MAX_VALUE) rawQueries
+                    else rawQueries.filter { q ->
+                        q.trim().split(Regex("\\s+")).count { it.isNotBlank() } <= manifest.maxTagCount
+                    }
+                if (queries.isEmpty()) return@mapNotNull null
                 DiscoverRequest(
                     source = source,
                     queries = queries,
@@ -824,9 +816,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val nsfw = prefs.nsfwMode.first()
                 val filters = prefs.brainrotFilters.first()
-                val alignInterests = interestAlignEnabled.value
-                val profileExcludes = if (alignInterests) activeProfileExcludes.value else emptySet()
-                val blacklist = prefs.globalBlacklist.first() + neverTags.value + profileExcludes
+                val alignInterests = prefs.interestAlignEnabled.first()
+                val neverTagSet = tastePrefs.tagTiers.first()
+                    .filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+                val profileExcludes = if (alignInterests) {
+                    tastePrefs.interestProfiles.first().filter { it.isActive }
+                        .flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
+                } else emptySet()
+                val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
                 val blockedUrls = prefs.blockedUrls.first()
                 val explicitQuery = _searchQuery.value
                 val requests = buildDiscoverRequests(nsfw, filters, explicitQuery)
