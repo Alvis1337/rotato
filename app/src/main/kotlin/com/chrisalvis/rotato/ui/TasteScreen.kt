@@ -47,6 +47,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -114,7 +115,7 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
             }
             when (selectedTab) {
                 0 -> TiersTab(tagTiers = tagTiers, onSetTier = vm::setTagTier, onRemove = vm::removeTagTier)
-                1 -> ProfilesTab(profiles = profiles, onToggle = { vm.toggleProfile(it) }, onEdit = { vm.startEditProfile(it) }, onDelete = { vm.deleteProfile(it) })
+                1 -> ProfilesTab(profiles = profiles, onEdit = { vm.startEditProfile(it) }, onDelete = { vm.deleteProfile(it) })
                 2 -> MyTasteTab(tasteProfile = tasteProfile, tagTiers = tagTiers, onSetTier = vm::setTagTier)
                 3 -> CoTagsTab(coTagMap = coTagMap)
             }
@@ -134,7 +135,6 @@ private fun TiersTab(tagTiers: Map<String, TagTier>, onSetTier: (String, TagTier
 @Composable
 private fun ProfilesTab(
     profiles: List<InterestProfile>,
-    onToggle: (String) -> Unit,
     onEdit: (InterestProfile) -> Unit,
     onDelete: (String) -> Unit,
 ) {
@@ -149,10 +149,17 @@ private fun ProfilesTab(
                 )
             }
         } else {
+            item {
+                Text(
+                    "Select profiles in Discover settings to activate them.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
             items(profiles, key = { it.id }) { profile ->
                 ProfileRow(
                     profile = profile,
-                    onToggle = { onToggle(profile.id) },
                     onEdit = { onEdit(profile) },
                     onDelete = { onDelete(profile.id) },
                 )
@@ -298,7 +305,6 @@ private fun TierChip(tier: TagTier, current: TagTier, label: String, onPick: (Ta
 @Composable
 private fun ProfileRow(
     profile: InterestProfile,
-    onToggle: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -320,7 +326,22 @@ private fun ProfileRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(profile.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(profile.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    if (profile.isActive) {
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ) {
+                            Text(
+                                "Active",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 if (profile.includeTags.isNotEmpty()) {
                     Text(
                         "Include: ${profile.includeTags.take(3).joinToString(", ")}${if (profile.includeTags.size > 3) "…" else ""}",
@@ -336,12 +357,6 @@ private fun ProfileRow(
                     )
                 }
             }
-            FilterChip(
-                selected = profile.isActive,
-                onClick = onToggle,
-                label = { Text(if (profile.isActive) "On" else "Off") },
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
             IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp))
             }

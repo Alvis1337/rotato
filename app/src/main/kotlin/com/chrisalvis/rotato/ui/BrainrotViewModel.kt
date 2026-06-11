@@ -163,10 +163,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val interestAlignEnabled: StateFlow<Boolean> = prefs.interestAlignEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val interestProfiles: StateFlow<List<com.chrisalvis.rotato.data.InterestProfile>> = tastePrefs.interestProfiles
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun setInterestAlignEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setInterestAlignEnabled(enabled)
             loadMore(reset = true)
+        }
+    }
+
+    fun toggleDiscoverProfile(profileId: String) {
+        viewModelScope.launch {
+            tastePrefs.toggleProfile(profileId)
+            if (prefs.interestAlignEnabled.first()) loadMore(reset = true)
         }
     }
 
@@ -311,11 +321,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
             val alignInterests = prefs.interestAlignEnabled.first()
-            val neverTagSet = tastePrefs.tagTiers.first()
-                .filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+            val tagTierMap = if (alignInterests) tastePrefs.tagTiers.first() else emptyMap()
+            val neverTagSet = tagTierMap.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
             val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
             val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
             val profileIncludes = activeProfiles.flatMap { it.includeTags }.map { it.lowercase() }.toSet()
+            // When align is on but no profiles selected, fall back to tier-based boosting/deprioritizing
+            val tierBoostTags = if (alignInterests && activeProfiles.isEmpty())
+                tagTierMap.filterValues { it == TagTier.LOVE || it == TagTier.LIKE }.keys.map { it.lowercase() }.toSet()
+            else emptySet()
+            val tierDemoteTags = if (alignInterests && activeProfiles.isEmpty())
+                tagTierMap.filterValues { it == TagTier.DISLIKE }.keys.map { it.lowercase() }.toSet()
+            else emptySet()
             val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
@@ -404,10 +421,23 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } else {
                 consecutiveEmptyFetches = 0
-                val orderedItems = if (profileIncludes.isNotEmpty()) {
-                    val (matching, rest) = newItems.partition { wp -> wp.tags.any { it.lowercase() in profileIncludes } }
-                    matching + rest
-                } else newItems
+                val boostTags = profileIncludes.ifEmpty { tierBoostTags }
+                val orderedItems = when {
+                    boostTags.isNotEmpty() && tierDemoteTags.isNotEmpty() -> {
+                        val (boosted, remaining) = newItems.partition { wp -> wp.tags.any { it.lowercase() in boostTags } }
+                        val (demoted, neutral) = remaining.partition { wp -> wp.tags.any { it.lowercase() in tierDemoteTags } }
+                        boosted + neutral + demoted
+                    }
+                    boostTags.isNotEmpty() -> {
+                        val (boosted, rest) = newItems.partition { wp -> wp.tags.any { it.lowercase() in boostTags } }
+                        boosted + rest
+                    }
+                    tierDemoteTags.isNotEmpty() -> {
+                        val (demoted, rest) = newItems.partition { wp -> wp.tags.any { it.lowercase() in tierDemoteTags } }
+                        rest + demoted
+                    }
+                    else -> newItems
+                }
                 _gridItems.update { it + orderedItems }  // single batch update → one recomposition
                 _hasNewBatch.update { true }
                 viewModelScope.launch(Dispatchers.IO) {
@@ -817,12 +847,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val nsfw = prefs.nsfwMode.first()
                 val filters = prefs.brainrotFilters.first()
                 val alignInterests = prefs.interestAlignEnabled.first()
-                val neverTagSet = tastePrefs.tagTiers.first()
-                    .filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
-                val profileExcludes = if (alignInterests) {
-                    tastePrefs.interestProfiles.first().filter { it.isActive }
-                        .flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
-                } else emptySet()
+                val tagTierMap = if (alignInterests) tastePrefs.tagTiers.first() else emptyMap()
+                val neverTagSet = tagTierMap.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+                val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
+                val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
                 val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
                 val blockedUrls = prefs.blockedUrls.first()
                 val explicitQuery = _searchQuery.value

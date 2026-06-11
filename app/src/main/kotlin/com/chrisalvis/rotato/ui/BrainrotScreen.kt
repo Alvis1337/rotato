@@ -75,6 +75,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
+import com.chrisalvis.rotato.data.InterestProfile
 import com.chrisalvis.rotato.data.LocalList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -176,6 +177,7 @@ fun BrainrotScreen(
     val gridMode by vm.gridMode.collectAsStateWithLifecycle()
     val discoverHintSeen by vm.discoverHintSeen.collectAsStateWithLifecycle()
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
+    val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
     val gridState = rememberLazyStaggeredGridState()
@@ -369,6 +371,7 @@ fun BrainrotScreen(
                 lists = lists,
                 selectedListId = selectedListId,
                 interestAlignEnabled = interestAlignEnabled,
+                interestProfiles = interestProfiles,
                 onSelectList = { vm.setSelectedList(it) },
                 onSetNsfwMode = { vm.setNsfwMode(it) },
                 onSetMinResolution = { vm.setMinResolution(it) },
@@ -376,6 +379,7 @@ fun BrainrotScreen(
                 onSetUseMalFilter = { vm.setUseMalFilter(it) },
                 onSetGlobalBlacklist = { vm.setGlobalBlacklist(it) },
                 onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
+                onToggleProfile = { vm.toggleDiscoverProfile(it) },
                 onDismiss = { showSettings = false }
             )
         }
@@ -1787,7 +1791,7 @@ private fun sourceColor(source: String): Color = when (source.lowercase()) {
     else          -> Color(0xFF37474F)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun DiscoverSettingsSheetContent(
     nsfwMode: Boolean,
@@ -1796,6 +1800,7 @@ private fun DiscoverSettingsSheetContent(
     lists: List<LocalList>,
     selectedListId: String?,
     interestAlignEnabled: Boolean,
+    interestProfiles: List<InterestProfile>,
     onSelectList: (String) -> Unit,
     onSetNsfwMode: (Boolean) -> Unit,
     onSetMinResolution: (MinResolution) -> Unit,
@@ -1803,6 +1808,7 @@ private fun DiscoverSettingsSheetContent(
     onSetUseMalFilter: (Boolean) -> Unit,
     onSetGlobalBlacklist: (Set<String>) -> Unit,
     onSetInterestAlign: (Boolean) -> Unit,
+    onToggleProfile: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var listExpanded by remember { mutableStateOf(false) }
@@ -1873,9 +1879,36 @@ private fun DiscoverSettingsSheetContent(
         ) {
             Column {
                 Text("Align with interests", style = MaterialTheme.typography.bodyMedium)
-                Text("Boost & filter by your active Taste profiles", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Text("Boost & filter by your Taste profiles", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
             Switch(checked = interestAlignEnabled, onCheckedChange = onSetInterestAlign)
+        }
+
+        if (interestAlignEnabled && interestProfiles.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Active profiles", style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    interestProfiles.forEach { profile ->
+                        FilterChip(
+                            selected = profile.isActive,
+                            onClick = { onToggleProfile(profile.id) },
+                            label = { Text(profile.name) }
+                        )
+                    }
+                }
+                Text(
+                    if (interestProfiles.none { it.isActive }) "No profiles selected · using tag tiers"
+                    else "${interestProfiles.count { it.isActive }} profile(s) active",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        } else if (interestAlignEnabled) {
+            Text(
+                "No profiles yet · using tag tiers. Create profiles in the Taste tab.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
