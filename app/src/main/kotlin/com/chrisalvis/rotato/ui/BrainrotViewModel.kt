@@ -341,7 +341,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
             // Compute queries once per source so pre-warm and drain use the same cache keys.
             // queriesFor() shuffles MAL titles — calling it twice would produce different keys.
-            val sourcesWithQueries = buildDiscoverRequests(nsfw, filters, explicitQuery)
+            val sourcesWithQueries = buildDiscoverRequests(nsfw, filters, explicitQuery, tierBoostTags)
 
             // When a strict aspect-ratio filter is active most fetched items will be discarded
             // by the plugin-side matches() check. Fetch more candidates per call to compensate.
@@ -452,9 +452,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun cacheKey(source: LocalSource, query: String) = "${source.pluginId}:${source.instanceId}:$query"
 
-    private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>): List<String> = when {
+    private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>, tierBoostTags: Set<String> = emptySet()): List<String> = when {
         explicitQuery.isNotBlank() -> listOf(explicitQuery)
         source.tags.isNotBlank() -> listOf(source.tags)
+        // Tier boost tags drive the query when align-with-interests is on and no profiles selected.
+        // Takes precedence over MAL so the user's explicit taste preferences win.
+        tierBoostTags.isNotEmpty() -> tierBoostTags.toList().shuffled().take(5)
         // Pre-normalise MAL titles into compound booru tags (spaces → underscores) so
         // the plugins can apply per-token normalisation without breaking title lookups.
         malTitles.isNotEmpty() -> malTitles.shuffled().take(3).map { normalizeBooruQuery(it) }
@@ -471,8 +474,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         nsfw: Boolean,
         filters: BrainrotFilters,
         explicitQuery: String,
+        tierBoostTags: Set<String> = emptySet(),
     ): List<DiscoverRequest> {
-        val malTitles = if (explicitQuery.isBlank() && filters.useMalFilter) {
+        // Skip MAL when tier boost tags are driving queries — user's taste prefs take priority.
+        val malTitles = if (explicitQuery.isBlank() && filters.useMalFilter && tierBoostTags.isEmpty()) {
             malPrefs.animeList.first()
         } else {
             emptyList()
@@ -487,7 +492,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val effectiveNsfw = source.nsfwEnabled ?: nsfw
                 if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
-                val rawQueries = queriesFor(source, explicitQuery, malTitles)
+                val rawQueries = queriesFor(source, explicitQuery, malTitles, tierBoostTags)
                 val queries = if (manifest.maxTagCount == Int.MAX_VALUE) rawQueries
                     else rawQueries.filter { q ->
                         q.trim().split(Regex("\\s+")).count { it.isNotBlank() } <= manifest.maxTagCount
