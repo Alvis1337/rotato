@@ -24,6 +24,8 @@ import com.chrisalvis.rotato.data.MalPreferences
 import com.chrisalvis.rotato.data.MalRepository
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.RotatoPreferences
+import com.chrisalvis.rotato.data.TagTier
+import com.chrisalvis.rotato.data.TastePreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
@@ -77,6 +79,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val localLists = LocalListsPreferences(app)
     private val localSources = LocalSourcesPreferences(app)
     private val malPrefs = MalPreferences(app)
+    private val tastePrefs = TastePreferences(app)
     private val malRepo = MalRepository(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
     private val pluginRepository = PluginRepository(app)
@@ -155,6 +158,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val globalBlacklist: StateFlow<Set<String>> = prefs.globalBlacklist
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val neverTags: StateFlow<Set<String>> = tastePrefs.tagTiers
+        .map { tiers -> tiers.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     val discoverHintSeen: StateFlow<Boolean> = prefs.discoverHintSeen
@@ -297,7 +304,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>().applicationContext
             val nsfw = prefs.nsfwMode.first()
             val filters = prefs.brainrotFilters.first()
-            val blacklist = prefs.globalBlacklist.first()
+            val blacklist = prefs.globalBlacklist.first() + neverTags.value
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
             val batchSize = prefs.discoverBatchSize.first()
@@ -434,9 +441,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val effectiveNsfw = source.nsfwEnabled ?: nsfw
                 if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
+                val queries = queriesFor(source, explicitQuery, malTitles)
+                // Skip sources whose tag limit is exceeded by every query we'd send
+                if (manifest.maxTagCount != Int.MAX_VALUE &&
+                    queries.all { q -> q.trim().split(Regex("\\s+")).count { it.isNotBlank() } > manifest.maxTagCount }
+                ) return@mapNotNull null
                 DiscoverRequest(
                     source = source,
-                    queries = queriesFor(source, explicitQuery, malTitles),
+                    queries = queries,
                     effectiveNsfw = effectiveNsfw,
                 )
             }
@@ -787,7 +799,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val nsfw = prefs.nsfwMode.first()
                 val filters = prefs.brainrotFilters.first()
-                val blacklist = prefs.globalBlacklist.first()
+                val blacklist = prefs.globalBlacklist.first() + neverTags.value
                 val blockedUrls = prefs.blockedUrls.first()
                 val explicitQuery = _searchQuery.value
                 val requests = buildDiscoverRequests(nsfw, filters, explicitQuery)

@@ -16,6 +16,7 @@
     "userLabel": "User ID",
     "required": true
   },
+  "maxTagCount": 2,
   "extras": {
     "response": "object",
     "count": "json",

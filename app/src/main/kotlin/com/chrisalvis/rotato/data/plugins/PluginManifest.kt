@@ -57,6 +57,8 @@ data class PluginManifest(
     val extras: Map<String, String> = emptyMap(),
     val versionCode: Int = 1,
     val configFields: List<PluginConfigField> = emptyList(),
+    /** Maximum number of tags this source supports in a single query. Int.MAX_VALUE = unlimited. */
+    val maxTagCount: Int = Int.MAX_VALUE,
 ) {
     val needsApiKey: Boolean get() = auth is PluginAuth.ApiKey || auth is PluginAuth.ApiKeyUserId
     val needsApiUser: Boolean get() = auth is PluginAuth.ApiKeyUserId
@@ -109,6 +111,7 @@ data class PluginManifest(
             put("extras", extrasObj)
         }
         put("versionCode", versionCode)
+        if (maxTagCount != Int.MAX_VALUE) put("maxTagCount", maxTagCount)
         if (configFields.isNotEmpty()) {
             put("configFields", JSONArray().also { arr ->
                 configFields.forEach { f ->
@@ -161,6 +164,7 @@ data class PluginManifest(
                     buildMap { ext.keys().forEach { k -> put(k, ext.optString(k)) } }
                 } ?: emptyMap(),
                 versionCode = json.optInt("versionCode", 1),
+                maxTagCount = json.optInt("maxTagCount", Int.MAX_VALUE),
                 configFields = json.optJSONArray("configFields")?.let { arr ->
                     (0 until arr.length()).mapNotNull { i ->
                         val o = arr.optJSONObject(i) ?: return@mapNotNull null

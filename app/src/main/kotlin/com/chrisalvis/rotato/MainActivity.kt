@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +47,8 @@ import com.chrisalvis.rotato.ui.ScheduleScreen
 import com.chrisalvis.rotato.ui.SetupScreen
 import com.chrisalvis.rotato.ui.SourceHealthScreen
 import com.chrisalvis.rotato.ui.StatsScreen
+import com.chrisalvis.rotato.ui.TasteScreen
+import com.chrisalvis.rotato.ui.TasteViewModel
 import com.chrisalvis.rotato.ui.theme.RotatoTheme
 import com.chrisalvis.rotato.ui.theme.ThemeMode
 import com.chrisalvis.rotato.worker.ScheduleReceiver
@@ -101,6 +104,7 @@ class MainActivity : AppCompatActivity() {
                 val homeViewModel: HomeViewModel = viewModel()
                 val brainrotViewModel: BrainrotViewModel = viewModel()
                 val malViewModel: MalViewModel = viewModel()
+                val tasteViewModel: TasteViewModel = viewModel()
                 malViewModelRef = malViewModel
                 val navController = rememberNavController()
 
@@ -123,7 +127,8 @@ class MainActivity : AppCompatActivity() {
                     "discover" -> 0
                     "home" -> 1
                     "browse" -> 2
-                    "settings", "sources", "schedule", "stats", "source_health" -> 3
+                    "taste" -> 3
+                    "settings", "sources", "schedule", "stats", "source_health" -> 4
                     else -> 0
                 }
 
@@ -185,6 +190,18 @@ class MainActivity : AppCompatActivity() {
                                 )
                                 NavigationBarItem(
                                     selected = selectedTab == 3,
+                                    onClick = {
+                                        navController.navigate("taste") {
+                                            popUpTo("discover") { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    icon = { Icon(Icons.Default.Tune, contentDescription = "Taste") },
+                                    label = { Text("Taste") }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 4,
                                     onClick = {
                                         navController.navigate("settings") {
                                             popUpTo("discover") { saveState = true }
@@ -274,6 +291,9 @@ class MainActivity : AppCompatActivity() {
                         }
                         composable("browse") {
                             BrowseScreen(onGoToDiscover = { navController.navigate("discover") })
+                        }
+                        composable("taste") {
+                            TasteScreen(vm = tasteViewModel)
                         }
                     }
                 }
