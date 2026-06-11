@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import com.chrisalvis.rotato.data.AppErrorLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -16,6 +17,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        AppErrorLog.init(this)
         createNotificationChannels()
     }
 

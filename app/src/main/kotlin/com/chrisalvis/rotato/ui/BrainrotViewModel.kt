@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.chrisalvis.rotato.data.AppErrorLog
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
@@ -542,6 +543,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun recordSourceError(source: LocalSource, message: String) {
+        AppErrorLog.log(source.pluginId, message)
         updateSourceHealth(source) {
             it.copy(
                 lastError = message,
@@ -572,6 +574,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             recordSourceError(source, e.message ?: "Unknown error")
             Log.e("DiscoverFetch", "${source.pluginId} q=$query exception: ${e.message}", e)
+            AppErrorLog.log("DiscoverFetch", "${source.pluginId} q=$query", e)
             emptyList()
         }
     }

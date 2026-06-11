@@ -69,7 +69,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.ClipData
+import android.content.ClipboardManager
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.chrisalvis.rotato.BuildConfig
+import com.chrisalvis.rotato.data.AppErrorLog
 import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.DownloadState
 import com.chrisalvis.rotato.data.LocalList
@@ -806,11 +818,21 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     SettingsSection(title = "Diagnostics") {
+                        var showDebugLog by remember { mutableStateOf(false) }
                         OutlinedButton(
                             onClick = onNavigateToSourceHealth,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Source Health")
+                        }
+                        OutlinedButton(
+                            onClick = { showDebugLog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Debug Log")
+                        }
+                        if (showDebugLog) {
+                            DebugLogSheet(onDismiss = { showDebugLog = false })
                         }
                     }
 
@@ -923,6 +945,72 @@ fun SettingsScreen(
                         ) {
                             Text("Website")
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DebugLogSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val logText = remember { AppErrorLog.getLog() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Debug Log", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row {
+                    TextButton(onClick = {
+                        val cm = context.getSystemService(ClipboardManager::class.java)
+                        cm.setPrimaryClip(ClipData.newPlainText("Rotato Debug Log", logText))
+                    }) { Text("Copy") }
+                    TextButton(onClick = {
+                        try {
+                            val file = java.io.File(context.filesDir, "rotato_debug.log")
+                            if (!file.exists()) return@TextButton
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Share Debug Log"))
+                        } catch (_: Exception) {}
+                    }) { Text("Share") }
+                    TextButton(onClick = { AppErrorLog.clear(); onDismiss() }) { Text("Clear") }
+                }
+            }
+            HorizontalDivider()
+            if (logText.isBlank() || logText == "(no log yet)") {
+                Text(
+                    "No errors logged yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 24.dp)
+                )
+            } else {
+                val lines = remember(logText) { logText.lines() }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(vertical = 8.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp)
+                ) {
+                    items(lines.size) { i ->
+                        Text(
+                            lines[i],
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            modifier = Modifier.padding(vertical = 1.dp)
+                        )
                     }
                 }
             }

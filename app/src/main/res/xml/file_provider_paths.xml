@@ -2,4 +2,6 @@
 <paths>
     <!-- Used for serving downloaded APK updates to the package installer -->
     <external-files-path name="apk_downloads" path="." />
+    <!-- Used for sharing the debug log -->
+    <files-path name="internal_files" path="." />
 </paths>
