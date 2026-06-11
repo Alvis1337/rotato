@@ -77,6 +77,7 @@ import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.InterestProfile
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.TagTier
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.chrisalvis.rotato.data.MinResolution
@@ -160,7 +161,6 @@ fun BrainrotScreen(
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
-    val globalBlacklist by vm.globalBlacklist.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val batchSelected by vm.batchSelected.collectAsStateWithLifecycle()
     val batchMode by vm.batchMode.collectAsStateWithLifecycle()
@@ -367,7 +367,6 @@ fun BrainrotScreen(
             DiscoverSettingsSheetContent(
                 nsfwMode = nsfwMode,
                 filters = brainrotFilters,
-                globalBlacklist = globalBlacklist,
                 lists = lists,
                 selectedListId = selectedListId,
                 interestAlignEnabled = interestAlignEnabled,
@@ -377,7 +376,6 @@ fun BrainrotScreen(
                 onSetMinResolution = { vm.setMinResolution(it) },
                 onSetAspectRatio = { vm.setAspectRatio(it) },
                 onSetUseMalFilter = { vm.setUseMalFilter(it) },
-                onSetGlobalBlacklist = { vm.setGlobalBlacklist(it) },
                 onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
                 onToggleProfile = { vm.toggleDiscoverProfile(it) },
                 onDismiss = { showSettings = false }
@@ -1066,9 +1064,17 @@ fun BrainrotScreen(
                                 reportingWallpaper = w
                                 showReportSheet = true
                             },
+                            nsfwMode = nsfwMode,
                             onTagSearch = { tag ->
                                 vm.searchByTag(tag)
                                 vm.selectItem(null)
+                            },
+                            onAddTagToSearch = { tag ->
+                                vm.addTagToSearch(tag)
+                                vm.selectItem(null)
+                            },
+                            onAddTagToTier = { tag, tier, isNsfw ->
+                                vm.addTagToTier(tag, tier, isNsfw)
                             },
                             onDismiss = { vm.selectItem(null) }
                         )
@@ -1320,10 +1326,14 @@ private fun WallpaperDetailOverlay(
     onSetWallpaper: (BrainrotWallpaper) -> Unit,
     onBlock: (BrainrotWallpaper) -> Unit,
     onReport: (BrainrotWallpaper) -> Unit,
+    nsfwMode: Boolean,
     onTagSearch: (String) -> Unit,
+    onAddTagToSearch: (String) -> Unit,
+    onAddTagToTier: (String, TagTier, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
+    var tagActionTag by remember { mutableStateOf<String?>(null) }
     var showZoom by remember { mutableStateOf(false) }
     var showInfoExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -1583,7 +1593,7 @@ private fun WallpaperDetailOverlay(
                 ) {
                     items(wallpaper.tags, key = { it }) { tag ->
                         SuggestionChip(
-                            onClick = { onTagSearch(tag) },
+                            onClick = { tagActionTag = tag },
                             label = {
                                 Text(
                                     tag.replace('_', ' '),
@@ -1601,6 +1611,16 @@ private fun WallpaperDetailOverlay(
                             )
                         )
                     }
+                }
+                tagActionTag?.let { tag ->
+                    TagActionSheet(
+                        tag = tag,
+                        nsfwMode = nsfwMode,
+                        onSearch = { onTagSearch(tag); tagActionTag = null },
+                        onAddToSearch = { onAddTagToSearch(tag); tagActionTag = null },
+                        onAddToTier = { tier, isNsfw -> onAddTagToTier(tag, tier, isNsfw); tagActionTag = null },
+                        onDismiss = { tagActionTag = null },
+                    )
                 }
             }
 
@@ -1777,6 +1797,77 @@ private fun ShimmerBox(modifier: Modifier = Modifier) {
     ))
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun TagActionSheet(
+    tag: String,
+    nsfwMode: Boolean,
+    onSearch: () -> Unit,
+    onAddToSearch: () -> Unit,
+    onAddToTier: (TagTier, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                tag.replace('_', ' '),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onSearch, modifier = Modifier.weight(1f)) { Text("Search") }
+                OutlinedButton(onClick = onAddToSearch, modifier = Modifier.weight(1f)) { Text("Add to search") }
+            }
+
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("SFW Tier", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(TagTier.LOVE to "♥ Love", TagTier.LIKE to "↑ Like", TagTier.DISLIKE to "↓ Dislike", TagTier.NEVER to "✕ Never").forEach { (tier, label) ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                onAddToTier(tier, false)
+                                android.widget.Toast.makeText(context, "${tag.replace('_',' ')} → $label (SFW)", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+            }
+
+            if (nsfwMode) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("NSFW Tier", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(TagTier.LOVE to "♥ Love", TagTier.LIKE to "↑ Like", TagTier.DISLIKE to "↓ Dislike", TagTier.NEVER to "✕ Never").forEach { (tier, label) ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    onAddToTier(tier, true)
+                                    android.widget.Toast.makeText(context, "${tag.replace('_',' ')} → $label (NSFW)", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun sourceColor(source: String): Color = when (source.lowercase()) {
     "wallhaven"  -> Color(0xFF1565C0)
     "konachan"   -> Color(0xFF6A1B9A)
@@ -1796,7 +1887,6 @@ private fun sourceColor(source: String): Color = when (source.lowercase()) {
 private fun DiscoverSettingsSheetContent(
     nsfwMode: Boolean,
     filters: BrainrotFilters,
-    globalBlacklist: Set<String>,
     lists: List<LocalList>,
     selectedListId: String?,
     interestAlignEnabled: Boolean,
@@ -1806,14 +1896,12 @@ private fun DiscoverSettingsSheetContent(
     onSetMinResolution: (MinResolution) -> Unit,
     onSetAspectRatio: (AspectRatio) -> Unit,
     onSetUseMalFilter: (Boolean) -> Unit,
-    onSetGlobalBlacklist: (Set<String>) -> Unit,
     onSetInterestAlign: (Boolean) -> Unit,
     onToggleProfile: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var listExpanded by remember { mutableStateOf(false) }
     var resExpanded by remember { mutableStateOf(false) }
-    var blacklistText by remember(globalBlacklist) { mutableStateOf(globalBlacklist.joinToString(", ")) }
 
     Column(
         modifier = Modifier
@@ -1960,31 +2048,13 @@ private fun DiscoverSettingsSheetContent(
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Tag blacklist", style = MaterialTheme.typography.labelMedium)
-            OutlinedTextField(
-                value = blacklistText,
-                onValueChange = { blacklistText = it },
-                label = { Text("Comma-separated tags") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                maxLines = 3,
-            )
-            Text(
-                "Wallpapers containing any of these tags will be hidden.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
-            )
-        }
+        Text(
+            "Tag blacklist → use the Taste tab to set tags to Never tier.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
 
-        TextButton(
-            onClick = {
-                val tags = blacklistText.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
-                onSetGlobalBlacklist(tags)
-                onDismiss()
-            },
-            modifier = Modifier.align(Alignment.End),
-        ) {
+        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
             Text("Done")
         }
     }

@@ -267,6 +267,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         persistentBlockedKeys.addAll(prefs.blockedImageKeys.first())
         displayedKeys.addAll(persistentBlockedKeys)
         displayedKeys.addAll(prefs.seenWallpaperKeys.first())
+        migrateBlacklistToNeverTier()
         val localEnabled = sources.first()
         if (localEnabled.isEmpty()) {
             _noSources.update { true }
@@ -276,6 +277,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         loadLists()
         refreshMalCacheIfEnabled() // silently refresh MAL list; buildDiscoverRequests uses it internally
         loadMore(reset = false)
+    }
+
+    private suspend fun migrateBlacklistToNeverTier() {
+        val blacklist = prefs.globalBlacklist.first()
+        if (blacklist.isEmpty()) return
+        blacklist.forEach { tag -> tastePrefs.setTagTier(tag.lowercase(), com.chrisalvis.rotato.data.TagTier.NEVER, isNsfw = false) }
+        prefs.setGlobalBlacklist(emptySet())
     }
 
     /**
@@ -1070,6 +1078,20 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         setSearchQuery(trimmed)
         if (current == trimmed) {
             loadMore(reset = true)
+        }
+    }
+
+    fun addTagToSearch(tag: String) {
+        val trimmed = tag.trim()
+        if (trimmed.isBlank()) return
+        val current = _searchQuery.value.trim()
+        setSearchQuery(if (current.isBlank()) trimmed else "$current $trimmed")
+    }
+
+    fun addTagToTier(tag: String, tier: TagTier, isNsfw: Boolean) {
+        viewModelScope.launch {
+            tastePrefs.setTagTier(tag.trim().lowercase(), tier, isNsfw)
+            if (tier == TagTier.NEVER) loadMore(reset = true)
         }
     }
 
