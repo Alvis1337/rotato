@@ -158,8 +158,6 @@ fun BrainrotScreen(
     val noResults by vm.noResults.collectAsStateWithLifecycle()
     val noResultsReason by vm.noResultsReason.collectAsStateWithLifecycle()
     val noSources by vm.noSources.collectAsStateWithLifecycle()
-    val sessionSaved by vm.sessionSaved.collectAsStateWithLifecycle()
-    val sessionSkipped by vm.sessionSkipped.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
@@ -643,23 +641,6 @@ fun BrainrotScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    if (sessionSaved > 0 || sessionSkipped > 0) {
-                                        gridGridItems(
-                                            items = listOf("session-summary"),
-                                            key = { it },
-                                            span = { GridItemSpan(maxLineSpan) },
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                                                if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
-                                            }
-                                        }
-                                    }
                                     gridGridItems(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
                                         DiscoverThumbnailGridItem(
                                             wallpaper = wp,
@@ -726,19 +707,6 @@ fun BrainrotScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalItemSpacing = 8.dp
                                 ) {
-                                    if (sessionSaved > 0 || sessionSkipped > 0) {
-                                        items(listOf("session-stats"), span = { StaggeredGridItemSpan.FullLine }) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                                                if (sessionSkipped > 0) StatChip("✕ $sessionSkipped")
-                                            }
-                                        }
-                                    }
                                     items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
                                         DiscoverGridItem(
                                             wallpaper = wp,
@@ -1065,8 +1033,6 @@ fun BrainrotScreen(
                             items = gridItems,
                             startIndex = startIndex,
                             onPageChanged = { vm.selectItem(it) },
-                            sessionSaved = sessionSaved,
-                            sessionSkipped = sessionSkipped,
                             selectedListName = lists.find { it.id == selectedListId }?.name,
                             lists = lists,
                             isDownloadingFn = { downloadingIds.contains(it.id) },
@@ -1427,8 +1393,6 @@ private fun WallpaperDetailOverlay(
     items: List<BrainrotWallpaper>,
     startIndex: Int,
     onPageChanged: (BrainrotWallpaper) -> Unit,
-    sessionSaved: Int,
-    sessionSkipped: Int,
     selectedListName: String?,
     lists: List<LocalList>,
     isDownloadingFn: (BrainrotWallpaper) -> Boolean,
@@ -1660,28 +1624,6 @@ private fun WallpaperDetailOverlay(
             }
         } // end HorizontalPager
 
-        // Top stats bar
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)))
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (sessionSaved > 0) StatChip("📌 $sessionSaved")
-                if (sessionSkipped > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    StatChip("✕ $sessionSkipped")
-                }
-            }
-        }
-
         // Bottom info + actions
         Column(
             modifier = Modifier
@@ -1777,10 +1719,8 @@ private fun WallpaperDetailOverlay(
             val isDownloading = isDownloadingFn(wallpaper)
             val isSavingToGallery = isSavingToGalleryFn(wallpaper)
 
-            // Primary actions: Save and Skip are the two things you actually do on every card
-            // (tracked as session stats above), so they're the only same-weight pair here.
-            // Everything else — download, gallery, share, block, set-as-wallpaper, report — is
-            // secondary and lives behind the overflow menu instead of its own same-size circle.
+            // Save is the one thing worth a dedicated button; skip, download, gallery, share,
+            // block, set-as-wallpaper, and report are all secondary and live in the overflow menu.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1821,14 +1761,7 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
-                FilledTonalButton(
-                    onClick = { onSkip(wallpaper); onDismiss() },
-                    modifier = Modifier.weight(1f).height(52.dp)
-                ) {
-                    Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Skip")
-                }
+                Spacer(Modifier.weight(1f))
 
                 var showMore by remember { mutableStateOf(false) }
                 OutlinedIconButton(
@@ -1844,6 +1777,7 @@ private fun WallpaperDetailOverlay(
                         isVideo = wallpaper.isVideo,
                         isDownloading = isDownloading,
                         isSavingToGallery = isSavingToGallery,
+                        onSkip = { onSkip(wallpaper); onDismiss() },
                         onDownloadToRotation = { onDownloadToRotation(wallpaper) },
                         onSaveToGallery = {
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -1875,17 +1809,6 @@ private fun WallpaperDetailOverlay(
 }
 
 @Composable
-private fun StatChip(text: String) {
-    Box(
-        modifier = Modifier
-            .background(Color.Black.copy(alpha = 0.5f), MaterialTheme.shapes.small)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        Text(text, style = MaterialTheme.typography.labelMedium, color = Color.White)
-    }
-}
-
-@Composable
 private fun ShimmerBox(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val offset by transition.animateFloat(
@@ -1910,6 +1833,7 @@ private fun MoreActionsSheet(
     isVideo: Boolean,
     isDownloading: Boolean,
     isSavingToGallery: Boolean,
+    onSkip: () -> Unit,
     onDownloadToRotation: () -> Unit,
     onSaveToGallery: () -> Unit,
     onShare: () -> Unit,
@@ -1945,6 +1869,7 @@ private fun MoreActionsSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.navigationBarsPadding()) {
+            Action(text = "Skip", icon = Icons.Default.SkipNext, onClick = onSkip)
             if (!isVideo) {
                 Action(
                     text = if (isDownloading) "Adding to rotation…" else "Add to rotation",

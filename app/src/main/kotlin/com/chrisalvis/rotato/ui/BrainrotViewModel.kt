@@ -120,15 +120,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _noSources = MutableStateFlow(false)
     val noSources: StateFlow<Boolean> = _noSources.asStateFlow()
 
-    private val _sessionSaved = MutableStateFlow(0)
-    val sessionSaved: StateFlow<Int> = _sessionSaved.asStateFlow()
-
     val savedSourceIds: StateFlow<Set<String>> = localLists.allWallpapers
         .map { entries -> entries.map { "${it.source}:${it.sourceId}" }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
-
-    private val _sessionSkipped = MutableStateFlow(0)
-    val sessionSkipped: StateFlow<Int> = _sessionSkipped.asStateFlow()
 
     val lists: StateFlow<List<LocalList>> = combine(
         localLists.lists,
@@ -680,7 +674,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun skip(wp: BrainrotWallpaper) {
-        _sessionSkipped.update { it + 1 }
         if (undoStack.size >= 3) undoStack.removeFirst()
         undoStack.addLast(wp)
         _skipEvent.tryEmit(Unit)
@@ -715,7 +708,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun undo() {
         val wp = undoStack.removeLastOrNull() ?: return
-        _sessionSkipped.update { (it - 1).coerceAtLeast(0) }
         displayedKeys.remove("${wp.source}:${wp.id}")
         _gridItems.update { listOf(wp) + it }
     }
@@ -770,7 +762,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addToList(listId: String, wp: BrainrotWallpaper) {
         _selectedListId.update { listId }
-        _sessionSaved.update { it + 1 }
         removeFromGrid(wp)
         viewModelScope.launch {
             val ok = localLists.addWallpaper(listId, wp)
@@ -810,7 +801,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     Toast.makeText(ctx, "Saved to \"$listName\"", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                _sessionSaved.update { it - 1 }
                 Toast.makeText(ctx, "Already in \"$listName\"", Toast.LENGTH_SHORT).show()
             }
         }
