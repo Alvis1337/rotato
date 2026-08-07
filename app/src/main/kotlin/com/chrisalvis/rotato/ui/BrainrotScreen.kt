@@ -1720,14 +1720,14 @@ private fun WallpaperDetailOverlay(
                     Text(
                         wallpaper.resolution,
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.55f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                 }
                 if (items.size > 1) {
                     Text(
                         "${pagerState.currentPage + 1} / ${items.size}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.55f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                 }
             }
@@ -1751,13 +1751,13 @@ private fun WallpaperDetailOverlay(
                                 )
                             },
                             colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = if (isLead) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f),
-                                labelColor = Color.White
+                                containerColor = if (isLead) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                labelColor = if (isLead) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                             ),
                             border = SuggestionChipDefaults.suggestionChipBorder(
                                 enabled = true,
-                                borderColor = Color.White.copy(alpha = if (isLead) 0.4f else 0.25f),
-                                disabledBorderColor = Color.White.copy(alpha = 0.1f)
+                                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = if (isLead) 0.6f else 0.35f),
+                                disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
                             )
                         )
                     }
@@ -1821,81 +1821,49 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = { onSkip(wallpaper); onDismiss() },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                    modifier = Modifier.weight(1f).height(52.dp)
                 ) {
-                    Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Skip", color = Color.White)
+                    Text("Skip")
                 }
 
                 var showMore by remember { mutableStateOf(false) }
-                Box {
-                    OutlinedIconButton(
-                        onClick = { showMore = !showMore },
-                        modifier = Modifier.size(44.dp),
-                        border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                    ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
+                OutlinedIconButton(
+                    onClick = { showMore = true },
+                    modifier = Modifier.size(44.dp),
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+                ) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                }
 
-                    DropdownMenu(
-                        expanded = showMore,
-                        onDismissRequest = { showMore = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(if (isDownloading) "Adding to rotation…" else "Add to rotation", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { onDownloadToRotation(wallpaper); showMore = false },
-                            enabled = !isDownloading && !wallpaper.isVideo,
-                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (isSavingToGallery) "Saving…" else "Save to gallery", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                onSaveToGallery(wallpaper)
-                                showMore = false
-                            },
-                            enabled = !isSavingToGallery,
-                            leadingIcon = { Icon(Icons.Default.SaveAlt, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Share", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, wallpaper.fullUrl)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share"))
-                                showMore = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                        )
-                        if (!wallpaper.isVideo) {
-                            DropdownMenuItem(
-                                text = { Text("Set as wallpaper", style = MaterialTheme.typography.bodyMedium) },
-                                onClick = { onSetWallpaper(wallpaper); showMore = false },
-                                leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Report", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { onReport(wallpaper); showMore = false },
-                            leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Never show again", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                onBlock(wallpaper)
-                                showMore = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) }
-                        )
-                    }
+                if (showMore) {
+                    MoreActionsSheet(
+                        isVideo = wallpaper.isVideo,
+                        isDownloading = isDownloading,
+                        isSavingToGallery = isSavingToGallery,
+                        onDownloadToRotation = { onDownloadToRotation(wallpaper) },
+                        onSaveToGallery = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onSaveToGallery(wallpaper)
+                        },
+                        onShare = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, wallpaper.fullUrl)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                        },
+                        onSetWallpaper = { onSetWallpaper(wallpaper) },
+                        onReport = { onReport(wallpaper) },
+                        onBlock = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onBlock(wallpaper)
+                        },
+                        onDismiss = { showMore = false }
+                    )
                 }
             }
         }
@@ -1934,6 +1902,72 @@ private fun ShimmerBox(modifier: Modifier = Modifier) {
             end = Offset(offset * 1000f + 500f, 0f)
         )
     ))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MoreActionsSheet(
+    isVideo: Boolean,
+    isDownloading: Boolean,
+    isSavingToGallery: Boolean,
+    onDownloadToRotation: () -> Unit,
+    onSaveToGallery: () -> Unit,
+    onShare: () -> Unit,
+    onSetWallpaper: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    @Composable
+    fun Action(
+        text: String,
+        icon: androidx.compose.ui.graphics.vector.ImageVector,
+        enabled: Boolean = true,
+        destructive: Boolean = false,
+        onClick: () -> Unit,
+    ) {
+        val tint = when {
+            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            destructive -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurface
+        }
+        ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled) { onClick(); onDismiss() },
+            headlineContent = { Text(text, color = tint) },
+            leadingContent = { Icon(icon, contentDescription = null, tint = tint) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.navigationBarsPadding()) {
+            if (!isVideo) {
+                Action(
+                    text = if (isDownloading) "Adding to rotation…" else "Add to rotation",
+                    icon = Icons.Default.Download,
+                    enabled = !isDownloading,
+                    onClick = onDownloadToRotation
+                )
+            }
+            Action(
+                text = if (isSavingToGallery) "Saving…" else "Save to gallery",
+                icon = Icons.Default.SaveAlt,
+                enabled = !isSavingToGallery,
+                onClick = onSaveToGallery
+            )
+            Action(text = "Share", icon = Icons.Default.Share, onClick = onShare)
+            if (!isVideo) {
+                Action(text = "Set as wallpaper", icon = Icons.Outlined.Wallpaper, onClick = onSetWallpaper)
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Action(text = "Report", icon = Icons.Default.Flag, destructive = true, onClick = onReport)
+            Action(text = "Never show again", icon = Icons.Default.Block, destructive = true, onClick = onBlock)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
