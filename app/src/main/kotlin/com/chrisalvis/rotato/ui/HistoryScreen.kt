@@ -94,7 +94,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _downloading.value = _downloading.value + key
             val sourceId = item.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-            val ok = feedRepo.downloadWallpaper(sourceId, item.fullUrl, item.sampleUrl.ifBlank { item.thumbUrl })
+            val ok = feedRepo.downloadWallpaper(sourceId, item.fullUrl, item.sampleUrl.ifBlank { item.thumbUrl }) != null
             Toast.makeText(ctx, if (ok) "Added to Library" else "Download failed", Toast.LENGTH_SHORT).show()
             _downloading.value = _downloading.value - key
         }

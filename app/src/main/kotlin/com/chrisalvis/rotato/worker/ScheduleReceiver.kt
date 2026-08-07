@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.sanitizeFilename
@@ -83,6 +84,7 @@ class ScheduleReceiver : BroadcastReceiver() {
             }
             val wallpapers = listPrefs.allWallpapers.first().filter { it.listId in listIds }
             val feedRepo = FeedRepository(imageDir)
+            val prefs = RotatoPreferences(context)
 
             // Download any missing wallpapers
             wallpapers.forEach { entry ->
@@ -97,7 +99,10 @@ class ScheduleReceiver : BroadcastReceiver() {
                             runCatching { src.copyTo(File(imageDir, "$key.$ext"), overwrite = true) }
                         }
                     }
-                    entry.fullUrl.isNotBlank() -> feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                    entry.fullUrl.isNotBlank() -> {
+                        val fileName = feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                        if (fileName != null && entry.isNsfw) prefs.setFileNsfw(fileName, true)
+                    }
                 }
             }
 

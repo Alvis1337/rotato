@@ -91,7 +91,8 @@ object WallhavenEngine : PluginEngine() {
             resolution = post.optString("resolution").ifBlank { "" },
             pageUrl = "$base/w/$id",
             tags = effectiveTags,
-            isVideo = MediaType.isVideoUrl(fullUrl)
+            isVideo = MediaType.isVideoUrl(fullUrl),
+            isNsfw = post.optString("purity") != "sfw"
         )
     }
 

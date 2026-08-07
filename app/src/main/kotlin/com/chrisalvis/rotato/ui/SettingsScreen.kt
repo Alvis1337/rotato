@@ -110,6 +110,9 @@ fun SettingsScreen(
     onShowOnboarding: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
+    val nsfwHomeOnly by viewModel.nsfwHomeOnly.collectAsStateWithLifecycle()
+    val stealthCollectionId by viewModel.stealthCollectionId.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val widgetCollectionId by viewModel.widgetCollectionId.collectAsStateWithLifecycle()
     val malLoggedIn by malViewModel.isLoggedIn.collectAsStateWithLifecycle()
@@ -530,6 +533,50 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+
+                    SettingsSection(title = "NSFW") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Blur NSFW previews")
+                                Text(
+                                    "Blur explicit images/videos in grids until tapped — also acts as a safety net if one slips through with NSFW mode off",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = nsfwBlurEnabled,
+                                onCheckedChange = { viewModel.setNsfwBlurEnabled(it) }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("NSFW → home screen only")
+                                Text(
+                                    "Explicit wallpapers are restricted to the home screen regardless of your Wallpaper Target above — lock screen stays clean",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = nsfwHomeOnly,
+                                onCheckedChange = { viewModel.setNsfwHomeOnly(it) }
+                            )
+                        }
+                        StealthCollectionDropdown(
+                            selectedCollectionId = stealthCollectionId,
+                            lists = collections,
+                            onSelect = viewModel::setStealthCollectionId
+                        )
                     }
                 }
             }
@@ -1295,6 +1342,60 @@ private fun WidgetCollectionDropdown(
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 DropdownMenuItem(
                     text = { Text("Main rotation queue") },
+                    onClick = {
+                        onSelect("")
+                        expanded = false
+                    }
+                )
+                lists.forEach { list ->
+                    DropdownMenuItem(
+                        text = { Text(list.name) },
+                        onClick = {
+                            onSelect(list.id)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StealthCollectionDropdown(
+    selectedCollectionId: String,
+    lists: List<LocalList>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Not set"
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Stealth collection",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "The QS \"Stealth Mode\" tile switches rotation entirely to this collection and forces NSFW off, until you tap it again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            OutlinedTextField(
+                value = selectedLabel,
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                modifier = Modifier
+                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+                singleLine = true
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Not set") },
                     onClick = {
                         onSelect("")
                         expanded = false

@@ -162,6 +162,7 @@ fun BrainrotScreen(
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
     val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
+    val nsfwBlurEnabled by vm.nsfwBlurEnabled.collectAsStateWithLifecycle()
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val batchSelected by vm.batchSelected.collectAsStateWithLifecycle()
@@ -666,6 +667,7 @@ fun BrainrotScreen(
                                             selectionMode = batchMode,
                                             videoPreviewMode = videoPreviewMode,
                                             isVisible = "${wp.source}:${wp.id}" in visibleCompactKeys,
+                                            nsfwBlurEnabled = nsfwBlurEnabled,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -744,6 +746,7 @@ fun BrainrotScreen(
                                             selectionMode = batchMode,
                                             videoPreviewMode = videoPreviewMode,
                                             isVisible = "${wp.source}:${wp.id}" in visibleStaggeredKeys,
+                                            nsfwBlurEnabled = nsfwBlurEnabled,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -1122,24 +1125,30 @@ private fun DiscoverThumbnailGridItem(
     selectionMode: Boolean,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     isVisible: Boolean,
+    nsfwBlurEnabled: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val context = LocalContext.current
+    var revealed by rememberNsfwRevealed(wallpaper.id)
+    val isBlurred = wallpaper.isNsfw && nsfwBlurEnabled && !revealed
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
+    // No usable static thumbnail from the API for a video post — fall back to decoding a frame
+    // straight from the video file itself (coil-video's VideoFrameDecoder, registered app-wide).
     val imageUrl = wallpaper.thumbUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl } }
-    val previewSlot = wallpaper.isVideo &&
+        .let { if (wallpaper.isVideo && !hasStaticThumb) wallpaper.fullUrl else it }
+    val previewSlot = wallpaper.isVideo && !isBlurred &&
         rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
-    val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
+    val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(MaterialTheme.shapes.medium)
-            .pointerInput(wallpaper.id, selectionMode, isSelected) {
+            .pointerInput(wallpaper.id, selectionMode, isSelected, isBlurred) {
                 detectTapGestures(
-                    onTap = { onClick() },
+                    onTap = { if (isBlurred) revealed = true else onClick() },
                     onLongPress = { onLongPress() }
                 )
             }
@@ -1160,13 +1169,15 @@ private fun DiscoverThumbnailGridItem(
                     .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed),
                 loading = { ShimmerBox(Modifier.fillMaxSize()) },
                 error = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) }
             )
         } else {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
         }
+
+        NsfwBlurLayer(wallpaper.isNsfw, nsfwBlurEnabled, revealed, compact = true)
 
         if (isSelected) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
@@ -1254,6 +1265,7 @@ private fun DiscoverGridItem(
     selectionMode: Boolean,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     isVisible: Boolean,
+    nsfwBlurEnabled: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -1261,13 +1273,15 @@ private fun DiscoverGridItem(
         .coerceIn(0.25f, 4f)
         .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
     val context = LocalContext.current
+    var revealed by rememberNsfwRevealed(wallpaper.id)
+    val isBlurred = wallpaper.isNsfw && nsfwBlurEnabled && !revealed
 
     // Fall back to fullUrl if sampleUrl fails (e.g. 404 on Danbooru restricted posts)
     var useFullUrl by remember(wallpaper.id) { mutableStateOf(false) }
     val imageUrl = (if (useFullUrl || wallpaper.sampleUrl.isBlank()) wallpaper.fullUrl else wallpaper.sampleUrl)
         .ifBlank { null }
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
-    val previewSlot = wallpaper.isVideo &&
+    val previewSlot = wallpaper.isVideo && !isBlurred &&
         rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
     val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
 
@@ -1276,9 +1290,9 @@ private fun DiscoverGridItem(
             .fillMaxWidth()
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
-            .pointerInput(wallpaper.id, selectionMode, isSelected) {
+            .pointerInput(wallpaper.id, selectionMode, isSelected, isBlurred) {
                 detectTapGestures(
-                    onTap = { onClick() },
+                    onTap = { if (isBlurred) revealed = true else onClick() },
                     onLongPress = { onLongPress() }
                 )
             }
@@ -1293,7 +1307,16 @@ private fun DiscoverGridItem(
                 model = wallpaper.thumbUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed)
+            )
+        } else if (wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF) {
+            // No usable static thumbnail from the API — decode a frame straight from the
+            // video file itself (coil-video's VideoFrameDecoder, registered app-wide).
+            AsyncImage(
+                model = wallpaper.fullUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed)
             )
         } else if (wallpaper.isVideo) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
@@ -1307,7 +1330,7 @@ private fun DiscoverGridItem(
                     .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed),
                 loading = { ShimmerBox(Modifier.fillMaxSize()) },
                 error = {
                     if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
@@ -1317,6 +1340,8 @@ private fun DiscoverGridItem(
                 }
             )
         }
+
+        NsfwBlurLayer(wallpaper.isNsfw, nsfwBlurEnabled, revealed)
 
         if (isSelected) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
@@ -1568,7 +1593,8 @@ private fun WallpaperDetailOverlay(
                             scaleX = scaleFactor
                             scaleY = scaleFactor
                         },
-                    allowTapToToggle = true
+                    allowTapToToggle = true,
+                    showMuteButton = true
                 )
             } else if (item.isVideo) {
                 val posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) }

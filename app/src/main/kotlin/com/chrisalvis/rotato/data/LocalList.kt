@@ -94,5 +94,6 @@ data class LocalWallpaperEntry(
     val pageUrl: String,
     val tags: List<String>,
     val addedAt: Long = System.currentTimeMillis(),
-    val isVideo: Boolean = false
+    val isVideo: Boolean = false,
+    val isNsfw: Boolean = false
 )

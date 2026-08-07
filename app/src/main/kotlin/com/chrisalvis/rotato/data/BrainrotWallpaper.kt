@@ -9,5 +9,6 @@ data class BrainrotWallpaper(
     val resolution: String,
     val pageUrl: String,
     val tags: List<String>,
-    val isVideo: Boolean = false
+    val isVideo: Boolean = false,
+    val isNsfw: Boolean = false
 )

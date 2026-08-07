@@ -32,7 +32,7 @@ object MoebooruEngine : PluginEngine() {
             }
             null
         } ?: return@onIO null
-        buildWallpaper(post, base, manifest)
+        buildWallpaper(post, base, manifest, nsfw)
     }
 
     override suspend fun fetchPage(
@@ -54,7 +54,7 @@ object MoebooruEngine : PluginEngine() {
             if (exclude.contains(id)) return@mapNotNull null
             val w = obj.optInt("width"); val h = obj.optInt("height")
             if (!filters.matches(w, h)) return@mapNotNull null
-            buildWallpaper(obj, base, manifest)
+            buildWallpaper(obj, base, manifest, nsfw)
         }
     }
 
@@ -73,7 +73,7 @@ object MoebooruEngine : PluginEngine() {
         append(" order:random")
     }.trim()
 
-    private fun buildWallpaper(obj: org.json.JSONObject, base: String, manifest: PluginManifest): BrainrotWallpaper? {
+    private fun buildWallpaper(obj: org.json.JSONObject, base: String, manifest: PluginManifest, nsfw: Boolean): BrainrotWallpaper? {
         val id = obj.optInt("id", 0).toString()
         val fullUrl = obj.optString("file_url").ifBlank { return null }
         val isVideo = MediaType.isVideoUrl(fullUrl)
@@ -87,7 +87,8 @@ object MoebooruEngine : PluginEngine() {
             resolution = "${obj.optInt("width")}x${obj.optInt("height")}",
             pageUrl = "$base/post/show/$id",
             tags = obj.optString("tags").split(' ').filter { it.isNotBlank() },
-            isVideo = isVideo
+            isVideo = isVideo,
+            isNsfw = nsfw
         )
     }
 }

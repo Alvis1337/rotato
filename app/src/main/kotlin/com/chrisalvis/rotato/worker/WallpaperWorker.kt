@@ -138,10 +138,24 @@ class WallpaperWorker(
 
         val allImages = withContext(Dispatchers.IO) { repository.getImages() }
 
+        // Stealth mode: while active, rotation draws exclusively from the designated stealth
+        // collection, overriding schedules and normal per-screen pools — a "panic button" leanback.
+        val stealthActive = prefs.stealthActive.first()
+        val stealthCollectionId = if (stealthActive) prefs.stealthCollectionId.first() else ""
+        val stealthWallpapers = if (stealthCollectionId.isNotBlank())
+            allWallpapers.filter { it.listId == stealthCollectionId } else emptyList()
+        val stealthFiles = stealthWallpapers.mapNotNull { entry ->
+            allImages.find { it.nameWithoutExtension == sanitizeFilename(entry.sourceId) }
+        }
+        val effectiveScheduledEntry = if (stealthFiles.isNotEmpty()) null else scheduledEntry
+
         // Build per-screen file sets when per-screen pools are configured and target is BOTH.
         val homeFiles: List<File>
         val lockFiles: List<File>
-        if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && scheduledEntry == null) {
+        if (stealthFiles.isNotEmpty()) {
+            homeFiles = stealthFiles
+            lockFiles = stealthFiles
+        } else if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
             val homeListIds = rotationLists
                 .filter { it.rotationTarget == ScreenRotationTarget.HOME_ONLY || it.rotationTarget == ScreenRotationTarget.BOTH }
                 .map { it.id }.toSet()
@@ -159,7 +173,7 @@ class WallpaperWorker(
         }
 
         var mainQueueCount: Int? = null
-        val targetFile = resolveScheduledTargetFile(scheduledEntry, feedRepository, imageDir, danbooruAuthHeader(scheduledEntry, allSources))
+        val targetFile = resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
             ?: run {
                 mainQueueCount = homeFiles.size
                 if (homeFiles.isEmpty()) {
@@ -175,7 +189,7 @@ class WallpaperWorker(
             }
 
         // For per-screen mode, pick a separate lock file (different from home when possible).
-        val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && scheduledEntry == null) {
+        val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
             val candidates = lockFiles.filter { it.absolutePath != targetFile.absolutePath }
             candidates.ifEmpty { lockFiles }.randomOrNull() ?: targetFile
         } else targetFile
@@ -224,8 +238,12 @@ class WallpaperWorker(
             val screenBitmap = scaleBitmap(homeBitmap)
             homeBitmap.recycle()
 
+            val isTargetNsfw = prefs.nsfwFileNames.first().contains(targetFile.name)
+            // Opt-in: NSFW-tagged wallpapers stay off the lock screen regardless of the global target.
+            val effectiveTarget = if (isTargetNsfw && prefs.nsfwHomeOnly.first()) WallpaperTarget.HOME_ONLY else settings.wallpaperTarget
+
             try {
-                when (settings.wallpaperTarget) {
+                when (effectiveTarget) {
                     WallpaperTarget.HOME_ONLY -> wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
                     WallpaperTarget.LOCK_ONLY -> wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_LOCK)
                     WallpaperTarget.BOTH -> {
@@ -252,7 +270,7 @@ class WallpaperWorker(
                 val now = System.currentTimeMillis()
                 prefs.recordRotationAndIncrement()
 
-                val matchingEntry = scheduledEntry
+                val matchingEntry = effectiveScheduledEntry
                     ?: allWallpapers.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
                 // Update lastRotationMs for per-collection interval tracking
@@ -295,7 +313,7 @@ class WallpaperWorker(
                     setMs = now,
                 )
 
-                postWallpaperSetNotification(screenBitmap)
+                postWallpaperSetNotification(screenBitmap, isTargetNsfw && prefs.nsfwBlurEnabled.first())
             } finally {
                 screenBitmap.recycle()
             }
@@ -365,6 +383,7 @@ class WallpaperWorker(
         entry: LocalWallpaperEntry?,
         feedRepository: FeedRepository,
         imageDir: File,
+        prefs: RotatoPreferences,
         authHeader: String? = null,
     ): File? {
         if (entry == null) return null
@@ -374,9 +393,11 @@ class WallpaperWorker(
                     File(applicationContext.filesDir, entry.fullUrl).takeIf { it.exists() }
                 }
                 entry.fullUrl.isBlank() -> null
-                !feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, authHeader) -> null
-                else -> imageDir.listFiles()?.firstOrNull {
-                    it.isFile && it.nameWithoutExtension == sanitizeFilename(entry.sourceId)
+                else -> {
+                    val fileName = feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, authHeader)
+                        ?: return@withContext null
+                    if (entry.isNsfw) prefs.setFileNsfw(fileName, true)
+                    imageDir.listFiles()?.firstOrNull { it.isFile && it.name == fileName }
                 }
             }
         }
@@ -446,7 +467,7 @@ class WallpaperWorker(
         FavoriteWallpaperReceiver.saveWallpaperToFavorites(listPrefs, wallpaper)
     }
 
-    private fun postWallpaperSetNotification(bitmap: Bitmap) {
+    private fun postWallpaperSetNotification(bitmap: Bitmap, blurThumbnail: Boolean) {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         if (!nm.areNotificationsEnabled()) return
 
@@ -474,8 +495,8 @@ class WallpaperWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val thumb = centerCropBitmap(bitmap, NOTIF_THUMB_W, NOTIF_THUMB_H)
-        val bigPicture = centerCropBitmap(bitmap, NOTIF_BIG_W, NOTIF_BIG_H)
+        val thumb = centerCropBitmap(bitmap, NOTIF_THUMB_W, NOTIF_THUMB_H).let { if (blurThumbnail) it.alsoBlurAndRecycle() else it }
+        val bigPicture = centerCropBitmap(bitmap, NOTIF_BIG_W, NOTIF_BIG_H).let { if (blurThumbnail) it.alsoBlurAndRecycle() else it }
         val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WALLPAPER_SET)
             .setContentTitle("Wallpaper changed")
             .setContentText("Tap to open Rotato")
@@ -574,4 +595,19 @@ private fun centerCropBitmap(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
     val scaled = Bitmap.createScaledBitmap(cropped, targetW, targetH, true)
     if (cropped !== src) cropped.recycle()
     return scaled
+}
+
+/**
+ * Cheap privacy blur for a notification thumbnail: downscale hard then upscale back with
+ * filtering. No RenderScript/RenderEffect dependency needed for a small, disposable bitmap —
+ * this just needs to obscure content, not look pretty. Recycles the receiver.
+ */
+private fun Bitmap.alsoBlurAndRecycle(): Bitmap {
+    val downW = (width / 12).coerceAtLeast(1)
+    val downH = (height / 12).coerceAtLeast(1)
+    val small = Bitmap.createScaledBitmap(this, downW, downH, true)
+    val blurred = Bitmap.createScaledBitmap(small, width, height, true)
+    small.recycle()
+    recycle()
+    return blurred
 }

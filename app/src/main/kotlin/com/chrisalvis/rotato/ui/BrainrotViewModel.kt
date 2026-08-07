@@ -150,6 +150,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         .map { it.videoPreviewMode }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
 
+    val nsfwBlurEnabled: StateFlow<Boolean> = prefs.nsfwBlurEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     val brainrotFilters: StateFlow<BrainrotFilters> = prefs.brainrotFilters
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrainrotFilters())
 
@@ -739,7 +742,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val settings = prefs.settings.first()
                 val wm = WallpaperManager.getInstance(app)
-                val flags = when (settings.wallpaperTarget) {
+                val effectiveTarget = if (wp.isNsfw && prefs.nsfwHomeOnly.first()) WallpaperTarget.HOME_ONLY else settings.wallpaperTarget
+                val flags = when (effectiveTarget) {
                     WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
                     WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                     WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
@@ -781,8 +785,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         _downloadingIds.update { it + key }
                         try {
                             val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                            val downloaded = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
-                            if (downloaded) {
+                            val downloadedFile = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                            if (downloadedFile != null) {
+                                if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)
                                 val history = historyFromJson(prefs.historyJson.first()).toMutableList()
                                 history.add(0, WallpaperHistoryItem(
                                     thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl,
@@ -1123,9 +1128,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _downloadingIds.update { it + key }
             try {
                 val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                val ok = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                val downloadedFile = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
                 val ctx = getApplication<Application>().applicationContext
-                if (ok) {
+                if (downloadedFile != null) {
+                    if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)
                     val history = historyFromJson(prefs.historyJson.first()).toMutableList()
                     history.add(0, WallpaperHistoryItem(
                         thumbUrl = wp.thumbUrl,

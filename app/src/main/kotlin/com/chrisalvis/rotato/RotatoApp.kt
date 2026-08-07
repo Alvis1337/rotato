@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.VideoFrameDecoder
 import com.chrisalvis.rotato.data.AppErrorLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.Interceptor
@@ -35,6 +36,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
             .build()
         return ImageLoader.Builder(this)
             .okHttpClient(client)
+            .components { add(VideoFrameDecoder.Factory()) }
             .build()
     }
 

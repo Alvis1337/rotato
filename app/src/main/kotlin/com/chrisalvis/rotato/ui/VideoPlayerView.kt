@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -94,8 +97,10 @@ fun VideoPlayerView(
     modifier: Modifier = Modifier,
     muted: Boolean = true,
     allowTapToToggle: Boolean = false,
+    showMuteButton: Boolean = false,
 ) {
     val context = LocalContext.current
+    var isMuted by remember(url) { mutableStateOf(muted) }
     val exoPlayer = remember(url) {
         val dataSourceFactory = DefaultHttpDataSource.Factory().apply {
             refererFor(url)?.let { referer -> setDefaultRequestProperties(mapOf("Referer" to referer)) }
@@ -106,7 +111,7 @@ fun VideoPlayerView(
             .apply {
                 setMediaItem(MediaItem.fromUri(url))
                 repeatMode = ExoPlayer.REPEAT_MODE_ALL
-                volume = if (muted) 0f else 1f
+                volume = if (isMuted) 0f else 1f
                 prepare()
                 playWhenReady = true
             }
@@ -147,6 +152,23 @@ fun VideoPlayerView(
                     .size(64.dp)
                     .background(Color.Black.copy(alpha = 0.4f), CircleShape)
                     .padding(12.dp)
+            )
+        }
+        if (showMuteButton) {
+            Icon(
+                if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                contentDescription = if (isMuted) "Unmute" else "Mute",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+                    .size(36.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    .clickable {
+                        isMuted = !isMuted
+                        exoPlayer.volume = if (isMuted) 0f else 1f
+                    }
+                    .padding(8.dp)
             )
         }
     }

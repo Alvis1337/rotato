@@ -50,7 +50,7 @@ object DanbooruEngine : PluginEngine() {
             }
             null
         } ?: return@onIO null
-        buildWallpaper(post, base, manifest)
+        buildWallpaper(post, base, manifest, nsfw)
     }
 
     override suspend fun fetchPage(
@@ -83,7 +83,7 @@ object DanbooruEngine : PluginEngine() {
             val w = obj.optInt("image_width"); val h = obj.optInt("image_height")
             if (!filters.matches(w, h)) return@mapNotNull null
             if (obj.optString("file_url").isBlank() && obj.optString("large_file_url").isBlank()) return@mapNotNull null
-            buildWallpaper(obj, base, manifest)
+            buildWallpaper(obj, base, manifest, nsfw)
         }
     }
 
@@ -133,7 +133,7 @@ object DanbooruEngine : PluginEngine() {
         }.trim()
     }
 
-    private fun buildWallpaper(post: org.json.JSONObject, base: String, manifest: PluginManifest): BrainrotWallpaper? {
+    private fun buildWallpaper(post: org.json.JSONObject, base: String, manifest: PluginManifest, nsfw: Boolean): BrainrotWallpaper? {
         val largeUrl = post.optString("large_file_url")
         val fullUrl = post.optString("file_url").ifBlank { largeUrl }
         if (unsupportedExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return null
@@ -153,7 +153,8 @@ object DanbooruEngine : PluginEngine() {
                     post.optString("tag_string_copyright"))
                 .trim().split(' ').filter { it.isNotBlank() }
                 .map { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() },
-            isVideo = isVideo
+            isVideo = isVideo,
+            isNsfw = nsfw
         )
     }
 }

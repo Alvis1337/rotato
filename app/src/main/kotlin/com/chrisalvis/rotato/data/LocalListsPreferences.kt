@@ -171,7 +171,8 @@ class LocalListsPreferences(private val context: Context) {
                 resolution = wallpaper.resolution,
                 pageUrl = wallpaper.pageUrl,
                 tags = wallpaper.tags,
-                isVideo = wallpaper.isVideo
+                isVideo = wallpaper.isVideo,
+                isNsfw = wallpaper.isNsfw
             )
             prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
             added = true
@@ -326,7 +327,8 @@ class LocalListsPreferences(private val context: Context) {
                 pageUrl = o.optString("pageUrl", ""),
                 tags = if (tagsArr != null) (0 until tagsArr.length()).map { tagsArr.getString(it) } else emptyList(),
                 addedAt = o.optLong("addedAt", System.currentTimeMillis()),
-                isVideo = o.optBoolean("isVideo", false)
+                isVideo = o.optBoolean("isVideo", false),
+                isNsfw = o.optBoolean("isNsfw", false)
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -347,6 +349,7 @@ class LocalListsPreferences(private val context: Context) {
                     put("tags", JSONArray(e.tags))
                     put("addedAt", e.addedAt)
                     put("isVideo", e.isVideo)
+                    put("isNsfw", e.isNsfw)
                 })
             }
         }.toString()

@@ -272,6 +272,8 @@ private fun LibraryContent(
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
     val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
     val wallpaperRatings by viewModel.wallpaperRatings.collectAsStateWithLifecycle()
+    val nsfwFileNames by viewModel.nsfwFileNames.collectAsStateWithLifecycle()
+    val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
     val lastSkipReason by viewModel.lastSkipReason.collectAsStateWithLifecycle()
     val setNowErrorMessage by viewModel.setNowErrorMessage.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
@@ -415,6 +417,8 @@ private fun LibraryContent(
                                 rating = wallpaperRatings[file.name] ?: 0,
                                 isSelected = isSelected,
                                 inSelectionMode = inSelectionMode,
+                                isNsfw = file.name in nsfwFileNames,
+                                nsfwBlurEnabled = nsfwBlurEnabled,
                                 onClick = { if (!inSelectionMode) selectedFile = file },
                             )
                         }
@@ -672,6 +676,8 @@ private fun ImageThumbnail(
     rating: Int = 0,
     isSelected: Boolean,
     inSelectionMode: Boolean,
+    isNsfw: Boolean = false,
+    nsfwBlurEnabled: Boolean = true,
     onClick: () -> Unit = {},
     onLongClick: (() -> Unit)? = null
 ) {
@@ -679,6 +685,8 @@ private fun ImageThumbnail(
     val badgeInfo = remember(file.absolutePath, file.length(), file.lastModified()) {
         readImageBadgeInfo(file)
     }
+    var revealed by rememberNsfwRevealed(file.absolutePath)
+    val isBlurred = isNsfw && nsfwBlurEnabled && !revealed
 
     Box(
         modifier = Modifier
@@ -690,7 +698,7 @@ private fun ImageThumbnail(
             )
             .then(
                 if (!inSelectionMode) Modifier.combinedClickable(
-                    onClick = onClick,
+                    onClick = { if (isBlurred) revealed = true else onClick() },
                     onLongClick = onLongClick
                 ) else Modifier
             )
@@ -702,8 +710,10 @@ private fun ImageThumbnail(
                 .build(),
             contentDescription = if (isSelected) "Wallpaper (selected)" else "Wallpaper",
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().nsfwContentBlur(isNsfw, nsfwBlurEnabled, revealed)
         )
+
+        NsfwBlurLayer(isNsfw, nsfwBlurEnabled, revealed, compact = true)
 
         if (isSelected) {
             Box(

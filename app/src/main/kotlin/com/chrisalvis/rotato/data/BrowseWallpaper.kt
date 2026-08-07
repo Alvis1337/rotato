@@ -11,5 +11,6 @@ data class BrowseWallpaper(
     val source: String = "",
     val tags: List<String> = emptyList(),
     val resolution: String = "",
-    val isVideo: Boolean = false
+    val isVideo: Boolean = false,
+    val isNsfw: Boolean = false
 )

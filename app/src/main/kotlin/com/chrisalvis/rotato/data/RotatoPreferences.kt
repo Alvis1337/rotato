@@ -74,6 +74,12 @@ class RotatoPreferences(private val context: Context) {
         val AUTO_REFILL_MIN_COUNT = intPreferencesKey("auto_refill_min_count")
         val INTEREST_ALIGN_ENABLED = booleanPreferencesKey("interest_align_enabled")
         val VIDEO_PREVIEW_MODE = stringPreferencesKey("video_preview_mode")
+        val NSFW_FILES = stringPreferencesKey("nsfw_files_json")
+        val NSFW_BLUR_ENABLED = booleanPreferencesKey("nsfw_blur_enabled")
+        val NSFW_HOME_ONLY = booleanPreferencesKey("nsfw_home_only")
+        val STEALTH_COLLECTION_ID = stringPreferencesKey("stealth_collection_id")
+        val STEALTH_ACTIVE = booleanPreferencesKey("stealth_active")
+        val STEALTH_PREV_NSFW_MODE = booleanPreferencesKey("stealth_prev_nsfw_mode")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -125,6 +131,38 @@ class RotatoPreferences(private val context: Context) {
     val widgetCollectionId: Flow<String> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[WIDGET_COLLECTION_ID] ?: "" }
+
+    /**
+     * Filenames (in the rotation pool dir, e.g. "12345.jpg") known to be NSFW. Rotation-pool files
+     * are plain files on disk with no other metadata, so this is the only way WallpaperWorker can
+     * later recognize an NSFW file once it's orphaned from its originating LocalWallpaperEntry.
+     */
+    val nsfwFileNames: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            try {
+                val arr = JSONArray(prefs[NSFW_FILES] ?: "[]")
+                (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toSet()
+            } catch (_: Exception) {
+                emptySet()
+            }
+        }
+
+    val nsfwBlurEnabled: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[NSFW_BLUR_ENABLED] ?: true }
+
+    val nsfwHomeOnly: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[NSFW_HOME_ONLY] ?: false }
+
+    val stealthCollectionId: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[STEALTH_COLLECTION_ID] ?: "" }
+
+    val stealthActive: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[STEALTH_ACTIVE] ?: false }
 
     suspend fun setEnabled(enabled: Boolean) {
         context.dataStore.edit { it[IS_ENABLED] = enabled }
@@ -184,6 +222,48 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setWidgetCollectionId(id: String) {
         context.dataStore.edit { it[WIDGET_COLLECTION_ID] = id }
+    }
+
+    suspend fun setFileNsfw(fileName: String, isNsfw: Boolean) {
+        if (fileName.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val current = try {
+                val arr = JSONArray(prefs[NSFW_FILES] ?: "[]")
+                (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableSet()
+            } catch (_: Exception) {
+                mutableSetOf()
+            }
+            if (isNsfw) current.add(fileName) else current.remove(fileName)
+            prefs[NSFW_FILES] = JSONArray(current.toList()).toString()
+        }
+    }
+
+    suspend fun setNsfwBlurEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[NSFW_BLUR_ENABLED] = enabled }
+    }
+
+    suspend fun setNsfwHomeOnly(enabled: Boolean) {
+        context.dataStore.edit { it[NSFW_HOME_ONLY] = enabled }
+    }
+
+    suspend fun setStealthCollectionId(id: String) {
+        context.dataStore.edit { it[STEALTH_COLLECTION_ID] = id }
+    }
+
+    /**
+     * Activating stealth remembers the current global NSFW mode so it can be restored on
+     * deactivation, then forces NSFW mode off. Deactivating restores whatever it was before.
+     */
+    suspend fun setStealthActive(active: Boolean) {
+        context.dataStore.edit { prefs ->
+            if (active) {
+                prefs[STEALTH_PREV_NSFW_MODE] = prefs[NSFW_MODE] ?: false
+                prefs[NSFW_MODE] = false
+            } else {
+                prefs[NSFW_MODE] = prefs[STEALTH_PREV_NSFW_MODE] ?: prefs[NSFW_MODE] ?: false
+            }
+            prefs[STEALTH_ACTIVE] = active
+        }
     }
 
     /** User-selected theme mode: SYSTEM (default), LIGHT, DARK, or AMOLED. */

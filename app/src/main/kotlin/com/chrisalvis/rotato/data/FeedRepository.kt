@@ -18,16 +18,17 @@ private const val TAG = "FeedRepository"
 
 class FeedRepository(private val imageDir: File) {
 
-    suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): Boolean = withContext(Dispatchers.IO) {
+    /** Downloads into the rotation pool. Returns the resulting on-disk filename (e.g. "12345.jpg"), or null on failure. */
+    suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): String? = withContext(Dispatchers.IO) {
         if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper: sourceId=$sourceId, fullUrl=$fullUrl")
         if (fullUrl.isBlank()) {
             Log.e(TAG, "downloadWallpaper: fullUrl is blank!")
-            return@withContext false
+            return@withContext null
         }
         val sanitized = sanitizeFilename(sourceId)
         // Check if any previously-downloaded file for this sourceId is still valid (extension-agnostic).
         val existing = imageDir.listFiles()?.firstOrNull { it.nameWithoutExtension == sanitized }
-        if (existing != null && existing.isValidImage()) return@withContext true
+        if (existing != null && existing.isValidImage()) return@withContext existing.name
         existing?.delete() // corrupt or stale — force re-download
 
         return@withContext try {
@@ -36,19 +37,20 @@ class FeedRepository(private val imageDir: File) {
                 if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper: primary URL failed, retrying with fallback: $fallbackUrl")
                 pair = downloadBytesWithMime(fallbackUrl, authHeader)
             }
-            val (bytes, contentType) = pair ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
+            val (bytes, contentType) = pair ?: return@withContext null.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
             // Prefer Content-Type header, fall back to URL suffix, then magic bytes.
             val ext = detectExtFromContentType(contentType)
                 ?: fullUrl.substringAfterLast('.').substringBefore('?').take(5).lowercase().takeIf { it.matches("[a-z]+".toRegex()) }
                 ?: detectExtFromBytes(bytes)
                 ?: "jpg"
             imageDir.mkdirs()
-            File(imageDir, "$sanitized.$ext").writeBytes(bytes)
-            if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper successful: $sanitized.$ext")
-            true
+            val fileName = "$sanitized.$ext"
+            File(imageDir, fileName).writeBytes(bytes)
+            if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper successful: $fileName")
+            fileName
         } catch (e: Exception) {
             Log.e(TAG, "downloadWallpaper failed for $fullUrl", e)
-            false
+            null
         }
     }
 

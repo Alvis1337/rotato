@@ -101,7 +101,8 @@ object RedditEngine : PluginEngine() {
             resolution = if (width > 0 && height > 0) "${width}x${height}" else "",
             pageUrl = if (permalink.isNotBlank()) "https://reddit.com$permalink" else "https://reddit.com/r/$subreddit",
             tags = listOf(subreddit),
-            isVideo = isVideo
+            isVideo = isVideo,
+            isNsfw = post.optBoolean("over_18", false)
         )
     }
 

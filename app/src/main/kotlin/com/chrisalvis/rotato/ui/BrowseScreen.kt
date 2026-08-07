@@ -857,7 +857,8 @@ private fun WallpaperDetailSheet(
                         .heightIn(max = 280.dp)
                         .padding(horizontal = 16.dp)
                         .clip(MaterialTheme.shapes.medium),
-                    allowTapToToggle = true
+                    allowTapToToggle = true,
+                    showMuteButton = true
                 )
             } else {
                 AsyncImage(
@@ -1725,7 +1726,8 @@ private fun BrowseWallpaper.toLocalWallpaperEntry(listId: String) = LocalWallpap
     resolution = resolution,
     pageUrl = "",
     tags = tags,
-    isVideo = isVideo
+    isVideo = isVideo,
+    isNsfw = isNsfw
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1742,10 +1744,11 @@ private fun WallpaperThumbnail(
     onTap: () -> Unit,
     onLongPress: () -> Unit
 ) {
-    val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !com.chrisalvis.rotato.data.MediaType.isVideoUrl(wallpaper.thumbUrl)
     val previewSlot = wallpaper.isVideo &&
         rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
-    val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
+    // For video without a usable static thumbnail, model falls back to the video URL itself —
+    // coil-video's VideoFrameDecoder (registered app-wide) decodes a still frame from it.
+    val showThumb = !wallpaper.isVideo || videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF
 
     Box(
         modifier = Modifier
@@ -1759,7 +1762,7 @@ private fun WallpaperThumbnail(
                 url = wallpaper.fullUrl,
                 modifier = Modifier.fillMaxSize()
             )
-        } else if (showStaticThumb || !wallpaper.isVideo) {
+        } else if (showThumb) {
             SubcomposeAsyncImage(
                 model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
                 contentDescription = wallpaper.animeTitle.ifBlank { null },
@@ -2065,7 +2068,8 @@ private fun WallpaperUrlPreviewDialog(
                                 scaleX = shrink
                                 scaleY = shrink
                             },
-                        allowTapToToggle = true
+                        allowTapToToggle = true,
+                        showMuteButton = true
                     )
                 } else if (wp.isVideo) {
                     val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }

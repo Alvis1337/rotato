@@ -60,7 +60,7 @@ object GelbooruEngine : PluginEngine() {
         val post = pickFiltered(arr, filters, exclude) { obj ->
             postId(obj) to (obj.optInt("width") to obj.optInt("height"))
         } ?: return@onIO null
-        buildWallpaper(post, base, manifest, extras)
+        buildWallpaper(post, base, manifest, extras, nsfw)
     }
 
     override suspend fun fetchPage(
@@ -88,7 +88,7 @@ object GelbooruEngine : PluginEngine() {
             if (exclude.contains(postId(post))) return@mapNotNull null
             val w = post.optInt("width"); val h = post.optInt("height")
             if (!filters.matches(w, h)) return@mapNotNull null
-            buildWallpaper(post, base, manifest, extras)
+            buildWallpaper(post, base, manifest, extras, nsfw)
         }
     }
 
@@ -172,6 +172,7 @@ object GelbooruEngine : PluginEngine() {
         base: String,
         manifest: PluginManifest,
         extras: Map<String, String>,
+        nsfw: Boolean,
     ): BrainrotWallpaper? {
         val id = postId(post).ifBlank { return null }
         val fullUrl = resolveImageUrl(post, base, extras)?.ifBlank { return null } ?: return null
@@ -191,7 +192,8 @@ object GelbooruEngine : PluginEngine() {
             resolution = "${post.optInt("width")}x${post.optInt("height")}",
             pageUrl = pageUrl,
             tags = post.optString("tags").split(' ').filter { it.isNotBlank() },
-            isVideo = isVideo
+            isVideo = isVideo,
+            isNsfw = nsfw
         )
     }
 

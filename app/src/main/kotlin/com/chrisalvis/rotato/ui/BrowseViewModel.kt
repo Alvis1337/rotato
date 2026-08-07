@@ -1151,7 +1151,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 val ok = if (wallpaper.source == "device") {
                     copyLocalToRotation(wallpaper.fullUrl, key)
                 } else {
-                    feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+                    val fileName = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+                    if (fileName != null && wallpaper.isNsfw) prefs.setFileNsfw(fileName, true)
+                    fileName != null
                 }
                 if (ok) _inRotation.update { it + key }
             } finally {
@@ -1186,11 +1188,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         if (entry.source == "device") {
                             copyLocalToRotation(wallpaper.fullUrl, key)
                         } else {
-                            feedRepo.downloadWallpaper(
+                            val fileName = feedRepo.downloadWallpaper(
                                 sourceId = entry.sourceId,
                                 fullUrl = wallpaper.fullUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl } },
                                 fallbackUrl = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl },
                             )
+                            if (fileName != null && entry.isNsfw) prefs.setFileNsfw(fileName, true)
+                            fileName != null
                         }
                     } finally {
                         _downloading.update { it - entry.sourceId }
@@ -1532,7 +1536,8 @@ private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpa
     source = source,
     tags = tags,
     resolution = resolution,
-    isVideo = isVideo
+    isVideo = isVideo,
+    isNsfw = isNsfw
 )
 
 /**

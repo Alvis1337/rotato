@@ -104,6 +104,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val wallpaperRatings: StateFlow<Map<String, Int>> = preferences.wallpaperRatings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    val nsfwFileNames: StateFlow<Set<String>> = preferences.nsfwFileNames
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    val nsfwBlurEnabled: StateFlow<Boolean> = preferences.nsfwBlurEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val nsfwHomeOnly: StateFlow<Boolean> = preferences.nsfwHomeOnly
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val stealthCollectionId: StateFlow<String> = preferences.stealthCollectionId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
     val autoPauseSettings: StateFlow<AutoPauseSettings> = preferences.autoPauseSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoPauseSettings())
 
@@ -220,7 +232,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         } else {
                             try {
-                                feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                                val fileName = feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                                if (fileName != null && entry.isNsfw) preferences.setFileNsfw(fileName, true)
                                 changed = true
                             } catch (e: Exception) {
                                 android.util.Log.e("HomeViewModel", "Failed to download rotation wallpaper: ${entry.fullUrl}", e)
@@ -325,6 +338,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setVideoPreviewMode(mode: com.chrisalvis.rotato.data.VideoPreviewMode) {
         viewModelScope.launch { preferences.setVideoPreviewMode(mode) }
+    }
+
+    fun setNsfwBlurEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setNsfwBlurEnabled(enabled) }
+    }
+
+    fun setNsfwHomeOnly(enabled: Boolean) {
+        viewModelScope.launch { preferences.setNsfwHomeOnly(enabled) }
+    }
+
+    fun setStealthCollectionId(id: String) {
+        viewModelScope.launch { preferences.setStealthCollectionId(id) }
     }
 
     fun setWidgetCollectionId(listId: String) {
@@ -506,7 +531,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 val settingsVal = preferences.settings.first()
                 val wallpaperManager = WallpaperManager.getInstance(app)
-                val flags = when (settingsVal.wallpaperTarget) {
+                val isTargetNsfw = preferences.nsfwHomeOnly.first() && preferences.nsfwFileNames.first().contains(file.name)
+                val effectiveTarget = if (isTargetNsfw) com.chrisalvis.rotato.data.WallpaperTarget.HOME_ONLY else settingsVal.wallpaperTarget
+                val flags = when (effectiveTarget) {
                     com.chrisalvis.rotato.data.WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
                     com.chrisalvis.rotato.data.WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                     com.chrisalvis.rotato.data.WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
