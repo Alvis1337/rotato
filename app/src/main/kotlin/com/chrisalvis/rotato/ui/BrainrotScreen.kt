@@ -184,6 +184,14 @@ fun BrainrotScreen(
 
     val gridState = rememberLazyStaggeredGridState()
     val compactGridState = rememberLazyGridState()
+    // Lazy layouts keep a small off-screen buffer mounted for smooth scrolling; video autoplay
+    // should only kick in for items actually within the viewport, not the whole mounted buffer.
+    val visibleStaggeredKeys by remember {
+        derivedStateOf { gridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet() }
+    }
+    val visibleCompactKeys by remember {
+        derivedStateOf { compactGridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet() }
+    }
     val coroutineScope = rememberCoroutineScope()
     val showScrollTop by remember(gridMode) {
         derivedStateOf {
@@ -657,6 +665,7 @@ fun BrainrotScreen(
                                             isSelected = wp.id in batchSelected,
                                             selectionMode = batchMode,
                                             videoPreviewMode = videoPreviewMode,
+                                            isVisible = "${wp.source}:${wp.id}" in visibleCompactKeys,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -734,6 +743,7 @@ fun BrainrotScreen(
                                             isSelected = wp.id in batchSelected,
                                             selectionMode = batchMode,
                                             videoPreviewMode = videoPreviewMode,
+                                            isVisible = "${wp.source}:${wp.id}" in visibleStaggeredKeys,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -1111,6 +1121,7 @@ private fun DiscoverThumbnailGridItem(
     isSelected: Boolean,
     selectionMode: Boolean,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
+    isVisible: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -1118,7 +1129,7 @@ private fun DiscoverThumbnailGridItem(
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
     val imageUrl = wallpaper.thumbUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl } }
     val previewSlot = wallpaper.isVideo &&
-        rememberVideoPreviewSlot(enabled = videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+        rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
     val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
 
     Box(
@@ -1242,6 +1253,7 @@ private fun DiscoverGridItem(
     isSelected: Boolean,
     selectionMode: Boolean,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
+    isVisible: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -1256,7 +1268,7 @@ private fun DiscoverGridItem(
         .ifBlank { null }
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
     val previewSlot = wallpaper.isVideo &&
-        rememberVideoPreviewSlot(enabled = videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+        rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
     val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
 
     Box(

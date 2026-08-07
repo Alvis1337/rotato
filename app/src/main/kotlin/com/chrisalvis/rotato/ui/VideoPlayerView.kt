@@ -24,9 +24,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Some booru CDNs (Gelbooru) reject hotlinked requests without a Referer header and redirect
+ * to a "hotlink blocked" page instead of the actual file. Coil already works around this for
+ * static images via an OkHttp interceptor in RotatoApp — ExoPlayer uses its own network stack
+ * and never sees that interceptor, so video playback needs the same header applied here.
+ */
+private fun refererFor(url: String): String? = when {
+    url.contains("gelbooru.com", ignoreCase = true) -> "https://gelbooru.com/"
+    else -> null
+}
 
 /**
  * Bounds how many grid-preview videos can autoplay at once. Scrolling grids can mount several
@@ -84,13 +97,19 @@ fun VideoPlayerView(
 ) {
     val context = LocalContext.current
     val exoPlayer = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
-            repeatMode = ExoPlayer.REPEAT_MODE_ALL
-            volume = if (muted) 0f else 1f
-            prepare()
-            playWhenReady = true
+        val dataSourceFactory = DefaultHttpDataSource.Factory().apply {
+            refererFor(url)?.let { referer -> setDefaultRequestProperties(mapOf("Referer" to referer)) }
         }
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build()
+            .apply {
+                setMediaItem(MediaItem.fromUri(url))
+                repeatMode = ExoPlayer.REPEAT_MODE_ALL
+                volume = if (muted) 0f else 1f
+                prepare()
+                playWhenReady = true
+            }
     }
     var isPlaying by remember(exoPlayer) { mutableStateOf(true) }
 

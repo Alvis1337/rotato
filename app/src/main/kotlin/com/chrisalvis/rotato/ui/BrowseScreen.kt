@@ -1637,6 +1637,11 @@ private fun WallpaperGridContent(
 
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(listId) { gridState.animateScrollToItem(0) }
+    // Lazy layouts keep a small off-screen buffer mounted for smooth scrolling; video autoplay
+    // should only kick in for items actually within the viewport, not the whole mounted buffer.
+    val visibleKeys by remember {
+        derivedStateOf { gridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet() }
+    }
 
     // Drag-to-select: in selection mode, swipe across thumbnails to bulk-select them.
     // Uses Initial pass so we see events before the scrollable handler; we only consume
@@ -1683,6 +1688,7 @@ private fun WallpaperGridContent(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(wallpapers, key = { it.entryId.ifBlank { "${it.sourceId}:${it.thumbUrl}" } }) { wp ->
+            val key = wp.entryId.ifBlank { "${wp.sourceId}:${wp.thumbUrl}" }
             WallpaperThumbnail(
                 wallpaper = wp,
                 isInRotation = isInRotation(wp),
@@ -1691,6 +1697,7 @@ private fun WallpaperGridContent(
                 isBroken = brokenEntryIds.contains(wp.entryId),
                 selectionMode = selectionMode,
                 videoPreviewMode = videoPreviewMode,
+                isVisible = key in visibleKeys,
                 onTap = { onTap(wp) },
                 onLongPress = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1731,12 +1738,13 @@ private fun WallpaperThumbnail(
     isBroken: Boolean,
     selectionMode: Boolean,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
+    isVisible: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !com.chrisalvis.rotato.data.MediaType.isVideoUrl(wallpaper.thumbUrl)
     val previewSlot = wallpaper.isVideo &&
-        rememberVideoPreviewSlot(enabled = videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+        rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
     val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
 
     Box(
