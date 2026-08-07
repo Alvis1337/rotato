@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridGridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -1731,41 +1732,31 @@ private fun WallpaperDetailOverlay(
                 }
             }
 
-            val titleTags = wallpaper.tags
-                .map { it.replace('_', ' ').split(" ").joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } } }
-                .take(3)
-            if (titleTags.isNotEmpty()) {
-                Text(
-                    titleTags.joinToString("  ·  "),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
+            // Tag chips — the first chip stands in for the old separate title line, so it's
+            // styled distinctly instead of duplicating the same text twice on screen.
             if (wallpaper.tags.isNotEmpty()) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = PaddingValues(horizontal = 2.dp)
                 ) {
-                    items(wallpaper.tags, key = { it }) { tag ->
+                    itemsIndexed(wallpaper.tags, key = { _, tag -> tag }) { index, tag ->
+                        val isLead = index == 0
                         SuggestionChip(
                             onClick = { tagActionTag = tag },
                             label = {
                                 Text(
                                     tag.replace('_', ' '),
-                                    style = MaterialTheme.typography.labelSmall
+                                    style = if (isLead) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isLead) FontWeight.Bold else FontWeight.Normal
                                 )
                             },
                             colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = Color.White.copy(alpha = 0.12f),
+                                containerColor = if (isLead) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f),
                                 labelColor = Color.White
                             ),
                             border = SuggestionChipDefaults.suggestionChipBorder(
                                 enabled = true,
-                                borderColor = Color.White.copy(alpha = 0.25f),
+                                borderColor = Color.White.copy(alpha = if (isLead) 0.4f else 0.25f),
                                 disabledBorderColor = Color.White.copy(alpha = 0.1f)
                             )
                         )
@@ -1786,13 +1777,17 @@ private fun WallpaperDetailOverlay(
             val isDownloading = isDownloadingFn(wallpaper)
             val isSavingToGallery = isSavingToGalleryFn(wallpaper)
 
+            // Primary actions: Save and Skip are the two things you actually do on every card
+            // (tracked as session stats above), so they're the only same-weight pair here.
+            // Everything else — download, gallery, share, block, set-as-wallpaper, report — is
+            // secondary and lives behind the overflow menu instead of its own same-size circle.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 var showBookmarkMenu by remember { mutableStateOf(false) }
-                Box(modifier = Modifier.weight(1f)) {
+                Box {
                     FilledIconButton(
                         onClick = {
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -1802,10 +1797,10 @@ private fun WallpaperDetailOverlay(
                                 onAddToList(wallpaper, null)
                             }
                         },
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(52.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(26.dp))
                     }
 
                     DropdownMenu(
@@ -1826,63 +1821,14 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
-                OutlinedIconButton(
-                    onClick = { onDownloadToRotation(wallpaper) },
-                    enabled = !isDownloading && !wallpaper.isVideo,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                OutlinedButton(
+                    onClick = { onSkip(wallpaper); onDismiss() },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
                 ) {
-                    if (isDownloading) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                    } else {
-                        Icon(
-                            Icons.Default.Download,
-                            contentDescription = if (wallpaper.isVideo) "Videos can't be set as wallpaper" else "Rotation",
-                            tint = if (wallpaper.isVideo) Color.White.copy(alpha = 0.35f) else Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                OutlinedIconButton(
-                    onClick = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        onSaveToGallery(wallpaper)
-                    },
-                    enabled = !isSavingToGallery,
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    if (isSavingToGallery) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                    } else {
-                        Icon(Icons.Default.SaveAlt, contentDescription = "Gallery", tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                }
-
-                OutlinedIconButton(
-                    onClick = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, wallpaper.fullUrl)
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share"))
-                    },
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
-                }
-
-                OutlinedIconButton(
-                    onClick = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        onBlock(wallpaper)
-                    },
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Block, contentDescription = "Never show again", tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Skip", color = Color.White)
                 }
 
                 var showMore by remember { mutableStateOf(false) }
@@ -1900,6 +1846,34 @@ private fun WallpaperDetailOverlay(
                         onDismissRequest = { showMore = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
+                        DropdownMenuItem(
+                            text = { Text(if (isDownloading) "Adding to rotation…" else "Add to rotation", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = { onDownloadToRotation(wallpaper); showMore = false },
+                            enabled = !isDownloading && !wallpaper.isVideo,
+                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isSavingToGallery) "Saving…" else "Save to gallery", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                onSaveToGallery(wallpaper)
+                                showMore = false
+                            },
+                            enabled = !isSavingToGallery,
+                            leadingIcon = { Icon(Icons.Default.SaveAlt, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, wallpaper.fullUrl)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                                showMore = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                        )
                         if (!wallpaper.isVideo) {
                             DropdownMenuItem(
                                 text = { Text("Set as wallpaper", style = MaterialTheme.typography.bodyMedium) },
@@ -1912,18 +1886,17 @@ private fun WallpaperDetailOverlay(
                             onClick = { onReport(wallpaper); showMore = false },
                             leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Never show again", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                onBlock(wallpaper)
+                                showMore = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) }
+                        )
                     }
                 }
-            }
-
-            OutlinedButton(
-                onClick = { onSkip(wallpaper); onDismiss() },
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
-            ) {
-                Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Skip", color = Color.White)
             }
         }
 
