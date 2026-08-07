@@ -10,5 +10,6 @@ data class BrowseWallpaper(
     /** "device" for locally-uploaded images, otherwise the source plugin name. */
     val source: String = "",
     val tags: List<String> = emptyList(),
-    val resolution: String = ""
+    val resolution: String = "",
+    val isVideo: Boolean = false
 )

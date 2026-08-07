@@ -8,5 +8,6 @@ data class BrainrotWallpaper(
     val fullUrl: String,    // original resolution for full-screen / wallpaper
     val resolution: String,
     val pageUrl: String,
-    val tags: List<String>
+    val tags: List<String>,
+    val isVideo: Boolean = false
 )

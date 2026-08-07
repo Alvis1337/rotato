@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.matches
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -83,7 +84,8 @@ object ZerochanEngine : PluginEngine() {
             thumbUrl = thumbUrl, sampleUrl = sampleUrl, fullUrl = fullUrl,
             resolution = "${detail.optInt("width", item.optInt("width"))}x${detail.optInt("height", item.optInt("height"))}",
             pageUrl = "$base/$id",
-            tags = tags
+            tags = tags,
+            isVideo = MediaType.isVideoUrl(fullUrl)
         )
     }
 

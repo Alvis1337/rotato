@@ -4,6 +4,7 @@ import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.MinResolution
 
 /** Engine for the Wallhaven API (`/api/v1/search?sorting=random`). */
@@ -89,7 +90,8 @@ object WallhavenEngine : PluginEngine() {
             thumbUrl = thumbUrl, sampleUrl = fullUrl, fullUrl = fullUrl,
             resolution = post.optString("resolution").ifBlank { "" },
             pageUrl = "$base/w/$id",
-            tags = effectiveTags
+            tags = effectiveTags,
+            isVideo = MediaType.isVideoUrl(fullUrl)
         )
     }
 

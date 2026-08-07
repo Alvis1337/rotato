@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.matches
 import okhttp3.Request
 import org.json.JSONArray
@@ -10,7 +11,8 @@ import org.json.JSONArray
 /** Engine for Danbooru-compatible APIs (Basic auth, `/posts.json?random=true`). */
 object DanbooruEngine : PluginEngine() {
     override val protocol = Protocol.DANBOORU
-    private val videoExts = listOf(".mp4", ".webm", ".zip")
+    // Ugoira (zip of frames) has no standalone video container we can play — still unsupported.
+    private val unsupportedExts = listOf(".zip")
     private val accountLevelCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private const val GOLD_LEVEL = 30
 
@@ -133,9 +135,10 @@ object DanbooruEngine : PluginEngine() {
 
     private fun buildWallpaper(post: org.json.JSONObject, base: String, manifest: PluginManifest): BrainrotWallpaper? {
         val largeUrl = post.optString("large_file_url")
-        val sampleUrl = largeUrl.ifBlank { post.optString("file_url") }
         val fullUrl = post.optString("file_url").ifBlank { largeUrl }
-        if (videoExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return null
+        if (unsupportedExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return null
+        val isVideo = MediaType.isVideoUrl(fullUrl)
+        val sampleUrl = if (isVideo) fullUrl else largeUrl.ifBlank { post.optString("file_url") }
         val id = post.optInt("id", 0).toString()
         return BrainrotWallpaper(
             id = id,
@@ -149,7 +152,8 @@ object DanbooruEngine : PluginEngine() {
                     post.optString("tag_string_character") + " " +
                     post.optString("tag_string_copyright"))
                 .trim().split(' ').filter { it.isNotBlank() }
-                .map { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }
+                .map { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() },
+            isVideo = isVideo
         )
     }
 }

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
@@ -845,16 +846,27 @@ private fun WallpaperDetailSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            AsyncImage(
-                model = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl },
-                contentDescription = wallpaper.animeTitle.ifBlank { null },
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 280.dp)
-                    .padding(horizontal = 16.dp)
-                    .clip(MaterialTheme.shapes.medium)
-            )
+            if (wallpaper.isVideo) {
+                VideoPlayerView(
+                    url = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .padding(horizontal = 16.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                )
+            } else {
+                AsyncImage(
+                    model = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl },
+                    contentDescription = wallpaper.animeTitle.ifBlank { null },
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .padding(horizontal = 16.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                )
+            }
             if (wallpaper.animeTitle.isNotBlank()) {
                 Text(
                     wallpaper.animeTitle,
@@ -870,16 +882,18 @@ private fun WallpaperDetailSheet(
                 )
             }
             HorizontalDivider()
-            ListItem(
-                headlineContent = { Text(if (isInRotation) "Remove from Library" else "Add to Library") },
-                leadingContent = {
-                    Icon(
-                        if (isInRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
-                        contentDescription = null
-                    )
-                },
-                modifier = Modifier.clickable(onClick = onToggleRotation)
-            )
+            if (!wallpaper.isVideo) {
+                ListItem(
+                    headlineContent = { Text(if (isInRotation) "Remove from Library" else "Add to Library") },
+                    leadingContent = {
+                        Icon(
+                            if (isInRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
+                            contentDescription = null
+                        )
+                    },
+                    modifier = Modifier.clickable(onClick = onToggleRotation)
+                )
+            }
             if (!isDeviceImage) {
                 ListItem(
                     headlineContent = { Text("Save to gallery") },
@@ -897,11 +911,13 @@ private fun WallpaperDetailSheet(
                 leadingContent = { Icon(Icons.Default.Share, contentDescription = null) },
                 modifier = Modifier.clickable(onClick = onShare)
             )
-            ListItem(
-                headlineContent = { Text("Set as cover") },
-                leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = { onSetAsCover(); onDismiss() })
-            )
+            if (!wallpaper.isVideo) {
+                ListItem(
+                    headlineContent = { Text("Set as cover") },
+                    leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = { onSetAsCover(); onDismiss() })
+                )
+            }
             ListItem(
                 headlineContent = { Text("Remove from collection", color = MaterialTheme.colorScheme.error) },
                 leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
@@ -1695,7 +1711,8 @@ private fun BrowseWallpaper.toLocalWallpaperEntry(listId: String) = LocalWallpap
     fullUrl = fullUrl,
     resolution = resolution,
     pageUrl = "",
-    tags = tags
+    tags = tags,
+    isVideo = isVideo
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1736,6 +1753,15 @@ private fun WallpaperThumbnail(
                 }
             }
         )
+
+        if (wallpaper.isVideo) {
+            Icon(
+                Icons.Default.PlayCircle,
+                contentDescription = "Video",
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(32.dp)
+            )
+        }
 
         // Subtle scrim when selected (matches HomeScreen pattern)
         if (isSelected) {
@@ -1989,44 +2015,57 @@ private fun WallpaperUrlPreviewDialog(
             ) { page ->
                 val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager
                 val imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }
-                SubcomposeAsyncImage(
-                    model = imageUrl,
-                    contentDescription = wp.animeTitle.ifBlank { null },
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
-                            scaleX = shrink
-                            scaleY = shrink
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures(onDoubleTap = { showZoom = true })
-                        },
-                    error = {
-                        Box(
-                            Modifier.fillMaxSize().background(Color.Black),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                if (wp.isVideo) {
+                    VideoPlayerView(
+                        url = imageUrl,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                                scaleX = shrink
+                                scaleY = shrink
+                            }
+                    )
+                } else {
+                    SubcomposeAsyncImage(
+                        model = imageUrl,
+                        contentDescription = wp.animeTitle.ifBlank { null },
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                                scaleX = shrink
+                                scaleY = shrink
+                            }
+                            .pointerInput(Unit) {
+                                detectTapGestures(onDoubleTap = { showZoom = true })
+                            },
+                        error = {
+                            Box(
+                                Modifier.fillMaxSize().background(Color.Black),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    Icons.Outlined.Wallpaper,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.4f),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Text(
-                                    "Image unavailable",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Wallpaper,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        "Image unavailable",
+                                        color = Color.White.copy(alpha = 0.6f),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             // Close button
@@ -2149,9 +2188,10 @@ private fun WallpaperUrlPreviewDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Primary: Add/Remove Library
+                        // Primary: Add/Remove Library (videos can't be set as a wallpaper — view only)
                         FilledIconButton(
                             onClick = { onToggleRotation(wp) },
+                            enabled = !wp.isVideo,
                             modifier = Modifier.size(56.dp),
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = if (inRotation) MaterialTheme.colorScheme.primary
@@ -2160,7 +2200,8 @@ private fun WallpaperUrlPreviewDialog(
                         ) {
                             Icon(
                                 if (inRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
-                                contentDescription = if (inRotation) "Remove from Library" else "Add to Library",
+                                contentDescription = if (wp.isVideo) "Videos can't be set as wallpaper"
+                                    else if (inRotation) "Remove from Library" else "Add to Library",
                                 modifier = Modifier.size(26.dp),
                                 tint = Color.White
                             )
@@ -2177,6 +2218,7 @@ private fun WallpaperUrlPreviewDialog(
 
                         OutlinedIconButton(
                             onClick = { onSetAsCover(wp) },
+                            enabled = !wp.isVideo,
                             modifier = Modifier.size(44.dp),
                             border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                         ) {

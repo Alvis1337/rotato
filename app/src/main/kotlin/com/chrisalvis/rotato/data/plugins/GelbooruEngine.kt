@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.matches
 import okhttp3.Request
 import org.json.JSONArray
@@ -35,7 +36,6 @@ import org.json.JSONObject
  */
 object GelbooruEngine : PluginEngine() {
     override val protocol = Protocol.GELBOORU
-    private val videoExts = listOf(".mp4", ".webm", ".mkv", ".avi", ".mov")
 
     override suspend fun fetch(
         manifest: PluginManifest,
@@ -175,10 +175,11 @@ object GelbooruEngine : PluginEngine() {
     ): BrainrotWallpaper? {
         val id = postId(post).ifBlank { return null }
         val fullUrl = resolveImageUrl(post, base, extras)?.ifBlank { return null } ?: return null
-        if (videoExts.any { fullUrl.endsWith(it, ignoreCase = true) }) return null
-        val sampleUrl = post.optString("sample_url").ifBlank { fullUrl }
-            .let { if (videoExts.any { ext -> it.endsWith(ext, ignoreCase = true) }) fullUrl else it }
-        val thumbUrl = post.optString("preview_url").ifBlank { sampleUrl }
+        val isVideo = MediaType.isVideoUrl(fullUrl)
+        // preview_url is always a static frame/thumbnail, even for video posts — safe for grid/thumb use.
+        val thumbUrl = post.optString("preview_url").ifBlank { fullUrl }
+        // For video posts, always play the full-quality file rather than a (possibly static-frame) sample.
+        val sampleUrl = if (isVideo) fullUrl else post.optString("sample_url").ifBlank { fullUrl }
         val pageUrlTemplate = extras["pageUrlTemplate"] ?: "{base}/index.php?page=post&s=view&id={id}"
         val pageUrl = pageUrlTemplate.replace("{base}", base).replace("{id}", id)
         return BrainrotWallpaper(
@@ -189,7 +190,8 @@ object GelbooruEngine : PluginEngine() {
             fullUrl = fullUrl,
             resolution = "${post.optInt("width")}x${post.optInt("height")}",
             pageUrl = pageUrl,
-            tags = post.optString("tags").split(' ').filter { it.isNotBlank() }
+            tags = post.optString("tags").split(' ').filter { it.isNotBlank() },
+            isVideo = isVideo
         )
     }
 

@@ -714,6 +714,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setWallpaperDirectly(wp: BrainrotWallpaper) {
+        if (wp.isVideo) {
+            Toast.makeText(getApplication(), "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             val app = getApplication<Application>()
             val request = ImageRequest.Builder(app)
@@ -1105,6 +1109,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun downloadToRotation(wp: BrainrotWallpaper) {
+        if (wp.isVideo) {
+            Toast.makeText(getApplication(), "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
+            return
+        }
         val key = wp.id
         if (_downloadingIds.value.contains(key)) return
         viewModelScope.launch {

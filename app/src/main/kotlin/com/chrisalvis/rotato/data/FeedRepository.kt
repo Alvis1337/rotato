@@ -70,24 +70,29 @@ class FeedRepository(private val imageDir: File) {
             bytes ?: return@withContext false.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
             if (BuildConfig.DEBUG) Log.d(TAG, "Downloaded ${bytes.size} bytes from $effectiveUrl")
 
-            val mimeType = when (effectiveUrl.substringAfterLast('.').substringBefore('?').lowercase().take(5)) {
-                "png"  -> "image/png"
-                "webp" -> "image/webp"
-                "gif"  -> "image/gif"
-                else   -> "image/jpeg"
+            val urlExt = effectiveUrl.substringAfterLast('.').substringBefore('?').lowercase().take(5)
+            val isVideo = MediaType.isVideoUrl(effectiveUrl)
+            val mimeType = when {
+                isVideo -> if (urlExt == "webm") "video/webm" else "video/mp4"
+                urlExt == "png"  -> "image/png"
+                urlExt == "webp" -> "image/webp"
+                urlExt == "gif"  -> "image/gif"
+                else -> "image/jpeg"
             }
-            val ext = mimeType.substringAfterLast('/')
+            val ext = mimeType.substringAfterLast('/').let { if (it == "mp4") "mp4" else it }
             val fileName = "${sanitizeFilename(sourceId)}.$ext"
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                val relativeDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
                 val values = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Rotato")
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "$relativeDir/Rotato")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                val uri = resolver.insert(collection, values)
                     ?: return@withContext false.also { Log.e(TAG, "Failed to insert uri") }
                 val stream = resolver.openOutputStream(uri)
                     ?: return@withContext false.also {
@@ -96,12 +101,12 @@ class FeedRepository(private val imageDir: File) {
                     }
                 stream.use { it.write(bytes) }
                 values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
                 if (BuildConfig.DEBUG) Log.d(TAG, "Saved to gallery: $uri")
             } else {
                 val dir = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    Environment.getExternalStoragePublicDirectory(if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES),
                     "Rotato"
                 )
                 dir.mkdirs()

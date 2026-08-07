@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data.plugins
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
+import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.matches
 
 /** Engine for Moebooru-compatible APIs (`/post.json?tags=...order:random`). */
@@ -75,7 +76,8 @@ object MoebooruEngine : PluginEngine() {
     private fun buildWallpaper(obj: org.json.JSONObject, base: String, manifest: PluginManifest): BrainrotWallpaper? {
         val id = obj.optInt("id", 0).toString()
         val fullUrl = obj.optString("file_url").ifBlank { return null }
-        val sampleUrl = obj.optString("sample_url").ifBlank { fullUrl }
+        val isVideo = MediaType.isVideoUrl(fullUrl)
+        val sampleUrl = if (isVideo) fullUrl else obj.optString("sample_url").ifBlank { fullUrl }
         return BrainrotWallpaper(
             id = id,
             source = manifest.id.lowercase(),
@@ -84,7 +86,8 @@ object MoebooruEngine : PluginEngine() {
             fullUrl = fullUrl,
             resolution = "${obj.optInt("width")}x${obj.optInt("height")}",
             pageUrl = "$base/post/show/$id",
-            tags = obj.optString("tags").split(' ').filter { it.isNotBlank() }
+            tags = obj.optString("tags").split(' ').filter { it.isNotBlank() },
+            isVideo = isVideo
         )
     }
 }

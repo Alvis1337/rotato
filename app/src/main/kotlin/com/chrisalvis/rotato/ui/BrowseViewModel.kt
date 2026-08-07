@@ -1130,6 +1130,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun isInRotation(wallpaper: BrowseWallpaper) = _inRotation.value.contains(sanitize(wallpaper.sourceId))
 
     fun toggleRotation(wallpaper: BrowseWallpaper) {
+        if (wallpaper.isVideo) {
+            Toast.makeText(app.applicationContext, "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
+            return
+        }
         val key = sanitize(wallpaper.sourceId)
         if (_downloading.value.contains(wallpaper.sourceId)) return
         if (_inRotation.value.contains(key)) {
@@ -1157,7 +1161,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val ctx = app.applicationContext
         viewModelScope.launch {
             val pending = localLists.wallpapersForList(listId).first()
-                .filterNot { _inRotation.value.contains(sanitize(it.sourceId)) }
+                .filterNot { it.isVideo || _inRotation.value.contains(sanitize(it.sourceId)) }
             if (pending.isEmpty()) {
                 Toast.makeText(ctx, "Downloaded 0 images to rotation", Toast.LENGTH_SHORT).show()
                 return@launch
@@ -1523,7 +1527,8 @@ private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpa
     animeTitle = tags.take(3).joinToString(", "),
     source = source,
     tags = tags,
-    resolution = resolution
+    resolution = resolution,
+    isVideo = isVideo
 )
 
 /**

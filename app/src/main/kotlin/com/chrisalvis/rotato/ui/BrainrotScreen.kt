@@ -1159,6 +1159,15 @@ private fun DiscoverThumbnailGridItem(
             )
         }
 
+        if (wallpaper.isVideo) {
+            Icon(
+                Icons.Default.PlayCircle,
+                contentDescription = "Video",
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(32.dp)
+            )
+        }
+
         if (isSaved) {
             Icon(
                 Icons.Default.Bookmark,
@@ -1266,6 +1275,15 @@ private fun DiscoverGridItem(
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
+            )
+        }
+
+        if (wallpaper.isVideo) {
+            Icon(
+                Icons.Default.PlayCircle,
+                contentDescription = "Video",
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(40.dp)
             )
         }
 
@@ -1469,36 +1487,49 @@ private fun WallpaperDetailOverlay(
             val placeholderKey = item.sampleUrl.ifBlank { item.thumbUrl }
             val fullImageUrl = item.fullUrl.ifBlank { item.thumbUrl }
 
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(fullImageUrl)
-                    .memoryCacheKey(fullImageUrl)
-                    .diskCacheKey(fullImageUrl)
-                    .placeholderMemoryCacheKey(placeholderKey)
-                    .crossfade(false)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
-                        scaleX = scaleFactor
-                        scaleY = scaleFactor
-                    }
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onDoubleTap = { showZoom = true },
-                            onLongPress = {
-                                val url = item.pageUrl.ifBlank { item.fullUrl }
-                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("Wallpaper URL", url)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-            )
+            if (item.isVideo) {
+                VideoPlayerView(
+                    url = fullImageUrl,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                            scaleX = scaleFactor
+                            scaleY = scaleFactor
+                        }
+                )
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(fullImageUrl)
+                        .memoryCacheKey(fullImageUrl)
+                        .diskCacheKey(fullImageUrl)
+                        .placeholderMemoryCacheKey(placeholderKey)
+                        .crossfade(false)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                            scaleX = scaleFactor
+                            scaleY = scaleFactor
+                        }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onDoubleTap = { showZoom = true },
+                                onLongPress = {
+                                    val url = item.pageUrl.ifBlank { item.fullUrl }
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Wallpaper URL", url)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                )
+            }
         } // end HorizontalPager
 
         // Top stats bar
@@ -1669,14 +1700,19 @@ private fun WallpaperDetailOverlay(
 
                 OutlinedIconButton(
                     onClick = { onDownloadToRotation(wallpaper) },
-                    enabled = !isDownloading,
+                    enabled = !isDownloading && !wallpaper.isVideo,
                     modifier = Modifier.size(44.dp),
                     border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
                 ) {
                     if (isDownloading) {
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     } else {
-                        Icon(Icons.Default.Download, contentDescription = "Rotation", tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Download,
+                            contentDescription = if (wallpaper.isVideo) "Videos can't be set as wallpaper" else "Rotation",
+                            tint = if (wallpaper.isVideo) Color.White.copy(alpha = 0.35f) else Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
 
@@ -1736,11 +1772,13 @@ private fun WallpaperDetailOverlay(
                         onDismissRequest = { showMore = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Set as wallpaper", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { onSetWallpaper(wallpaper); showMore = false },
-                            leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) }
-                        )
+                        if (!wallpaper.isVideo) {
+                            DropdownMenuItem(
+                                text = { Text("Set as wallpaper", style = MaterialTheme.typography.bodyMedium) },
+                                onClick = { onSetWallpaper(wallpaper); showMore = false },
+                                leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Report", style = MaterialTheme.typography.bodyMedium) },
                             onClick = { onReport(wallpaper); showMore = false },
