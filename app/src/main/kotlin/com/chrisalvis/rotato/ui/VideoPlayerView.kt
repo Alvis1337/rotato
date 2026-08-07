@@ -219,10 +219,25 @@ fun VideoPlayerView(
 
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
-            modifier = Modifier
-                .fillMaxSize()
-                .let {
-                    if (!allowTapToToggle) it else it.pointerInput(exoPlayer, allowDoubleTapSeek) {
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                }
+            },
+        )
+
+        // A plain Compose node (not the AndroidView above) so the seek bar drawn later in this
+        // Box correctly wins touch priority in its region. AndroidView-embedded native views
+        // participate in Android's own touch dispatch ahead of Compose z-order, so attaching this
+        // gesture directly to the PlayerView would let it steal taps/drags meant for the Slider.
+        if (allowTapToToggle) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(exoPlayer, allowDoubleTapSeek) {
                         detectTapGestures(
                             onTap = {
                                 exoPlayer.playWhenReady = !exoPlayer.playWhenReady
@@ -235,15 +250,8 @@ fun VideoPlayerView(
                             }
                         )
                     }
-                },
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                }
-            },
-        )
+            )
+        }
 
         if (isBuffering && !hasError) {
             CircularProgressIndicator(

@@ -541,7 +541,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("Blur NSFW previews")
                                 Text(
                                     "Blur explicit images/videos in grids until tapped — also acts as a safety net if one slips through with NSFW mode off",
@@ -559,7 +559,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("NSFW → home screen only")
                                 Text(
                                     "Explicit wallpapers are restricted to the home screen regardless of your Wallpaper Target above — lock screen stays clean",
