@@ -92,6 +92,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         .map { it.videoPreviewMode }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
 
+    val nsfwBlurEnabled: StateFlow<Boolean> = prefs.nsfwBlurEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     // All lists including locked ones (source of truth)
     private val _allLists: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -783,6 +786,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Permanently lock a collection. No auth required — just hides it. */
+    fun toggleBlurExempt(list: LocalList) {
+        viewModelScope.launch { localLists.setBlurExempt(list.id, !list.blurExempt) }
+    }
+
     fun lockCollection(listId: String) {
         viewModelScope.launch {
             localLists.setLocked(listId, true)

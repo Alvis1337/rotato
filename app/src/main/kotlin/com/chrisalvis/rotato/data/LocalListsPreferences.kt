@@ -93,6 +93,15 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setBlurExempt(listId: String, exempt: Boolean) {
+        context.dataStore.edit { prefs ->
+            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
+                if (it.id == listId) it.copy(blurExempt = exempt) else it
+            }
+            prefs[LISTS_KEY] = serializeLists(updated)
+        }
+    }
+
     suspend fun setLocked(listId: String, locked: Boolean) {
         context.dataStore.edit { prefs ->
             val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
@@ -260,6 +269,7 @@ class LocalListsPreferences(private val context: Context) {
                 malConfig = malConfig,
                 rotationIntervalMinutes = o.takeIf { it.has("rotationIntervalMinutes") }?.optInt("rotationIntervalMinutes"),
                 lastRotationMs = o.optLong("lastRotationMs", 0L),
+                blurExempt = o.optBoolean("blurExempt", false),
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -275,6 +285,7 @@ class LocalListsPreferences(private val context: Context) {
                     put("rotationTarget", l.rotationTarget.name)
                     put("isLocked", l.isLocked)
                     put("coverUrl", l.coverUrl)
+                    put("blurExempt", l.blurExempt)
                     if (l.smartRule != null && !l.smartRule.isEmpty) {
                         put("smartRule", JSONObject().apply {
                             put("requireAll", JSONArray(l.smartRule.requireAll))

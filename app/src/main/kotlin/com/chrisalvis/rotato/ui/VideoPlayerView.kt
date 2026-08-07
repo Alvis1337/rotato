@@ -1,21 +1,40 @@
 package com.chrisalvis.rotato.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,10 +46,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -83,13 +105,30 @@ fun rememberVideoPreviewSlot(enabled: Boolean): Boolean {
 }
 
 /**
- * Plays a video URL in a loop, muted by default (most booru/reddit video posts have no
- * associated audio track anyway). Player is created/released alongside this composable's lifecycle.
+ * Session-scoped (not persisted across app restarts) mute preference for full-screen video
+ * playback — unmuting one video keeps subsequent videos unmuted for the rest of the session.
+ * Grid previews never read this; they're always muted regardless.
+ */
+object VideoMuteState {
+    var muted by mutableStateOf(true)
+}
+
+private fun formatDuration(ms: Long): String {
+    if (ms <= 0) return "0:00"
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
+
+/**
+ * Plays a video URL in a loop. Player is created/released alongside this composable's lifecycle.
  *
  * Never uses ExoPlayer's built-in [PlayerView] controller — its native bottom control bar
  * (timeline/settings) has no awareness of the app's own Compose overlays and ends up fighting
  * them for the same screen space. Instead, when [allowTapToToggle] is set, a single tap
- * play/pauses via a small Compose-drawn icon that we fully control.
+ * play/pauses and an optional [showSeekBar]/double-tap-to-seek are drawn in Compose that we
+ * fully control.
  */
 @Composable
 fun VideoPlayerView(
@@ -98,9 +137,11 @@ fun VideoPlayerView(
     muted: Boolean = true,
     allowTapToToggle: Boolean = false,
     showMuteButton: Boolean = false,
+    showSeekBar: Boolean = false,
+    allowDoubleTapSeek: Boolean = false,
 ) {
     val context = LocalContext.current
-    var isMuted by remember(url) { mutableStateOf(muted) }
+    var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
     val exoPlayer = remember(url) {
         val dataSourceFactory = DefaultHttpDataSource.Factory().apply {
             refererFor(url)?.let { referer -> setDefaultRequestProperties(mapOf("Referer" to referer)) }
@@ -117,9 +158,63 @@ fun VideoPlayerView(
             }
     }
     var isPlaying by remember(exoPlayer) { mutableStateOf(true) }
+    var isBuffering by remember(exoPlayer) { mutableStateOf(true) }
+    var hasError by remember(exoPlayer) { mutableStateOf(false) }
+    var positionMs by remember(exoPlayer) { mutableLongStateOf(0L) }
+    var durationMs by remember(exoPlayer) { mutableLongStateOf(0L) }
+    var seekFeedback by remember(exoPlayer) { mutableStateOf<Int?>(null) } // seek delta in seconds, for the transient overlay
+    var userSeeking by remember(exoPlayer) { mutableStateOf(false) }
+    var draggedFraction by remember(exoPlayer) { mutableFloatStateOf(0f) }
 
     DisposableEffect(exoPlayer) {
-        onDispose { exoPlayer.release() }
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_READY) durationMs = exoPlayer.duration.coerceAtLeast(0L)
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                hasError = true
+                isBuffering = false
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
+        }
+    }
+
+    if (showSeekBar) {
+        LaunchedEffect(exoPlayer) {
+            while (true) {
+                if (!userSeeking) positionMs = exoPlayer.currentPosition
+                delay(250)
+            }
+        }
+    }
+
+    if (seekFeedback != null) {
+        LaunchedEffect(seekFeedback) {
+            delay(600)
+            seekFeedback = null
+        }
+    }
+
+    fun toggleMute() {
+        isMuted = !isMuted
+        exoPlayer.volume = if (isMuted) 0f else 1f
+        if (showMuteButton) VideoMuteState.muted = isMuted
+    }
+
+    fun seekBy(deltaSeconds: Int) {
+        val target = (exoPlayer.currentPosition + deltaSeconds * 1000L)
+            .coerceIn(0L, durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE)
+        exoPlayer.seekTo(target)
+        positionMs = target
+        seekFeedback = deltaSeconds
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -127,11 +222,18 @@ fun VideoPlayerView(
             modifier = Modifier
                 .fillMaxSize()
                 .let {
-                    if (!allowTapToToggle) it else it.pointerInput(exoPlayer) {
-                        detectTapGestures(onTap = {
-                            exoPlayer.playWhenReady = !exoPlayer.playWhenReady
-                            isPlaying = exoPlayer.playWhenReady
-                        })
+                    if (!allowTapToToggle) it else it.pointerInput(exoPlayer, allowDoubleTapSeek) {
+                        detectTapGestures(
+                            onTap = {
+                                exoPlayer.playWhenReady = !exoPlayer.playWhenReady
+                                isPlaying = exoPlayer.playWhenReady
+                            },
+                            onDoubleTap = { offset ->
+                                if (allowDoubleTapSeek) {
+                                    if (offset.x < size.width / 2f) seekBy(-10) else seekBy(10)
+                                }
+                            }
+                        )
                     }
                 },
             factory = { ctx ->
@@ -142,7 +244,43 @@ fun VideoPlayerView(
                 }
             },
         )
-        if (allowTapToToggle && !isPlaying) {
+
+        if (isBuffering && !hasError) {
+            CircularProgressIndicator(
+                color = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(if (allowTapToToggle) 40.dp else 20.dp)
+            )
+        }
+
+        if (hasError) {
+            if (allowTapToToggle) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Text(
+                        "Couldn't load video",
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            } else {
+                Icon(
+                    Icons.Default.ErrorOutline,
+                    contentDescription = "Video unavailable",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.align(Alignment.Center).size(20.dp)
+                )
+            }
+        }
+
+        if (allowTapToToggle && !isPlaying && !isBuffering && !hasError) {
             Icon(
                 Icons.Default.PlayArrow,
                 contentDescription = "Play",
@@ -154,6 +292,33 @@ fun VideoPlayerView(
                     .padding(12.dp)
             )
         }
+
+        AnimatedVisibility(
+            visible = seekFeedback != null,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            val delta = seekFeedback ?: 0
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    if (delta < 0) Icons.Default.Replay10 else Icons.Default.Forward10,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+                Text(
+                    "${if (delta < 0) "-" else "+"}${kotlin.math.abs(delta)}s",
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+        }
+
         if (showMuteButton) {
             Icon(
                 if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
@@ -161,15 +326,55 @@ fun VideoPlayerView(
                 tint = Color.White,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .statusBarsPadding()
                     .padding(12.dp)
                     .size(36.dp)
                     .background(Color.Black.copy(alpha = 0.4f), CircleShape)
-                    .clickable {
-                        isMuted = !isMuted
-                        exoPlayer.volume = if (isMuted) 0f else 1f
-                    }
+                    .clickable { toggleMute() }
                     .padding(8.dp)
             )
+        }
+
+        if (showSeekBar && durationMs > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                val shownPosition = if (userSeeking) (draggedFraction * durationMs).toLong() else positionMs
+                Text(
+                    formatDuration(shownPosition),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                Slider(
+                    value = if (userSeeking) draggedFraction else (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f),
+                    onValueChange = {
+                        userSeeking = true
+                        draggedFraction = it
+                    },
+                    onValueChangeFinished = {
+                        val target = (draggedFraction * durationMs).toLong()
+                        exoPlayer.seekTo(target)
+                        positionMs = target
+                        userSeeking = false
+                    },
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Color.White,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                )
+                Text(
+                    formatDuration(durationMs),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
 }

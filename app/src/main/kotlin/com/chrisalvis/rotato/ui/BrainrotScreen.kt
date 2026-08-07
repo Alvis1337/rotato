@@ -1594,7 +1594,9 @@ private fun WallpaperDetailOverlay(
                             scaleY = scaleFactor
                         },
                     allowTapToToggle = true,
-                    showMuteButton = true
+                    showMuteButton = true,
+                    showSeekBar = true,
+                    allowDoubleTapSeek = true
                 )
             } else if (item.isVideo) {
                 val posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) }

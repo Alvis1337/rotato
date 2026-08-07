@@ -77,6 +77,8 @@ data class LocalList(
     val rotationIntervalMinutes: Int? = null,
     /** Epoch ms when this collection last had a wallpaper set from it. Used for per-collection interval. */
     val lastRotationMs: Long = 0L,
+    /** When true, NSFW blur is skipped for every wallpaper in this collection — a per-collection "don't ask again". */
+    val blurExempt: Boolean = false,
 ) {
     val isSmartCollection: Boolean get() = smartRule != null && !smartRule.isEmpty
     val isMalManaged: Boolean get() = malConfig?.animeTitle?.isNotBlank() == true

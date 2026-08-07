@@ -51,6 +51,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
@@ -130,6 +132,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
+    val nsfwBlurEnabled by vm.nsfwBlurEnabled.collectAsStateWithLifecycle()
+    val effectiveNsfwBlurEnabled = nsfwBlurEnabled && selectedList?.blurExempt != true
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
@@ -668,6 +672,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
                 onFetchFromSources = { fetchFillFor = it },
+                onToggleBlurExempt = { vm.toggleBlurExempt(it) },
                 onCreateList = { vm.showCreateDialog() },
                 modifier = Modifier.padding(padding)
             )
@@ -811,6 +816,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     selected = selected,
                     brokenEntryIds = brokenEntryIds,
                     videoPreviewMode = videoPreviewMode,
+                    nsfwBlurEnabled = effectiveNsfwBlurEnabled,
                     gridState = gridState,
                     onTap = { wp ->
                         if (selectionMode) vm.toggleSelection(wp)
@@ -858,7 +864,9 @@ private fun WallpaperDetailSheet(
                         .padding(horizontal = 16.dp)
                         .clip(MaterialTheme.shapes.medium),
                     allowTapToToggle = true,
-                    showMuteButton = true
+                    showMuteButton = true,
+                    showSeekBar = true,
+                    allowDoubleTapSeek = true
                 )
             } else {
                 AsyncImage(
@@ -1174,6 +1182,7 @@ private fun ListPickerContent(
     onShowHidden: () -> Unit,
     onPickImages: (LocalList) -> Unit,
     onFetchFromSources: (LocalList) -> Unit,
+    onToggleBlurExempt: (LocalList) -> Unit,
     onCreateList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1248,6 +1257,7 @@ private fun ListPickerContent(
                     onRelockForSession = { onRelockForSession(list) },
                     onPickImages = { onPickImages(list) },
                     onFetchFromSources = { onFetchFromSources(list) },
+                    onToggleBlurExempt = { onToggleBlurExempt(list) },
                 )
             }
             if (lockedHiddenCount > 0) {
@@ -1297,6 +1307,7 @@ private fun CollectionCard(
     onRelockForSession: () -> Unit,
     onPickImages: () -> Unit,
     onFetchFromSources: () -> Unit,
+    onToggleBlurExempt: () -> Unit,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
     var showIntervalDialog by remember { mutableStateOf(false) }
@@ -1542,6 +1553,17 @@ private fun CollectionCard(
                             )
                         }
                         HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(if (list.blurExempt) "Restore NSFW blur for this collection" else "Skip NSFW blur for this collection") },
+                            onClick = { onToggleBlurExempt(); showMoreMenu = false },
+                            leadingIcon = {
+                                Icon(
+                                    if (list.blurExempt) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                        HorizontalDivider()
                         when {
                             !list.isLocked -> DropdownMenuItem(
                                 text = { Text("Lock collection") },
@@ -1583,6 +1605,7 @@ private fun WallpaperGridContent(
     selected: Set<String>,
     brokenEntryIds: Set<String>,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
+    nsfwBlurEnabled: Boolean,
     gridState: LazyGridState = rememberLazyGridState(),
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
@@ -1699,6 +1722,7 @@ private fun WallpaperGridContent(
                 selectionMode = selectionMode,
                 videoPreviewMode = videoPreviewMode,
                 isVisible = key in visibleKeys,
+                nsfwBlurEnabled = nsfwBlurEnabled,
                 onTap = { onTap(wp) },
                 onLongPress = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1741,10 +1765,14 @@ private fun WallpaperThumbnail(
     selectionMode: Boolean,
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     isVisible: Boolean,
+    nsfwBlurEnabled: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit
 ) {
-    val previewSlot = wallpaper.isVideo &&
+    val revealKey = wallpaper.entryId.ifBlank { "${wallpaper.sourceId}:${wallpaper.thumbUrl}" }
+    var revealed by rememberNsfwRevealed(revealKey)
+    val isBlurred = wallpaper.isNsfw && nsfwBlurEnabled && !revealed
+    val previewSlot = wallpaper.isVideo && !isBlurred &&
         rememberVideoPreviewSlot(enabled = isVisible && videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
     // For video without a usable static thumbnail, model falls back to the video URL itself —
     // coil-video's VideoFrameDecoder (registered app-wide) decodes a still frame from it.
@@ -1755,7 +1783,10 @@ private fun WallpaperThumbnail(
             .fillMaxWidth()
             .aspectRatio(9f / 16f)
             .clip(MaterialTheme.shapes.medium)
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress)
+            .combinedClickable(
+                onClick = { if (isBlurred) revealed = true else onTap() },
+                onLongClick = onLongPress
+            )
     ) {
         if (previewSlot) {
             VideoPlayerView(
@@ -1767,7 +1798,7 @@ private fun WallpaperThumbnail(
                 model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
                 contentDescription = wallpaper.animeTitle.ifBlank { null },
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed),
                 error = {
                     Box(
                         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
@@ -1785,6 +1816,8 @@ private fun WallpaperThumbnail(
         } else {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
         }
+
+        NsfwBlurLayer(wallpaper.isNsfw, nsfwBlurEnabled, revealed, compact = true)
 
         if (wallpaper.isVideo) {
             if (previewSlot) {
@@ -2069,7 +2102,9 @@ private fun WallpaperUrlPreviewDialog(
                                 scaleY = shrink
                             },
                         allowTapToToggle = true,
-                        showMuteButton = true
+                        showMuteButton = true,
+                        showSeekBar = true,
+                        allowDoubleTapSeek = true
                     )
                 } else if (wp.isVideo) {
                     val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }

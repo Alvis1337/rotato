@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,10 +23,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Tracks whether a single NSFW-blurred tile has been revealed this session (resets on recomposition/restart). */
+/**
+ * Keys of NSFW tiles the user has revealed this app session, shared across all grids. Backing
+ * a per-key remembered Boolean in each tile's own composition would reset the reveal the moment
+ * a tile scrolls out of the lazy-layout buffer and back in — this survives that.
+ */
+private object NsfwRevealedKeys {
+    var revealed by mutableStateOf<Set<Any>>(emptySet())
+}
+
+/** Tracks whether a single NSFW-blurred tile has been revealed this session (survives scrolling out and back in). */
 @Composable
-fun rememberNsfwRevealed(key: Any): androidx.compose.runtime.MutableState<Boolean> =
-    remember(key) { mutableStateOf(false) }
+fun rememberNsfwRevealed(key: Any): MutableState<Boolean> = remember(key) {
+    object : MutableState<Boolean> {
+        override var value: Boolean
+            get() = key in NsfwRevealedKeys.revealed
+            set(v) {
+                NsfwRevealedKeys.revealed =
+                    if (v) NsfwRevealedKeys.revealed + key else NsfwRevealedKeys.revealed - key
+            }
+        override fun component1() = value
+        override fun component2(): (Boolean) -> Unit = { value = it }
+    }
+}
 
 /**
  * Draws an NSFW blur+scrim overlay when [isNsfw] and [blurEnabled] are true and it hasn't been
