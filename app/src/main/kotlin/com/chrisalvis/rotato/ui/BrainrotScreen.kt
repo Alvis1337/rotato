@@ -54,6 +54,7 @@ import android.content.ClipboardManager
 import android.content.ClipData
 import android.widget.Toast
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.FocusRequester
@@ -1474,6 +1475,9 @@ private fun WallpaperDetailOverlay(
 
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
+    // Measured height of the bottom info/actions panel below — the video's seek bar reads this
+    // so it renders above the panel instead of sitting underneath its (touchable) rows.
+    var bottomPanelHeight by remember { mutableStateOf(0.dp) }
 
     Box(
         modifier = Modifier
@@ -1596,7 +1600,8 @@ private fun WallpaperDetailOverlay(
                     allowTapToToggle = true,
                     showMuteButton = true,
                     showSeekBar = true,
-                    allowDoubleTapSeek = true
+                    allowDoubleTapSeek = true,
+                    seekBarBottomInset = bottomPanelHeight
                 )
             } else if (item.isVideo) {
                 val posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) }
@@ -1688,6 +1693,7 @@ private fun WallpaperDetailOverlay(
                         1f to Color.Black.copy(alpha = 0.92f)
                     )
                 )
+                .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp, top = 48.dp),

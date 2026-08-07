@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -139,6 +140,11 @@ fun VideoPlayerView(
     showMuteButton: Boolean = false,
     showSeekBar: Boolean = false,
     allowDoubleTapSeek: Boolean = false,
+    // Callers that draw their own bottom-aligned overlay (caption/tags/actions) over the video
+    // must pass that overlay's measured height here, or its touch targets will sit on top of —
+    // and steal taps from — the seek bar, since both are independently BottomCenter-aligned over
+    // the same full-screen area.
+    seekBarBottomInset: Dp = 0.dp,
 ) {
     val context = LocalContext.current
     var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
@@ -349,6 +355,7 @@ fun VideoPlayerView(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .padding(bottom = seekBarBottomInset)
                     .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {

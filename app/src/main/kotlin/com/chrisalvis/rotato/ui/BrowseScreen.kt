@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -1984,6 +1985,9 @@ private fun WallpaperUrlPreviewDialog(
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    // Measured height of the bottom info/action panel below — the video's seek bar reads this
+    // so it renders above the panel instead of sitting underneath its (touchable) rows.
+    var bottomPanelHeight by remember { mutableStateOf(0.dp) }
 
     BackHandler(onBack = { onDismiss(currentWallpaper) })
 
@@ -2104,7 +2108,8 @@ private fun WallpaperUrlPreviewDialog(
                         allowTapToToggle = true,
                         showMuteButton = true,
                         showSeekBar = true,
-                        allowDoubleTapSeek = true
+                        allowDoubleTapSeek = true,
+                        seekBarBottomInset = bottomPanelHeight
                     )
                 } else if (wp.isVideo) {
                     val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }
@@ -2196,6 +2201,7 @@ private fun WallpaperUrlPreviewDialog(
                                 1f to Color.Black.copy(alpha = 0.92f)
                             )
                         )
+                        .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
                         .navigationBarsPadding()
                         .padding(horizontal = 20.dp)
                         .padding(bottom = 20.dp, top = 52.dp),
