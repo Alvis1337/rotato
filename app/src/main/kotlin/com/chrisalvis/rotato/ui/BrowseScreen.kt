@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -128,6 +129,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
+    val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()
@@ -808,6 +810,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     selectionMode = selectionMode,
                     selected = selected,
                     brokenEntryIds = brokenEntryIds,
+                    videoPreviewMode = videoPreviewMode,
                     gridState = gridState,
                     onTap = { wp ->
                         if (selectionMode) vm.toggleSelection(wp)
@@ -853,7 +856,8 @@ private fun WallpaperDetailSheet(
                         .fillMaxWidth()
                         .heightIn(max = 280.dp)
                         .padding(horizontal = 16.dp)
-                        .clip(MaterialTheme.shapes.medium)
+                        .clip(MaterialTheme.shapes.medium),
+                    allowTapToToggle = true
                 )
             } else {
                 AsyncImage(
@@ -1577,6 +1581,7 @@ private fun WallpaperGridContent(
     selectionMode: Boolean,
     selected: Set<String>,
     brokenEntryIds: Set<String>,
+    videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     gridState: LazyGridState = rememberLazyGridState(),
     onTap: (BrowseWallpaper) -> Unit,
     onLongPress: (BrowseWallpaper) -> Unit,
@@ -1685,6 +1690,7 @@ private fun WallpaperGridContent(
                 isSelected = selected.contains(wp.entryId),
                 isBroken = brokenEntryIds.contains(wp.entryId),
                 selectionMode = selectionMode,
+                videoPreviewMode = videoPreviewMode,
                 onTap = { onTap(wp) },
                 onLongPress = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1724,9 +1730,15 @@ private fun WallpaperThumbnail(
     isSelected: Boolean,
     isBroken: Boolean,
     selectionMode: Boolean,
+    videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     onTap: () -> Unit,
     onLongPress: () -> Unit
 ) {
+    val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !com.chrisalvis.rotato.data.MediaType.isVideoUrl(wallpaper.thumbUrl)
+    val previewSlot = wallpaper.isVideo &&
+        rememberVideoPreviewSlot(enabled = videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+    val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1734,33 +1746,51 @@ private fun WallpaperThumbnail(
             .clip(MaterialTheme.shapes.medium)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
     ) {
-        SubcomposeAsyncImage(
-            model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
-            contentDescription = wallpaper.animeTitle.ifBlank { null },
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            error = {
-                Box(
-                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.Wallpaper,
-                        contentDescription = "Image unavailable",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(32.dp)
-                    )
+        if (previewSlot) {
+            VideoPlayerView(
+                url = wallpaper.fullUrl,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (showStaticThumb || !wallpaper.isVideo) {
+            SubcomposeAsyncImage(
+                model = wallpaper.thumbUrl.ifBlank { wallpaper.fullUrl },
+                contentDescription = wallpaper.animeTitle.ifBlank { null },
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                error = {
+                    Box(
+                        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Wallpaper,
+                            contentDescription = "Image unavailable",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
-            }
-        )
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+        }
 
         if (wallpaper.isVideo) {
-            Icon(
-                Icons.Default.PlayCircle,
-                contentDescription = "Video",
-                tint = Color.White,
-                modifier = Modifier.align(Alignment.Center).size(32.dp)
-            )
+            if (previewSlot) {
+                Icon(
+                    Icons.Default.VolumeOff,
+                    contentDescription = "Video (muted preview)",
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).size(16.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Default.PlayCircle,
+                    contentDescription = "Video",
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.Center).size(32.dp)
+                )
+            }
         }
 
         // Subtle scrim when selected (matches HomeScreen pattern)
@@ -2015,7 +2045,9 @@ private fun WallpaperUrlPreviewDialog(
             ) { page ->
                 val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager
                 val imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }
-                if (wp.isVideo) {
+                // beyondViewportPageCount keeps neighbor pages mounted for smooth swiping — only the
+                // page actually on screen should stream video.
+                if (wp.isVideo && page == pagerState.currentPage) {
                     VideoPlayerView(
                         url = imageUrl,
                         modifier = Modifier
@@ -2024,8 +2056,31 @@ private fun WallpaperUrlPreviewDialog(
                                 val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
                                 scaleX = shrink
                                 scaleY = shrink
-                            }
+                            },
+                        allowTapToToggle = true
                     )
+                } else if (wp.isVideo) {
+                    val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                                scaleX = shrink
+                                scaleY = shrink
+                            }
+                    ) {
+                        if (posterUrl != null) {
+                            AsyncImage(
+                                model = posterUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(Modifier.fillMaxSize().background(Color.Black))
+                        }
+                    }
                 } else {
                     SubcomposeAsyncImage(
                         model = imageUrl,

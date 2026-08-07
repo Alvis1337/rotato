@@ -146,6 +146,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     val nsfwMode: StateFlow<Boolean> = prefs.nsfwMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val videoPreviewMode: StateFlow<com.chrisalvis.rotato.data.VideoPreviewMode> = prefs.settings
+        .map { it.videoPreviewMode }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+
     val brainrotFilters: StateFlow<BrainrotFilters> = prefs.brainrotFilters
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrainrotFilters())
 

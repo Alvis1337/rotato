@@ -73,6 +73,7 @@ class RotatoPreferences(private val context: Context) {
         val AUTO_REFILL_ENABLED = booleanPreferencesKey("auto_refill_enabled")
         val AUTO_REFILL_MIN_COUNT = intPreferencesKey("auto_refill_min_count")
         val INTEREST_ALIGN_ENABLED = booleanPreferencesKey("interest_align_enabled")
+        val VIDEO_PREVIEW_MODE = stringPreferencesKey("video_preview_mode")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -89,6 +90,9 @@ class RotatoPreferences(private val context: Context) {
             wallpaperFit = prefs[WALLPAPER_FIT]?.let {
                 runCatching { WallpaperFit.valueOf(it) }.getOrNull()
             } ?: WallpaperFit.FILL,
+            videoPreviewMode = prefs[VIDEO_PREVIEW_MODE]?.let {
+                runCatching { VideoPreviewMode.valueOf(it) }.getOrNull()
+            } ?: VideoPreviewMode.AUTOPLAY,
         )
     }
 
@@ -144,6 +148,10 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setWallpaperFit(fit: WallpaperFit) {
         context.dataStore.edit { it[WALLPAPER_FIT] = fit.name }
+    }
+
+    suspend fun setVideoPreviewMode(mode: VideoPreviewMode) {
+        context.dataStore.edit { it[VIDEO_PREVIEW_MODE] = mode.name }
     }
 
     suspend fun recordRotationAndIncrement() {

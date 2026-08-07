@@ -88,6 +88,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private val malPrefs = MalPreferences(application)
     private lateinit var processLifecycleObserver: DefaultLifecycleObserver
 
+    val videoPreviewMode: StateFlow<com.chrisalvis.rotato.data.VideoPreviewMode> = prefs.settings
+        .map { it.videoPreviewMode }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+
     // All lists including locked ones (source of truth)
     private val _allLists: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

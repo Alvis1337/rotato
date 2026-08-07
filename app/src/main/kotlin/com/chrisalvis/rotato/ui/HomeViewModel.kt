@@ -323,6 +323,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { preferences.setWallpaperFit(fit) }
     }
 
+    fun setVideoPreviewMode(mode: com.chrisalvis.rotato.data.VideoPreviewMode) {
+        viewModelScope.launch { preferences.setVideoPreviewMode(mode) }
+    }
+
     fun setWidgetCollectionId(listId: String) {
         viewModelScope.launch {
             preferences.setWidgetCollectionId(listId)

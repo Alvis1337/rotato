@@ -77,6 +77,7 @@ import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.InterestProfile
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.TagTier
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -160,6 +161,7 @@ fun BrainrotScreen(
     val lists by vm.lists.collectAsStateWithLifecycle()
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
+    val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val batchSelected by vm.batchSelected.collectAsStateWithLifecycle()
@@ -654,6 +656,7 @@ fun BrainrotScreen(
                                             isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
                                             isSelected = wp.id in batchSelected,
                                             selectionMode = batchMode,
+                                            videoPreviewMode = videoPreviewMode,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -730,6 +733,7 @@ fun BrainrotScreen(
                                             isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
                                             isSelected = wp.id in batchSelected,
                                             selectionMode = batchMode,
+                                            videoPreviewMode = videoPreviewMode,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -1106,11 +1110,16 @@ private fun DiscoverThumbnailGridItem(
     isSaved: Boolean,
     isSelected: Boolean,
     selectionMode: Boolean,
+    videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val context = LocalContext.current
+    val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
     val imageUrl = wallpaper.thumbUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.fullUrl } }
+    val previewSlot = wallpaper.isVideo &&
+        rememberVideoPreviewSlot(enabled = videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+    val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
 
     Box(
         modifier = Modifier
@@ -1124,20 +1133,29 @@ private fun DiscoverThumbnailGridItem(
                 )
             }
     ) {
-        SubcomposeAsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(imageUrl)
-                .memoryCacheKey(imageUrl)
-                .diskCacheKey(imageUrl)
-                .crossfade(true)
-                .size(256, 256)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            loading = { ShimmerBox(Modifier.fillMaxSize()) },
-            error = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) }
-        )
+        if (previewSlot) {
+            VideoPlayerView(
+                url = wallpaper.fullUrl,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (showStaticThumb || !wallpaper.isVideo) {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imageUrl)
+                    .memoryCacheKey(imageUrl)
+                    .diskCacheKey(imageUrl)
+                    .crossfade(true)
+                    .size(256, 256)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = { ShimmerBox(Modifier.fillMaxSize()) },
+                error = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) }
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+        }
 
         if (isSelected) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
@@ -1160,12 +1178,21 @@ private fun DiscoverThumbnailGridItem(
         }
 
         if (wallpaper.isVideo) {
-            Icon(
-                Icons.Default.PlayCircle,
-                contentDescription = "Video",
-                tint = Color.White,
-                modifier = Modifier.align(Alignment.Center).size(32.dp)
-            )
+            if (previewSlot) {
+                Icon(
+                    Icons.Default.VolumeOff,
+                    contentDescription = "Video (muted preview)",
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(16.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Default.PlayCircle,
+                    contentDescription = "Video",
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.Center).size(32.dp)
+                )
+            }
         }
 
         if (isSaved) {
@@ -1214,6 +1241,7 @@ private fun DiscoverGridItem(
     isSaved: Boolean,
     isSelected: Boolean,
     selectionMode: Boolean,
+    videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -1226,6 +1254,10 @@ private fun DiscoverGridItem(
     var useFullUrl by remember(wallpaper.id) { mutableStateOf(false) }
     val imageUrl = (if (useFullUrl || wallpaper.sampleUrl.isBlank()) wallpaper.fullUrl else wallpaper.sampleUrl)
         .ifBlank { null }
+    val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
+    val previewSlot = wallpaper.isVideo &&
+        rememberVideoPreviewSlot(enabled = videoPreviewMode == com.chrisalvis.rotato.data.VideoPreviewMode.AUTOPLAY)
+    val showStaticThumb = wallpaper.isVideo && videoPreviewMode != com.chrisalvis.rotato.data.VideoPreviewMode.OFF && hasStaticThumb
 
     Box(
         modifier = Modifier
@@ -1239,24 +1271,40 @@ private fun DiscoverGridItem(
                 )
             }
     ) {
-        SubcomposeAsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(imageUrl)
-                .memoryCacheKey(imageUrl)
-                .diskCacheKey(imageUrl)
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            loading = { ShimmerBox(Modifier.fillMaxSize()) },
-            error = {
-                if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
-                    LaunchedEffect(Unit) { useFullUrl = true }
+        if (previewSlot) {
+            VideoPlayerView(
+                url = wallpaper.fullUrl,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (showStaticThumb) {
+            AsyncImage(
+                model = wallpaper.thumbUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (wallpaper.isVideo) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+        } else {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imageUrl)
+                    .memoryCacheKey(imageUrl)
+                    .diskCacheKey(imageUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = { ShimmerBox(Modifier.fillMaxSize()) },
+                error = {
+                    if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
+                        LaunchedEffect(Unit) { useFullUrl = true }
+                    }
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
                 }
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
-            }
-        )
+            )
+        }
 
         if (isSelected) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
@@ -1279,12 +1327,21 @@ private fun DiscoverGridItem(
         }
 
         if (wallpaper.isVideo) {
-            Icon(
-                Icons.Default.PlayCircle,
-                contentDescription = "Video",
-                tint = Color.White,
-                modifier = Modifier.align(Alignment.Center).size(40.dp)
-            )
+            if (previewSlot) {
+                Icon(
+                    Icons.Default.VolumeOff,
+                    contentDescription = "Video (muted preview)",
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp).size(18.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Default.PlayCircle,
+                    contentDescription = "Video",
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.Center).size(40.dp)
+                )
+            }
         }
 
         if (isSaved) {
@@ -1487,7 +1544,9 @@ private fun WallpaperDetailOverlay(
             val placeholderKey = item.sampleUrl.ifBlank { item.thumbUrl }
             val fullImageUrl = item.fullUrl.ifBlank { item.thumbUrl }
 
-            if (item.isVideo) {
+            // beyondViewportPageCount keeps neighbor pages mounted for smooth swiping — only the
+            // page actually on screen should stream video, or we'd silently buffer clips no one is watching.
+            if (item.isVideo && page == pagerState.currentPage) {
                 VideoPlayerView(
                     url = fullImageUrl,
                     modifier = Modifier
@@ -1496,8 +1555,31 @@ private fun WallpaperDetailOverlay(
                             val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
                             scaleX = scaleFactor
                             scaleY = scaleFactor
-                        }
+                        },
+                    allowTapToToggle = true
                 )
+            } else if (item.isVideo) {
+                val posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
+                            scaleX = scaleFactor
+                            scaleY = scaleFactor
+                        }
+                ) {
+                    if (posterUrl != null) {
+                        AsyncImage(
+                            model = posterUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize().background(Color.Black))
+                    }
+                }
             } else {
                 AsyncImage(
                     model = ImageRequest.Builder(context)

@@ -12,6 +12,12 @@ enum class WallpaperFit(val label: String) {
     STRETCH("Stretch"),
 }
 
+enum class VideoPreviewMode(val label: String, val description: String) {
+    AUTOPLAY("Autoplay previews", "Video posts play muted while scrolling, like a reel"),
+    STATIC("Static thumbnail", "Video posts show a still frame with a play icon until tapped"),
+    OFF("Off", "Never load video previews in grids — saves data/battery"),
+}
+
 data class RotatoSettings(
     val isEnabled: Boolean = false,
     val intervalMinutes: Int = 60,
@@ -19,6 +25,7 @@ data class RotatoSettings(
     val currentIndex: Int = 0,
     val wallpaperTarget: WallpaperTarget = WallpaperTarget.BOTH,
     val wallpaperFit: WallpaperFit = WallpaperFit.FILL,
+    val videoPreviewMode: VideoPreviewMode = VideoPreviewMode.AUTOPLAY,
 )
 
 enum class RotationInterval(val minutes: Int, val label: String) {

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -502,6 +503,31 @@ fun SettingsScreen(
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(fit.label)
+                            }
+                        }
+                    }
+
+                    SettingsSection(title = "Video Previews") {
+                        com.chrisalvis.rotato.data.VideoPreviewMode.entries.forEach { mode ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.setVideoPreviewMode(mode) },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = settings.videoPreviewMode == mode,
+                                    onClick = { viewModel.setVideoPreviewMode(mode) }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(mode.label)
+                                    Text(
+                                        mode.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
