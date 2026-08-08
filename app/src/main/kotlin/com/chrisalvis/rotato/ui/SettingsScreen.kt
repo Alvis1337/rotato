@@ -1,5 +1,6 @@
 package com.chrisalvis.rotato.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
@@ -20,10 +22,10 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -176,36 +178,44 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCategoryRow(
-                icon = Icons.Default.Tune,
-                title = "Rotation & Wallpaper",
-                subtitle = "Interval, order, target, fit, video previews, triggers, auto-pause, widget",
-                onClick = onNavigateToRotationWallpaper,
-            )
-            SettingsCategoryRow(
-                icon = Icons.Default.Shield,
-                title = "NSFW & Privacy",
-                subtitle = "Blur toggles, stealth collection",
-                onClick = onNavigateToNsfwPrivacy,
-            )
-            SettingsCategoryRow(
-                icon = Icons.Default.Explore,
-                title = "Discover & Sources",
-                subtitle = "Prefetch batch size, Wi-Fi only, manage sources",
-                onClick = onNavigateToDiscoverSources,
-            )
-            SettingsCategoryRow(
-                icon = Icons.Default.Link,
-                title = "Integrations",
-                subtitle = "MyAnimeList",
-                onClick = onNavigateToIntegrations,
-            )
-            SettingsCategoryRow(
-                icon = Icons.Default.Info,
-                title = "About & Data",
-                subtitle = "Backup & restore, danger zone, diagnostics, stats, about",
-                onClick = onNavigateToAboutData,
-            )
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Tune,
+                        title = "Rotation & Wallpaper",
+                        subtitle = "Interval, order, target, fit, video previews, triggers, auto-pause, widget",
+                        onClick = onNavigateToRotationWallpaper,
+                    )
+                    HorizontalDivider()
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Shield,
+                        title = "NSFW & Privacy",
+                        subtitle = "Blur toggles, stealth collection",
+                        onClick = onNavigateToNsfwPrivacy,
+                    )
+                    HorizontalDivider()
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Explore,
+                        title = "Discover & Sources",
+                        subtitle = "Prefetch batch size, Wi-Fi only, manage sources",
+                        onClick = onNavigateToDiscoverSources,
+                    )
+                    HorizontalDivider()
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Link,
+                        title = "Integrations",
+                        subtitle = "MyAnimeList",
+                        onClick = onNavigateToIntegrations,
+                    )
+                    HorizontalDivider()
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Info,
+                        title = "About & Data",
+                        subtitle = "Backup & restore, danger zone, diagnostics, stats, about",
+                        onClick = onNavigateToAboutData,
+                    )
+                }
+            }
         }
     }
 }
@@ -217,30 +227,34 @@ private fun SettingsCategoryRow(
     subtitle: String,
     onClick: () -> Unit,
 ) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(
-                onClick = onClick,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(12.dp)
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
