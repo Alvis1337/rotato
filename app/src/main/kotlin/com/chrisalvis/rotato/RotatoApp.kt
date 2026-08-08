@@ -27,10 +27,16 @@ class RotatoApp : Application(), ImageLoaderFactory {
             .addInterceptor(Interceptor { chain ->
                 val req = chain.request()
                 val host = req.url.host
-                // Gelbooru's image CDN requires a Referer header or it redirects to hotlink.php
-                val newReq = if (host.endsWith("gelbooru.com")) {
-                    req.newBuilder().header("Referer", "https://gelbooru.com/").build()
-                } else req
+                val newReq = when {
+                    // Gelbooru's image CDN requires a Referer header or it redirects to hotlink.php
+                    host.endsWith("gelbooru.com") ->
+                        req.newBuilder().header("Referer", "https://gelbooru.com/").build()
+                    // Zerochan blocks default/generic User-Agents on its CDN, same as its JSON API
+                    // (see ZerochanEngine.ZEROCHAN_UA) — without this, image loads fail silently.
+                    host.endsWith("zerochan.net") ->
+                        req.newBuilder().header("User-Agent", "Rotato wallpaper app - alvis").build()
+                    else -> req
+                }
                 chain.proceed(newReq)
             })
             .build()

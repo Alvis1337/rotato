@@ -1,62 +1,33 @@
 package com.chrisalvis.rotato.ui
 
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.SystemUpdateAlt
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Card
-
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,80 +38,39 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.content.ClipData
-import android.content.ClipboardManager
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
-import com.chrisalvis.rotato.BuildConfig
-import com.chrisalvis.rotato.data.AppErrorLog
-import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.DownloadState
-import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoPreferences
-import com.chrisalvis.rotato.data.RotationInterval
 import com.chrisalvis.rotato.data.UpdateCheckResult
 import com.chrisalvis.rotato.data.UpdateInfo
 import com.chrisalvis.rotato.data.UpdateRepository
-import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.ui.theme.ThemeMode
-import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+/**
+ * Top-level Settings screen. Appearance stays here (simple, high-traffic);
+ * everything else lives in a category sub-screen reached via [SettingsCategoryRow].
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    viewModel: HomeViewModel,
-    malViewModel: MalViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToSources: () -> Unit = {},
-    onNavigateToSchedule: () -> Unit = {},
-    onNavigateToStats: () -> Unit = {},
-    onNavigateToSourceHealth: () -> Unit = {},
-    onShowOnboarding: () -> Unit = {},
+    onNavigateToRotationWallpaper: () -> Unit = {},
+    onNavigateToNsfwPrivacy: () -> Unit = {},
+    onNavigateToDiscoverSources: () -> Unit = {},
+    onNavigateToIntegrations: () -> Unit = {},
+    onNavigateToAboutData: () -> Unit = {},
 ) {
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
-    val nsfwHomeOnly by viewModel.nsfwHomeOnly.collectAsStateWithLifecycle()
-    val stealthCollectionId by viewModel.stealthCollectionId.collectAsStateWithLifecycle()
-    val collections by viewModel.collections.collectAsStateWithLifecycle()
-    val widgetCollectionId by viewModel.widgetCollectionId.collectAsStateWithLifecycle()
-    val malLoggedIn by malViewModel.isLoggedIn.collectAsStateWithLifecycle()
-    val malUsername by malViewModel.username.collectAsStateWithLifecycle()
-    val malAnimeCount by malViewModel.animeCount.collectAsStateWithLifecycle()
-    val malLoading by malViewModel.loading.collectAsStateWithLifecycle()
-    val malError by malViewModel.error.collectAsStateWithLifecycle()
-    val malFilterStatuses by malViewModel.filterStatuses.collectAsStateWithLifecycle()
-    val malFilterMinScore by malViewModel.filterMinScore.collectAsStateWithLifecycle()
-    var showClearDialog by remember { mutableStateOf(false) }
-    var showImportConfirmDialog by remember { mutableStateOf(false) }
-    val autoPauseSettings by viewModel.autoPauseSettings.collectAsStateWithLifecycle()
-    val chargingTriggerEnabled by viewModel.chargingTriggerEnabled.collectAsStateWithLifecycle()
-    val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
-    val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
-    val autoRefillEnabled by viewModel.autoRefillEnabled.collectAsStateWithLifecycle()
-    val autoRefillMinCount by viewModel.autoRefillMinCount.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rotatoPrefs = remember { RotatoPreferences(context) }
-    val snackbarHostState = remember { SnackbarHostState() }
 
-    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
-    val googleDriveBackupEnabled by viewModel.googleDriveBackupEnabled.collectAsStateWithLifecycle()
-
-    // Update checker state
+    // Update checker state — auto-checked on Settings open, surfaced via a dialog.
     var updateCheckState by remember { mutableStateOf<UpdateCheckResult?>(null) }
-    var updateChecking by remember { mutableStateOf(false) }
     var pendingUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
 
@@ -155,217 +85,24 @@ fun SettingsScreen(
         }
     }
 
-    val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> uri?.let { viewModel.exportSettings(it) } }
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri -> uri?.let { viewModel.importSettings(it) } }
-
-    LaunchedEffect(backupState) {
-        when (backupState) {
-            BackupState.SUCCESS -> snackbarHostState.showSnackbar("Backup complete")
-            BackupState.ERROR -> snackbarHostState.showSnackbar("Backup failed — check storage permissions")
-            else -> {}
-        }
-    }
-
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear all photos?") },
-            text = { Text("This removes all photos from the rotation pool and stops rotation.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearAll()
-                        showClearDialog = false
-                        android.widget.Toast.makeText(context, "All photos cleared", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text("Clear", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showImportConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportConfirmDialog = false },
-            title = { Text("Import backup?") },
-            text = { Text("This will overwrite your current sources, API keys, and preferences with the contents of the selected file. This cannot be undone.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showImportConfirmDialog = false
-                        importLauncher.launch(arrayOf("application/json", "*/*"))
-                    }
-                ) {
-                    Text("Import", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImportConfirmDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
     // Update available dialog — changelog + 3-button layout
     pendingUpdateInfo?.let { info ->
-        val isDownloading = downloadState is DownloadState.Progress || downloadState is DownloadState.Installing
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { if (!isDownloading) pendingUpdateInfo = null },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .padding(vertical = 24.dp),
-                shape = MaterialTheme.shapes.large
-            ) {
-                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                "Update Available",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "v${info.versionName}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                        Icon(
-                            Icons.Default.SystemUpdateAlt,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    HorizontalDivider()
-
-                    // Scrollable changelog
-                    if (info.releaseNotes.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                "What's New",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Column(
-                                modifier = Modifier
-                                    .heightIn(max = 260.dp)
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                formatChangelogLines(info.releaseNotes).forEach { (text, isHeader) ->
-                                    if (text.isBlank()) {
-                                        Spacer(Modifier.size(4.dp))
-                                    } else if (isHeader) {
-                                        Text(
-                                            text = text,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(top = 6.dp)
-                                        )
-                                    } else {
-                                        Text(
-                                            text = text,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Download progress
-                    when (val ds = downloadState) {
-                        is DownloadState.Progress -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Downloading… ${ds.percent}%", style = MaterialTheme.typography.bodySmall)
-                            LinearProgressIndicator(progress = { ds.percent / 100f }, modifier = Modifier.fillMaxWidth())
-                        }
-                        is DownloadState.Installing -> Text("Opening installer…", style = MaterialTheme.typography.bodySmall)
-                        is DownloadState.Failed -> Text(
-                            "Failed: ${ds.message}",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        else -> {}
-                    }
-
-                    HorizontalDivider()
-
-                    // Primary action
-                    androidx.compose.material3.Button(
-                        onClick = {
-                            scope.launch {
-                                UpdateRepository.downloadAndInstall(context, info) { state ->
-                                    downloadState = state
-                                    if (state is DownloadState.Installing) {
-                                        pendingUpdateInfo = null
-                                        downloadState = DownloadState.Idle
-                                    }
-                                }
-                            }
-                        },
-                        enabled = !isDownloading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (isDownloading) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text(if (isDownloading) "Downloading…" else "Download & Install")
-                    }
-
-                    // Secondary actions
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { pendingUpdateInfo = null; downloadState = DownloadState.Idle },
-                            enabled = !isDownloading,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Later") }
-                        TextButton(
-                            onClick = {
-                                scope.launch {
-                                    rotatoPrefs.setIgnoredUpdateVersion(info.versionCode)
-                                    pendingUpdateInfo = null
-                                    downloadState = DownloadState.Idle
-                                }
-                            },
-                            enabled = !isDownloading,
-                            modifier = Modifier.weight(1f),
-                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) { Text("Ignore") }
-                    }
+        UpdateAvailableDialog(
+            info = info,
+            downloadState = downloadState,
+            onDownloadStateChange = { downloadState = it },
+            onDismiss = { pendingUpdateInfo = null },
+            onIgnore = {
+                scope.launch {
+                    rotatoPrefs.setIgnoredUpdateVersion(info.versionCode)
+                    pendingUpdateInfo = null
+                    downloadState = DownloadState.Idle
                 }
-            }
-        }
+            },
+        )
     }
 
-
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -377,9 +114,6 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
-        val discoverBatchSize by viewModel.discoverBatchSize.collectAsStateWithLifecycle()
-        val wifiOnlyDiscover by viewModel.wifiOnlyDiscover.collectAsStateWithLifecycle()
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -439,1115 +173,74 @@ fun SettingsScreen(
                             )
                         }
                     }
-
-                    SettingsSection(title = "Rotation Interval") {
-                        RotationInterval.entries.forEach { interval ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = settings.intervalMinutes == interval.minutes,
-                                    onClick = { viewModel.setIntervalMinutes(interval.minutes) }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(interval.label)
-                            }
-                        }
-                    }
-
-                    SettingsSection(title = "Order") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("Shuffle")
-                                Text(
-                                    text = if (settings.shuffleMode) "Photos play in random order"
-                                           else "Photos play in the order they were added",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = settings.shuffleMode,
-                                onCheckedChange = { viewModel.setShuffleMode(it) }
-                            )
-                        }
-                    }
-
-                    SettingsSection(title = "Wallpaper Target") {
-                        WallpaperTarget.entries.forEach { target ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = settings.wallpaperTarget == target,
-                                    onClick = { viewModel.setWallpaperTarget(target) }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(target.label)
-                            }
-                        }
-                    }
-
-                    SettingsSection(title = "Wallpaper Fit") {
-                        com.chrisalvis.rotato.data.WallpaperFit.entries.forEach { fit ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = settings.wallpaperFit == fit,
-                                    onClick = { viewModel.setWallpaperFit(fit) }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(fit.label)
-                            }
-                        }
-                    }
-
-                    SettingsSection(title = "Video Previews") {
-                        com.chrisalvis.rotato.data.VideoPreviewMode.entries.forEach { mode ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.setVideoPreviewMode(mode) },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = settings.videoPreviewMode == mode,
-                                    onClick = { viewModel.setVideoPreviewMode(mode) }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Column {
-                                    Text(mode.label)
-                                    Text(
-                                        mode.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    SettingsSection(title = "NSFW") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Blur NSFW previews")
-                                Text(
-                                    "Blur explicit images/videos in grids until tapped — also acts as a safety net if one slips through with NSFW mode off",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = nsfwBlurEnabled,
-                                onCheckedChange = { viewModel.setNsfwBlurEnabled(it) }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("NSFW → home screen only")
-                                Text(
-                                    "Explicit wallpapers are restricted to the home screen regardless of your Wallpaper Target above — lock screen stays clean",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = nsfwHomeOnly,
-                                onCheckedChange = { viewModel.setNsfwHomeOnly(it) }
-                            )
-                        }
-                        StealthCollectionDropdown(
-                            selectedCollectionId = stealthCollectionId,
-                            lists = collections,
-                            onSelect = viewModel::setStealthCollectionId
-                        )
-                    }
                 }
             }
 
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    SettingsSection(title = "Rotation Triggers") {
-                        RotationTriggersSection(
-                            chargingTriggerEnabled = chargingTriggerEnabled,
-                            autoFavoriteEnabled = autoFavoriteEnabled,
-                            autoFavoriteMinutes = autoFavoriteMinutes,
-                            autoRefillEnabled = autoRefillEnabled,
-                            autoRefillMinCount = autoRefillMinCount,
-                            onChargingTriggerToggle = { viewModel.setChargingTriggerEnabled(it) },
-                            onAutoFavoriteToggle = { viewModel.setAutoFavoriteEnabled(it) },
-                            onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) },
-                            onAutoRefillToggle = { viewModel.setAutoRefillEnabled(it) },
-                            onAutoRefillMinCountChange = { viewModel.setAutoRefillMinCount(it) },
-                        )
-                    }
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    SettingsSection(title = "Schedule") {
-                        OutlinedButton(
-                            onClick = onNavigateToSchedule,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Manage Schedule")
-                        }
-                    }
-
-                    SettingsSection(title = "Auto-Pause") {
-                        AutoPauseSection(
-                            settings = autoPauseSettings,
-                            onNightToggle = { viewModel.setAutoPauseNight(it) },
-                            onNightHoursChange = { start, end -> viewModel.setAutoPauseNightHours(start, end) },
-                            onChargingToggle = { viewModel.setAutoPauseCharging(it) },
-                            onRotateScreenOnToggle = { viewModel.setRotateScreenOn(it) },
-                        )
-                    }
-
-                    SettingsSection(title = "Widget") {
-                        WidgetCollectionDropdown(
-                            selectedCollectionId = widgetCollectionId,
-                            lists = collections,
-                            onSelect = viewModel::setWidgetCollectionId
-                        )
-                    }
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    SettingsSection(title = "Sources") {
-                        OutlinedButton(
-                            onClick = onNavigateToSources,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Hub, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Manage Sources")
-                        }
-                    }
-
-                    SettingsSection(title = "Discover") {
-                        Text("Prefetch batch size", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Images loaded per scroll page. Higher = more data, fewer load pauses.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(10 to "Low", 20 to "Medium", 40 to "High").forEach { (size, label) ->
-                                FilterChip(
-                                    selected = discoverBatchSize == size,
-                                    onClick = { viewModel.setDiscoverBatchSize(size) },
-                                    label = { Text(label) }
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Wi-Fi only", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    "Only load Discover images on Wi-Fi",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = wifiOnlyDiscover,
-                                onCheckedChange = { viewModel.setWifiOnlyDiscover(it) }
-                            )
-                        }
-                    }
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    SettingsSection(title = "MyAnimeList") {
-                        if (malLoading) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Loading…", style = MaterialTheme.typography.bodySmall)
-                            }
-                        } else if (malLoggedIn) {
-                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(
-                                        "Connected as $malUsername",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    if (malAnimeCount > 0) {
-                                        Text(
-                                            "$malAnimeCount anime in filtered list",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    if (malError != null) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                malError!!,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider()
-
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    MalStatusFilter(
-                                        selected = malFilterStatuses,
-                                        onToggle = { status ->
-                                            val updated = if (status in malFilterStatuses)
-                                                malFilterStatuses - status else malFilterStatuses + status
-                                            malViewModel.setFilterStatuses(updated)
-                                        }
-                                    )
-
-                                    MalMinScoreFilter(
-                                        minScore = malFilterMinScore,
-                                        onSelect = { malViewModel.setFilterMinScore(it) }
-                                    )
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        OutlinedButton(
-                                            onClick = { malViewModel.refresh() },
-                                            modifier = Modifier.weight(1f)
-                                        ) { Text("Refresh List") }
-                                        OutlinedButton(
-                                            onClick = { malViewModel.logout() },
-                                            modifier = Modifier.weight(1f),
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                contentColor = MaterialTheme.colorScheme.error
-                                            )
-                                        ) { Text("Disconnect") }
-                                    }
-                                }
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                if (malError != null) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            malError!!,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
-                                            Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                                Text(
-                                    "Connect your MAL account to use your anime watch list as discover queries.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                OutlinedButton(
-                                    onClick = { malViewModel.login(context) },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) { Text("Connect MyAnimeList") }
-                            }
-                        }
-                    }
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    SettingsSection(title = "Backup & Restore") {
-                        Text(
-                            text = "Export or import your sources, API keys, and preferences. MAL auth tokens are not backed up.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Google Drive backup", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    "Automatically back up settings to your Google account",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = googleDriveBackupEnabled,
-                                onCheckedChange = { viewModel.setGoogleDriveBackupEnabled(it) }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { exportLauncher.launch("rotato-backup-$today.json") },
-                                enabled = backupState == BackupState.IDLE,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                if (backupState == BackupState.BUSY) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Text("Export")
-                                }
-                            }
-                            OutlinedButton(
-                                onClick = { showImportConfirmDialog = true },
-                                enabled = backupState == BackupState.IDLE,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Import")
-                            }
-                        }
-                    }
-
-                    SettingsSection(title = "Danger Zone") {
-                        OutlinedButton(
-                            onClick = { showClearDialog = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Text("Clear All Photos")
-                        }
-                    }
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    SettingsSection(title = "Diagnostics") {
-                        var showDebugLog by remember { mutableStateOf(false) }
-                        OutlinedButton(
-                            onClick = onNavigateToSourceHealth,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Source Health")
-                        }
-                        OutlinedButton(
-                            onClick = { showDebugLog = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Debug Log")
-                        }
-                        if (showDebugLog) {
-                            DebugLogSheet(onDismiss = { showDebugLog = false })
-                        }
-                    }
-
-                    SettingsSection(title = "Stats") {
-                        OutlinedButton(
-                            onClick = onNavigateToStats,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("View Stats")
-                        }
-                    }
-
-                    SettingsSection(title = "About") {
-                        OutlinedButton(
-                            onClick = onShowOnboarding,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("View App Tour")
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Version", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        val updateAvailable = updateCheckState is UpdateCheckResult.UpdateAvailable
-                        OutlinedButton(
-                            onClick = {
-                                if (updateAvailable) {
-                                    pendingUpdateInfo = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
-                                } else {
-                                    updateChecking = true
-                                    scope.launch {
-                                        val result = UpdateRepository.checkForUpdate()
-                                        updateCheckState = result
-                                        updateChecking = false
-                                        if (result is UpdateCheckResult.UpdateAvailable) {
-                                            pendingUpdateInfo = result.info
-                                        } else if (result is UpdateCheckResult.UpToDate) {
-                                            android.widget.Toast.makeText(context, "You're up to date!", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else if (result is UpdateCheckResult.Error) {
-                                            android.widget.Toast.makeText(context, "Update check failed: ${result.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !updateChecking
-                        ) {
-                            if (updateChecking) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Checking…")
-                            } else if (updateAvailable) {
-                                Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                val info = (updateCheckState as UpdateCheckResult.UpdateAvailable).info
-                                Text("Update available — v${info.versionName}")
-                            } else {
-                                Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Check for Updates")
-                            }
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                context.startActivity(
-                                    Intent(context, OssLicensesMenuActivity::class.java)
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Open Source Licenses")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/privacy/"))
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Privacy Policy")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/terms/"))
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Terms of Service")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://alvis1337.github.io/rotato/"))
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Website")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DebugLogSheet(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val logText = remember { AppErrorLog.getLog() }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Debug Log", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Row {
-                    TextButton(onClick = {
-                        val cm = context.getSystemService(ClipboardManager::class.java)
-                        cm.setPrimaryClip(ClipData.newPlainText("Rotato Debug Log", logText))
-                    }) { Text("Copy") }
-                    TextButton(onClick = {
-                        try {
-                            val file = java.io.File(context.filesDir, "rotato_debug.log")
-                            if (!file.exists()) return@TextButton
-                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Share Debug Log"))
-                        } catch (_: Exception) {}
-                    }) { Text("Share") }
-                    TextButton(onClick = { AppErrorLog.clear(); onDismiss() }) { Text("Clear") }
-                }
-            }
-            HorizontalDivider()
-            if (logText.isBlank() || logText == "(no log yet)") {
-                Text(
-                    "No errors logged yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 24.dp)
-                )
-            } else {
-                val lines = remember(logText) { logText.lines() }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(vertical = 8.dp),
-                    contentPadding = PaddingValues(bottom = 32.dp)
-                ) {
-                    items(lines.size) { i ->
-                        Text(
-                            lines[i],
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                            modifier = Modifier.padding(vertical = 1.dp)
-                        )
-                    }
-                }
-            }
+            SettingsCategoryRow(
+                icon = Icons.Default.Tune,
+                title = "Rotation & Wallpaper",
+                subtitle = "Interval, order, target, fit, video previews, triggers, auto-pause, widget",
+                onClick = onNavigateToRotationWallpaper,
+            )
+            SettingsCategoryRow(
+                icon = Icons.Default.Shield,
+                title = "NSFW & Privacy",
+                subtitle = "Blur toggles, stealth collection",
+                onClick = onNavigateToNsfwPrivacy,
+            )
+            SettingsCategoryRow(
+                icon = Icons.Default.Explore,
+                title = "Discover & Sources",
+                subtitle = "Prefetch batch size, Wi-Fi only, manage sources",
+                onClick = onNavigateToDiscoverSources,
+            )
+            SettingsCategoryRow(
+                icon = Icons.Default.Link,
+                title = "Integrations",
+                subtitle = "MyAnimeList",
+                onClick = onNavigateToIntegrations,
+            )
+            SettingsCategoryRow(
+                icon = Icons.Default.Info,
+                title = "About & Data",
+                subtitle = "Backup & restore, danger zone, diagnostics, stats, about",
+                onClick = onNavigateToAboutData,
+            )
         }
     }
 }
 
 @Composable
-private fun SettingsSection(
+private fun SettingsCategoryRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    content: @Composable ColumnScope.() -> Unit
+    subtitle: String,
+    onClick: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        content()
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun RotationTriggersSection(
-    chargingTriggerEnabled: Boolean,
-    autoFavoriteEnabled: Boolean,
-    autoFavoriteMinutes: Int,
-    autoRefillEnabled: Boolean,
-    autoRefillMinCount: Int,
-    onChargingTriggerToggle: (Boolean) -> Unit,
-    onAutoFavoriteToggle: (Boolean) -> Unit,
-    onAutoFavoriteMinutesChange: (Int) -> Unit,
-    onAutoRefillToggle: (Boolean) -> Unit,
-    onAutoRefillMinCountChange: (Int) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Change wallpaper on charge")
-                Text(
-                    "Rotate to next wallpaper when plugged in",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = chargingTriggerEnabled, onCheckedChange = onChargingTriggerToggle)
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Auto-favorite long-running wallpapers")
-                Text(
-                    "Save wallpapers that stay on screen past your keep threshold",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = autoFavoriteEnabled, onCheckedChange = onAutoFavoriteToggle)
-        }
-
-        AnimatedVisibility(visible = autoFavoriteEnabled) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Keep threshold (minutes)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(30, 60, 120, 240).forEach { minutes ->
-                        FilterChip(
-                            selected = autoFavoriteMinutes == minutes,
-                            onClick = { onAutoFavoriteMinutesChange(minutes) },
-                            label = { Text("$minutes") }
-                        )
-                    }
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Auto-refill MAL collections")
-                Text(
-                    "Top up low MAL-managed collections after each rotation",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = autoRefillEnabled, onCheckedChange = onAutoRefillToggle)
-        }
-
-        AnimatedVisibility(visible = autoRefillEnabled) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Refill when below",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(5, 10, 20, 50).forEach { count ->
-                        FilterChip(
-                            selected = autoRefillMinCount == count,
-                            onClick = { onAutoRefillMinCountChange(count) },
-                            label = { Text("$count images") }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AutoPauseSection(
-    settings: AutoPauseSettings,
-    onNightToggle: (Boolean) -> Unit,
-    onNightHoursChange: (Int, Int) -> Unit,
-    onChargingToggle: (Boolean) -> Unit,
-    onRotateScreenOnToggle: (Boolean) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text("Pause at night")
-                Text(
-                    "Skip rotation during quiet hours",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = settings.nightEnabled, onCheckedChange = onNightToggle)
-        }
-
-        AnimatedVisibility(visible = settings.nightEnabled) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "From",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    HourDropdown(
-                        hour = settings.nightStartHour,
-                        onSelect = { onNightHoursChange(it, settings.nightEndHour) }
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Until",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    HourDropdown(
-                        hour = settings.nightEndHour,
-                        onSelect = { onNightHoursChange(settings.nightStartHour, it) }
-                    )
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text("Pause while charging")
-                Text(
-                    "Stop rotating when plugged in",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = settings.chargingEnabled, onCheckedChange = onChargingToggle)
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text("Rotate while screen is on")
-                Text(
-                    "When off, wallpaper only changes while the screen is off. Turning this on may cause sudden changes or accent color shifts while you're using your phone.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = settings.rotateScreenOn, onCheckedChange = onRotateScreenOnToggle)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WidgetCollectionDropdown(
-    selectedCollectionId: String,
-    lists: List<LocalList>,
-    onSelect: (String) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Main rotation queue"
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            "Widget collection",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "Choose which collection the home-screen widget previews.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = selectedLabel,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier
-                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth(),
-                singleLine = true
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("Main rotation queue") },
-                    onClick = {
-                        onSelect("")
-                        expanded = false
-                    }
-                )
-                lists.forEach { list ->
-                    DropdownMenuItem(
-                        text = { Text(list.name) },
-                        onClick = {
-                            onSelect(list.id)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun StealthCollectionDropdown(
-    selectedCollectionId: String,
-    lists: List<LocalList>,
-    onSelect: (String) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Not set"
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            "Stealth collection",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "The QS \"Stealth Mode\" tile switches rotation entirely to this collection and forces NSFW off, until you tap it again.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = selectedLabel,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier
-                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth(),
-                singleLine = true
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("Not set") },
-                    onClick = {
-                        onSelect("")
-                        expanded = false
-                    }
-                )
-                lists.forEach { list ->
-                    DropdownMenuItem(
-                        text = { Text(list.name) },
-                        onClick = {
-                            onSelect(list.id)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun HourDropdown(hour: Int, onSelect: (Int) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
-            value = formatHour(hour),
-            onValueChange = {},
-            readOnly = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier
-                .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth(),
-            singleLine = true
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            (0..23).forEach { h ->
-                DropdownMenuItem(
-                    text = { Text(formatHour(h)) },
-                    onClick = { onSelect(h); expanded = false }
-                )
-            }
-        }
-    }
-}
-
-private fun formatHour(hour: Int): String = when (hour) {
-    0 -> "12 AM"
-    in 1..11 -> "$hour AM"
-    12 -> "12 PM"
-    else -> "${hour - 12} PM"
-}
-
-private val MAL_STATUS_OPTIONS = listOf(
-    "watching"      to "Watching",
-    "completed"     to "Completed",
-    "on_hold"       to "On Hold",
-    "dropped"       to "Dropped",
-    "plan_to_watch" to "Plan to Watch"
-)
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MalStatusFilter(
-    selected: Set<String>,
-    onToggle: (String) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            "Watch statuses",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MAL_STATUS_OPTIONS.forEach { (key, label) ->
-                FilterChip(
-                    selected = key in selected,
-                    onClick = { onToggle(key) },
-                    label = { Text(label) }
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MalMinScoreFilter(
-    minScore: Int,
-    onSelect: (Int) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val label = if (minScore == 0) "Any rating" else "Rated $minScore+"
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            "Minimum score",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = label,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                singleLine = true
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Any rating") }, onClick = { onSelect(0); expanded = false })
-                (1..10).forEach { score ->
-                    DropdownMenuItem(
-                        text = { Text("Rated $score+") },
-                        onClick = { onSelect(score); expanded = false }
+                .fillMaxWidth()
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(
+                onClick = onClick,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(12.dp)
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
     }
 }
-
-
-/** Convert GitHub Markdown release notes into plain readable text for display. */
-private fun formatChangelog(raw: String): String = raw.lines()
-    .joinToString("\n") { line ->
-        val t = line.trim()
-        when {
-            t.startsWith("### ") -> "\n▸ ${t.removePrefix("### ")}"
-            t.startsWith("## ") -> "\n▸ ${t.removePrefix("## ")}"
-            t.startsWith("# ") -> "▸ ${t.removePrefix("# ")}"
-            t.startsWith("- ") || t.startsWith("* ") -> "  • ${t.drop(2)}"
-            else -> t
-        }
-    }
-    .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
-    .replace(Regex("\\*(.*?)\\*"), "$1")
-    .replace(Regex("`(.*?)`"), "$1")
-    .trimStart('\n')
-    .trim()
-
-/** Returns pairs of (displayText, isHeader) for richer rendering in the changelog dialog. */
-private fun formatChangelogLines(raw: String): List<Pair<String, Boolean>> =
-    raw.lines().map { line ->
-        val t = line.trim()
-            .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
-            .replace(Regex("\\*(.*?)\\*"), "$1")
-            .replace(Regex("`(.*?)`"), "$1")
-        when {
-            t.startsWith("### ") -> t.removePrefix("### ") to true
-            t.startsWith("## ")  -> t.removePrefix("## ")  to true
-            t.startsWith("# ")   -> t.removePrefix("# ")   to true
-            t.startsWith("- ") || t.startsWith("* ") -> "• ${t.drop(2)}" to false
-            else -> t to false
-        }
-    }

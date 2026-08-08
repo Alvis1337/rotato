@@ -1139,7 +1139,19 @@ private fun DiscoverThumbnailGridItem(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed),
                 loading = { ShimmerBox(Modifier.fillMaxSize()) },
-                error = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) }
+                error = {
+                    Box(
+                        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.BrokenImage,
+                            contentDescription = "Couldn't load image",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             )
         } else {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
@@ -1303,8 +1315,20 @@ private fun DiscoverGridItem(
                 error = {
                     if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
                         LaunchedEffect(Unit) { useFullUrl = true }
+                        ShimmerBox(Modifier.fillMaxSize())
+                    } else {
+                        Box(
+                            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.BrokenImage,
+                                contentDescription = "Couldn't load image",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
                 }
             )
         }
@@ -1872,7 +1896,7 @@ private fun MoreActionsSheet(
             Action(text = "Skip", icon = Icons.Default.SkipNext, onClick = onSkip)
             if (!isVideo) {
                 Action(
-                    text = if (isDownloading) "Adding to rotation…" else "Add to rotation",
+                    text = if (isDownloading) "Adding to Library…" else "Add to Library",
                     icon = Icons.Default.Download,
                     enabled = !isDownloading,
                     onClick = onDownloadToRotation

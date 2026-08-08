@@ -36,9 +36,14 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
+import com.chrisalvis.rotato.ui.AboutDataSettingsScreen
 import com.chrisalvis.rotato.ui.BrowseScreen
+import com.chrisalvis.rotato.ui.DiscoverSourcesSettingsScreen
+import com.chrisalvis.rotato.ui.IntegrationsSettingsScreen
 import com.chrisalvis.rotato.ui.LocalSourcesScreen
+import com.chrisalvis.rotato.ui.NsfwPrivacySettingsScreen
 import com.chrisalvis.rotato.ui.PluginStoreScreen
+import com.chrisalvis.rotato.ui.RotationWallpaperSettingsScreen
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
 import com.chrisalvis.rotato.ui.MalViewModel
@@ -128,7 +133,9 @@ class MainActivity : AppCompatActivity() {
                     "home" -> 1
                     "browse" -> 2
                     "taste" -> 3
-                    "settings", "sources", "schedule", "stats", "source_health" -> 4
+                    "settings", "sources", "schedule", "stats", "source_health",
+                    "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
+                    "settings_integrations", "settings_about_data" -> 4
                     else -> 0
                 }
 
@@ -258,11 +265,44 @@ class MainActivity : AppCompatActivity() {
                         }
                         composable("settings") {
                             SettingsScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToRotationWallpaper = { navController.navigate("settings_rotation_wallpaper") },
+                                onNavigateToNsfwPrivacy = { navController.navigate("settings_nsfw_privacy") },
+                                onNavigateToDiscoverSources = { navController.navigate("settings_discover_sources") },
+                                onNavigateToIntegrations = { navController.navigate("settings_integrations") },
+                                onNavigateToAboutData = { navController.navigate("settings_about_data") },
+                            )
+                        }
+                        composable("settings_rotation_wallpaper") {
+                            RotationWallpaperSettingsScreen(
                                 viewModel = homeViewModel,
-                                malViewModel = malViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToSchedule = { navController.navigate("schedule") },
+                            )
+                        }
+                        composable("settings_nsfw_privacy") {
+                            NsfwPrivacySettingsScreen(
+                                viewModel = homeViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                            )
+                        }
+                        composable("settings_discover_sources") {
+                            DiscoverSourcesSettingsScreen(
+                                viewModel = homeViewModel,
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToSources = { navController.navigate("sources") },
-                                onNavigateToSchedule = { navController.navigate("schedule") },
+                            )
+                        }
+                        composable("settings_integrations") {
+                            IntegrationsSettingsScreen(
+                                malViewModel = malViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                            )
+                        }
+                        composable("settings_about_data") {
+                            AboutDataSettingsScreen(
+                                viewModel = homeViewModel,
+                                onNavigateBack = { navController.popBackStack() },
                                 onNavigateToStats = { navController.navigate("stats") },
                                 onNavigateToSourceHealth = { navController.navigate("source_health") },
                                 onShowOnboarding = { navController.navigate("onboarding") },
