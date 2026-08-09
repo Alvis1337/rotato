@@ -22,7 +22,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -97,24 +96,12 @@ fun DiscoverSourcesSettingsScreen(
                                 )
                             }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Wi-Fi only", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    "Only load Discover images on Wi-Fi",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = wifiOnlyDiscover,
-                                onCheckedChange = { viewModel.setWifiOnlyDiscover(it) }
-                            )
-                        }
+                        SettingsToggleRow(
+                            title = "Wi-Fi only",
+                            subtitle = "Only load Discover images on Wi-Fi",
+                            checked = wifiOnlyDiscover,
+                            onCheckedChange = { viewModel.setWifiOnlyDiscover(it) }
+                        )
                     }
                 }
             }

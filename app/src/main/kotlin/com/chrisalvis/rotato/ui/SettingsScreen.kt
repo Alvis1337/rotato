@@ -54,6 +54,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
+ * Settings is now a router into nav-based sub-screens, so SettingsScreen itself recomposes fresh
+ * every time the user navigates back into it — a plain `remember` here would re-run the update
+ * check (and re-show a just-dismissed dialog) on every such visit. This survives that.
+ */
+private object UpdateCheckSessionState {
+    var hasCheckedThisSession = false
+}
+
+/**
  * Top-level Settings screen. Appearance stays here (simple, high-traffic);
  * everything else lives in a category sub-screen reached via [SettingsCategoryRow].
  */
@@ -76,8 +85,11 @@ fun SettingsScreen(
     var pendingUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
 
-    // Auto-check on open — popup if update available and not ignored
+    // Auto-check on open — popup if update available and not ignored. Once per app session,
+    // not once per visit, or navigating into a sub-screen and back would re-show a dismissed dialog.
     LaunchedEffect(Unit) {
+        if (UpdateCheckSessionState.hasCheckedThisSession) return@LaunchedEffect
+        UpdateCheckSessionState.hasCheckedThisSession = true
         val ignoredVersion = rotatoPrefs.ignoredUpdateVersion.first()
         val result = UpdateRepository.checkForUpdate()
         updateCheckState = result

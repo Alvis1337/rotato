@@ -18,18 +18,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -37,9 +32,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -111,25 +103,13 @@ fun RotationWallpaperSettingsScreen(
                     }
 
                     SettingsSection(title = "Order") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Shuffle")
-                                Text(
-                                    text = if (settings.shuffleMode) "Photos play in random order"
-                                           else "Photos play in the order they were added",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = settings.shuffleMode,
-                                onCheckedChange = { viewModel.setShuffleMode(it) }
-                            )
-                        }
+                        SettingsToggleRow(
+                            title = "Shuffle",
+                            subtitle = if (settings.shuffleMode) "Photos play in random order"
+                                       else "Photos play in the order they were added",
+                            checked = settings.shuffleMode,
+                            onCheckedChange = { viewModel.setShuffleMode(it) }
+                        )
                     }
 
                     SettingsSection(title = "Wallpaper Target") {
@@ -271,37 +251,19 @@ private fun RotationTriggersSection(
     onAutoRefillMinCountChange: (Int) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Change wallpaper on charge")
-                Text(
-                    "Rotate to next wallpaper when plugged in",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = chargingTriggerEnabled, onCheckedChange = onChargingTriggerToggle)
-        }
+        SettingsToggleRow(
+            title = "Change wallpaper on charge",
+            subtitle = "Rotate to next wallpaper when plugged in",
+            checked = chargingTriggerEnabled,
+            onCheckedChange = onChargingTriggerToggle
+        )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Auto-favorite long-running wallpapers")
-                Text(
-                    "Save wallpapers that stay on screen past your keep threshold",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = autoFavoriteEnabled, onCheckedChange = onAutoFavoriteToggle)
-        }
+        SettingsToggleRow(
+            title = "Auto-favorite long-running wallpapers",
+            subtitle = "Save wallpapers that stay on screen past your keep threshold",
+            checked = autoFavoriteEnabled,
+            onCheckedChange = onAutoFavoriteToggle
+        )
 
         AnimatedVisibility(visible = autoFavoriteEnabled) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -325,21 +287,12 @@ private fun RotationTriggersSection(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Auto-refill MAL collections")
-                Text(
-                    "Top up low MAL-managed collections after each rotation",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = autoRefillEnabled, onCheckedChange = onAutoRefillToggle)
-        }
+        SettingsToggleRow(
+            title = "Auto-refill MAL collections",
+            subtitle = "Top up low MAL-managed collections after each rotation",
+            checked = autoRefillEnabled,
+            onCheckedChange = onAutoRefillToggle
+        )
 
         AnimatedVisibility(visible = autoRefillEnabled) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -375,21 +328,12 @@ private fun AutoPauseSection(
     onRotateScreenOnToggle: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Pause at night")
-                Text(
-                    "Skip rotation during quiet hours",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = settings.nightEnabled, onCheckedChange = onNightToggle)
-        }
+        SettingsToggleRow(
+            title = "Pause at night",
+            subtitle = "Skip rotation during quiet hours",
+            checked = settings.nightEnabled,
+            onCheckedChange = onNightToggle
+        )
 
         AnimatedVisibility(visible = settings.nightEnabled) {
             Row(
@@ -422,21 +366,12 @@ private fun AutoPauseSection(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Pause while charging")
-                Text(
-                    "Stop rotating when plugged in",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = settings.chargingEnabled, onCheckedChange = onChargingToggle)
-        }
+        SettingsToggleRow(
+            title = "Pause while charging",
+            subtitle = "Stop rotating when plugged in",
+            checked = settings.chargingEnabled,
+            onCheckedChange = onChargingToggle
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -456,84 +391,30 @@ private fun AutoPauseSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WidgetCollectionDropdown(
     selectedCollectionId: String,
     lists: List<LocalList>,
     onSelect: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Main rotation queue"
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            "Widget collection",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "Choose which collection the home-screen widget previews.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = selectedLabel,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier
-                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth(),
-                singleLine = true
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("Main rotation queue") },
-                    onClick = {
-                        onSelect("")
-                        expanded = false
-                    }
-                )
-                lists.forEach { list ->
-                    DropdownMenuItem(
-                        text = { Text(list.name) },
-                        onClick = {
-                            onSelect(list.id)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
+    SettingsDropdown(
+        label = "Widget collection",
+        description = "Choose which collection the home-screen widget previews.",
+        items = listOf<LocalList?>(null) + lists,
+        selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Main rotation queue",
+        itemLabel = { it?.name ?: "Main rotation queue" },
+        onSelect = { onSelect(it?.id ?: "") },
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HourDropdown(hour: Int, onSelect: (Int) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
-            value = formatHour(hour),
-            onValueChange = {},
-            readOnly = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth(),
-            singleLine = true
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            (0..23).forEach { h ->
-                DropdownMenuItem(
-                    text = { Text(formatHour(h)) },
-                    onClick = { onSelect(h); expanded = false }
-                )
-            }
-        }
-    }
+    SettingsDropdown(
+        items = (0..23).toList(),
+        selectedLabel = formatHour(hour),
+        itemLabel = { formatHour(it) },
+        onSelect = onSelect,
+    )
 }
 
 private fun formatHour(hour: Int): String = when (hour) {

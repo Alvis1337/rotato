@@ -13,20 +13,34 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -130,7 +144,8 @@ internal fun UpdateAvailableDialog(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            formatChangelogLines(info.releaseNotes).forEach { (text, isHeader) ->
+                            val changelogLines = remember(info.releaseNotes) { formatChangelogLines(info.releaseNotes) }
+                            changelogLines.forEach { (text, isHeader) ->
                                 if (text.isBlank()) {
                                     Spacer(Modifier.size(4.dp))
                                 } else if (isHeader) {
@@ -211,6 +226,114 @@ internal fun UpdateAvailableDialog(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                     ) { Text("Ignore") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Labeled toggle row (title + optional subtitle + Switch) — the most common row shape across
+ * every Settings sub-screen. Pass [subtitle] as null to omit the second line.
+ */
+@Composable
+internal fun SettingsToggleRow(
+    title: String,
+    subtitle: String? = null,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** Dismissible error banner — text + close button, styled with the theme's error color. Renders nothing when [error] is null. */
+@Composable
+internal fun MalErrorBanner(error: String?, onDismiss: () -> Unit) {
+    if (error == null) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            error,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+/**
+ * Generic single-select dropdown (label + description + ExposedDropdownMenuBox) shared by the
+ * various collection/option pickers across Settings sub-screens (previously each hand-rolled
+ * their own copy of this exact shape).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun <T> SettingsDropdown(
+    label: String? = null,
+    description: String? = null,
+    items: List<T>,
+    selectedLabel: String,
+    itemLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (label != null) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (description != null) {
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            OutlinedTextField(
+                value = selectedLabel,
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                modifier = Modifier
+                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+                singleLine = true
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                items.forEach { item ->
+                    DropdownMenuItem(
+                        text = { Text(itemLabel(item)) },
+                        onClick = {
+                            onSelect(item)
+                            expanded = false
+                        }
+                    )
                 }
             }
         }

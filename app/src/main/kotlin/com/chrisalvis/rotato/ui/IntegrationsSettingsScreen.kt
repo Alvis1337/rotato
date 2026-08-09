@@ -15,30 +15,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -109,22 +100,7 @@ fun IntegrationsSettingsScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    if (malError != null) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                malError!!,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                            }
-                                        }
-                                    }
+                                    MalErrorBanner(malError, onDismiss = { malViewModel.clearError() })
                                 }
 
                                 HorizontalDivider()
@@ -161,22 +137,7 @@ fun IntegrationsSettingsScreen(
                             }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                if (malError != null) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            malError!!,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        IconButton(onClick = { malViewModel.clearError() }, modifier = Modifier.size(32.dp)) {
-                                            Icon(Icons.Default.Close, contentDescription = "Dismiss error", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
+                                MalErrorBanner(malError, onDismiss = { malViewModel.clearError() })
                                 Text(
                                     "Connect your MAL account to use your anime watch list as discover queries.",
                                     style = MaterialTheme.typography.bodySmall,
@@ -227,39 +188,16 @@ private fun MalStatusFilter(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MalMinScoreFilter(
     minScore: Int,
     onSelect: (Int) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val label = if (minScore == 0) "Any rating" else "Rated $minScore+"
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            "Minimum score",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = label,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                singleLine = true
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Any rating") }, onClick = { onSelect(0); expanded = false })
-                (1..10).forEach { score ->
-                    DropdownMenuItem(
-                        text = { Text("Rated $score+") },
-                        onClick = { onSelect(score); expanded = false }
-                    )
-                }
-            }
-        }
-    }
+    SettingsDropdown(
+        label = "Minimum score",
+        items = listOf(0) + (1..10).toList(),
+        selectedLabel = if (minScore == 0) "Any rating" else "Rated $minScore+",
+        itemLabel = { if (it == 0) "Any rating" else "Rated $it+" },
+        onSelect = onSelect,
+    )
 }

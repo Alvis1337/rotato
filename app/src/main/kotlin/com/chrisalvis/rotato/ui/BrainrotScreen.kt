@@ -1660,8 +1660,11 @@ private fun WallpaperDetailOverlay(
                         1f to Color.Black.copy(alpha = 0.92f)
                     )
                 )
-                .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
+                // navigationBarsPadding must come before the measurement below, or the reported
+                // height double-counts the nav-bar inset once here and again in VideoPlayerView's
+                // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
                 .navigationBarsPadding()
+                .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp, top = 48.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
