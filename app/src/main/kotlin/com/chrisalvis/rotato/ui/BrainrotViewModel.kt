@@ -518,7 +518,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 ) {
                     return@mapNotNull null
                 }
-                val effectiveNsfw = source.nsfwEnabled ?: nsfw
+                // The global toggle is a ceiling: a per-source override can force a source to stay
+                // SFW even in NSFW mode, but can never re-enable NSFW for a source once the global
+                // toggle is off — otherwise a stale per-source override outlives the user turning
+                // NSFW off globally, with no visible way to notice or undo it.
+                val effectiveNsfw = nsfw && source.nsfwEnabled != false
                 if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
                 val rawQueries = queriesFor(source, explicitQuery, malTitles, tierBoostTags)
                 val queries = if (manifest.maxTagCount == Int.MAX_VALUE) rawQueries

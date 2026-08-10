@@ -34,7 +34,9 @@ class FillHelper(private val context: Context) {
             if (pluginId != null && src.pluginId != pluginId) return@filter false
             if (instanceId != null && src.instanceId != instanceId) return@filter false
             val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
-            val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+            // globalNsfw is a ceiling: a per-source or per-collection override can force SFW even
+            // when NSFW mode is on, but can never re-enable NSFW once the global toggle is off.
+            val effectiveNsfw = globalNsfw && src.nsfwEnabled != false && nsfwOverride != false
             PluginExecutor.canServe(manifest, effectiveNsfw, src)
         }
         if (candidates.isEmpty()) return 0
@@ -56,7 +58,7 @@ class FillHelper(private val context: Context) {
                 if (added >= count) break
                 val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
                 val remaining = count - added
-                val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+                val effectiveNsfw = globalNsfw && src.nsfwEnabled != false && nsfwOverride != false
                 val wallpapers = try {
                     PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, filters, remaining + 5)
                 } catch (e: Exception) {

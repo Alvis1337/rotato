@@ -549,7 +549,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             if (pluginId != null && src.pluginId != pluginId) return@filter false
             if (instanceId != null && src.instanceId != instanceId) return@filter false
             val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@filter false
-            val effectiveNsfwForSource = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+            // globalNsfw is a ceiling: a per-source or per-collection override can force SFW even
+            // when NSFW mode is on, but can never re-enable NSFW once the global toggle is off.
+            val effectiveNsfwForSource = globalNsfw && src.nsfwEnabled != false && nsfwOverride != false
             PluginExecutor.canServe(manifest, effectiveNsfwForSource, src)
         }
         if (candidates.isEmpty()) {
@@ -572,7 +574,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 if (added >= count) break
                 val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: continue
                 val remaining = count - added
-                val effectiveNsfw = nsfwOverride ?: (src.nsfwEnabled ?: globalNsfw)
+                val effectiveNsfw = globalNsfw && src.nsfwEnabled != false && nsfwOverride != false
                 Log.d("BrowseViewModel", "fillCollectionFromSources: round=$round src=${src.pluginId} effectiveNsfw=$effectiveNsfw remaining=$remaining")
                 val wallpapers = try {
                     PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), effectiveNsfw, filters, remaining + 5)

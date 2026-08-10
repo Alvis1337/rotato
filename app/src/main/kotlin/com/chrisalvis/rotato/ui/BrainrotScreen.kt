@@ -495,14 +495,18 @@ fun BrainrotScreen(
                                         }
                                         val nsfwDescription = when (src.nsfwEnabled) {
                                             null -> "Inherit global NSFW"
-                                            true -> "NSFW enabled for this source"
+                                            true -> if (nsfwMode) "NSFW enabled for this source" else "NSFW enabled for this source (inactive — global NSFW is off)"
                                             false -> "NSFW disabled for this source"
                                         }
                                         FilterChip(
                                             selected = src.enabled,
                                             onClick = { vm.toggleSource(src) },
                                             label = { Text(if (src.pluginId == "REDDIT" && src.instanceId.isNotBlank()) "r/${src.instanceId}" else manifest?.name ?: src.pluginId.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) },
-                                            trailingIcon = if (missingCreds || hasCreds || nsfwMode) {
+                                            // Show the per-source NSFW icon whenever there's an active override
+                                            // to see/reset, not just while the global toggle happens to be on —
+                                            // otherwise a stale override becomes invisible (and unfixable) the
+                                            // moment NSFW mode is turned off.
+                                            trailingIcon = if (missingCreds || hasCreds || nsfwMode || src.nsfwEnabled != null) {
                                                 {
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
@@ -522,7 +526,7 @@ fun BrainrotScreen(
                                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                                             )
                                                         }
-                                                        if (nsfwMode) {
+                                                        if (nsfwMode || src.nsfwEnabled != null) {
                                                             Icon(
                                                                 imageVector = nsfwIcon,
                                                                 contentDescription = nsfwDescription,
