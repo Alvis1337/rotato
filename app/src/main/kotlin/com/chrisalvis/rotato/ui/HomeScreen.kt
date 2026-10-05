@@ -977,7 +977,7 @@ private fun ImagePreviewDialog(
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.aboveTabletopFold().fillMaxSize(),
                 beyondViewportPageCount = 1
             ) { page ->
                 val pageFile = images.getOrNull(page) ?: return@HorizontalPager

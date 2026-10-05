@@ -97,7 +97,7 @@ class RotatoWidgetProvider : AppWidgetProvider() {
 
         private fun buildViews(context: Context, bitmap: Bitmap?): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_rotato)
-            bitmap?.let { views.setImageViewBitmap(R.id.widget_image, it) }
+            bitmap?.let { views.setImageViewBitmap(R.id.widget_image, scaledForWidget(it)) }
 
             val nextIntent = Intent(context, RotatoWidgetProvider::class.java).apply {
                 action = ACTION_NEXT
@@ -185,6 +185,23 @@ class RotatoWidgetProvider : AppWidgetProvider() {
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
                 inSampleSize = calculateInSampleSize(bounds)
             })
+        }
+
+        /**
+         * RemoteViews bitmaps are capped at roughly the screen's size in bytes x 1.5. The current
+         * wallpaper is rendered to cover both screens of a foldable, so passed through as-is it
+         * exceeds the cap on the smaller outer screen and the widget silently stops updating.
+         */
+        private fun scaledForWidget(bitmap: Bitmap, maxDimension: Int = 1024): Bitmap {
+            val longest = maxOf(bitmap.width, bitmap.height)
+            if (longest <= maxDimension) return bitmap
+            val scale = maxDimension.toFloat() / longest
+            return Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * scale).toInt().coerceAtLeast(1),
+                (bitmap.height * scale).toInt().coerceAtLeast(1),
+                true
+            )
         }
 
         private fun calculateInSampleSize(bounds: BitmapFactory.Options, maxDimension: Int = 1024): Int {

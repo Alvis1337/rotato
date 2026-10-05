@@ -624,7 +624,13 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             }
         }
     ) { padding ->
-        if (selectedList == null) {
+        // Unfolded foldable / tablet: keep the collection list on the left while a collection
+        // is open on the right, instead of swapping one full-width screen for the other.
+        BoxWithConstraints(modifier = Modifier.padding(padding).fillMaxSize()) {
+        val twoPane = maxWidth >= 600.dp
+        val listPaneWidth = (maxWidth * 0.4f).coerceIn(280.dp, 400.dp)
+        Row(modifier = Modifier.fillMaxSize()) {
+        if (selectedList == null || twoPane) {
             val activity = androidx.compose.ui.platform.LocalContext.current as androidx.fragment.app.FragmentActivity
             ListPickerContent(
                 lists = lists,
@@ -675,10 +681,12 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                 onFetchFromSources = { fetchFillFor = it },
                 onToggleBlurExempt = { vm.toggleBlurExempt(it) },
                 onCreateList = { vm.showCreateDialog() },
-                modifier = Modifier.padding(padding)
+                modifier = if (selectedList != null) Modifier.width(listPaneWidth) else Modifier.weight(1f)
             )
-        } else {
-            Column(modifier = Modifier.padding(padding)) {
+        }
+        if (selectedList != null) {
+            if (twoPane) VerticalDivider()
+            Column(modifier = Modifier.weight(1f)) {
                 OutlinedTextField(
                     value = collectionSearch,
                     onValueChange = { vm.setCollectionSearch(it) },
@@ -835,6 +843,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     modifier = Modifier.weight(1f)
                 )
             }
+        }
+        }
         }
     }
 }
@@ -2088,7 +2098,7 @@ private fun WallpaperUrlPreviewDialog(
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.aboveTabletopFold().fillMaxSize(),
                 beyondViewportPageCount = 1
             ) { page ->
                 val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager

@@ -103,6 +103,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.okhttp)
+    implementation(libs.androidx.window)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.biometric)
     implementation(libs.drag.select.compose)

@@ -66,7 +66,8 @@ object WallhavenEngine : PluginEngine() {
         }
         when (filters.aspectRatio) {
             AspectRatio.ANY -> Unit
-            AspectRatio.MY_PHONE -> url += "&ratios=9x16"
+            // Foldables: the unfolded screen is near-square, so tall-to-square portrait ratios all fit.
+            AspectRatio.MY_PHONE -> url += if (filters.phoneMaxAspect > 0.7f) "&ratios=9x16,10x16,9x18,1x1" else "&ratios=9x16"
             else -> url += "&ratios=${filters.aspectRatio.wallhavenKey}"
         }
         if (source.apiKey.isNotBlank()) url += "&apikey=${source.apiKey.urlEncode()}"

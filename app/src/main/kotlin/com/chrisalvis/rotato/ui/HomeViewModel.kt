@@ -19,6 +19,7 @@ import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.loadScaledBitmap
+import com.chrisalvis.rotato.data.setWallpaperBitmap
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
@@ -542,12 +543,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     com.chrisalvis.rotato.data.WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
                 }
                 val target = com.chrisalvis.rotato.data.wallpaperTargetSize(app)
-                val screenBitmap = com.chrisalvis.rotato.data.fitWallpaperBitmap(
-                    bitmap, settingsVal.wallpaperFit, target.width, target.height
-                )
+                val screenBitmap = com.chrisalvis.rotato.data.fitWallpaperBitmap(bitmap, settingsVal.wallpaperFit, target)
                 bitmap.recycle()
                 try {
-                    wallpaperManager.setBitmap(screenBitmap, null, true, flags)
+                    setWallpaperBitmap(app, wallpaperManager, screenBitmap, flags)
                 } finally {
                     screenBitmap.recycle()
                 }

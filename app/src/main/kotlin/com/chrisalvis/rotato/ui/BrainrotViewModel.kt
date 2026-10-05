@@ -13,6 +13,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import coil.size.Scale
 import com.chrisalvis.rotato.data.fitWallpaperBitmap
+import com.chrisalvis.rotato.data.setWallpaperBitmap
 import com.chrisalvis.rotato.data.wallpaperTargetSize
 import com.chrisalvis.rotato.data.AppErrorLog
 import com.chrisalvis.rotato.data.AspectRatio
@@ -756,9 +757,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
                 }
                 // The source bitmap belongs to Coil's memory cache, so only the copy is recycled.
-                val screenBitmap = fitWallpaperBitmap(bitmap, settings.wallpaperFit, target.width, target.height)
+                val screenBitmap = fitWallpaperBitmap(bitmap, settings.wallpaperFit, target)
                 try {
-                    wm.setBitmap(screenBitmap, null, true, flags)
+                    setWallpaperBitmap(app, wm, screenBitmap, flags)
                 } finally {
                     screenBitmap.recycle()
                 }
@@ -968,13 +969,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setAspectRatio(value: AspectRatio) {
         viewModelScope.launch {
             if (value == AspectRatio.MY_PHONE) {
-                val metrics = getApplication<Application>().resources.displayMetrics
-                val shortSide = minOf(metrics.widthPixels, metrics.heightPixels)
-                val longSide = maxOf(metrics.widthPixels, metrics.heightPixels)
+                // Every screen the device has (both panels on a foldable), not just the current one.
+                val app = getApplication<Application>()
+                val screens = com.chrisalvis.rotato.data.knownDisplaySizes(app)
+                val narrowest = screens.minBy { it.width.toFloat() / it.height }
+                val widest = screens.maxBy { it.width.toFloat() / it.height }
                 // Normalize to base-9 so Wallhaven gets a clean ratio (e.g. 9x20 for a Pixel)
-                val normalizedH = (9.0 * longSide / shortSide).roundToInt()
+                val normalizedH = (9.0 * narrowest.height / narrowest.width).roundToInt()
                 prefs.setPhoneRatio(9, normalizedH)
-                prefs.setPhoneScreen(shortSide, longSide)
+                val widestAspect = widest.width.toFloat() / widest.height
+                val narrowestAspect = narrowest.width.toFloat() / narrowest.height
+                prefs.setPhoneMaxAspect(if (widestAspect > narrowestAspect * 1.05f) widestAspect else 0f)
+                val canvas = com.chrisalvis.rotato.data.wallpaperTargetSize(app)
+                prefs.setPhoneScreen(canvas.width, canvas.height)
             }
             prefs.setAspectRatio(value)
             loadMore(reset = true)

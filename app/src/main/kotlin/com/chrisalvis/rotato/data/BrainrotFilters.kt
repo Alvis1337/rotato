@@ -31,6 +31,12 @@ data class BrainrotFilters(
     val aspectRatio: AspectRatio = AspectRatio.ANY,
     val phoneWidthParts: Int = 0,
     val phoneHeightParts: Int = 0,
+    /**
+     * Foldables: width/height of the widest screen (the inner panel). When set, "My Phone"
+     * accepts anything from the narrowest screen's ratio up to this one, since such an image
+     * fills both screens. 0 on single-screen phones.
+     */
+    val phoneMaxAspect: Float = 0f,
     val phoneScreenWidth: Int = 0,
     val phoneScreenHeight: Int = 0,
     val useMalFilter: Boolean = true,
@@ -56,7 +62,9 @@ fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
             if (phoneWidthParts > 0 && phoneHeightParts > 0) {
                 val expected = phoneWidthParts.toDouble() / phoneHeightParts
                 val actual = width.toDouble() / height
-                if (abs(actual - expected) / expected > 0.05) return false
+                if (phoneMaxAspect > expected) {
+                    if (actual < expected * 0.95 || actual > phoneMaxAspect * 1.05) return false
+                } else if (abs(actual - expected) / expected > 0.05) return false
             }
         }
         else -> {

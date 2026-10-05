@@ -75,6 +75,7 @@ fun SettingsScreen(
     onNavigateToDiscoverSources: () -> Unit = {},
     onNavigateToIntegrations: () -> Unit = {},
     onNavigateToAboutData: () -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -117,6 +118,7 @@ fun SettingsScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 navigationIcon = {

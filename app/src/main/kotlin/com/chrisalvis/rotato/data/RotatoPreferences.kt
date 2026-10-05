@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -34,6 +35,7 @@ class RotatoPreferences(private val context: Context) {
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val PHONE_WIDTH_PARTS = intPreferencesKey("phone_width_parts")
         val PHONE_HEIGHT_PARTS = intPreferencesKey("phone_height_parts")
+        val PHONE_MAX_ASPECT = floatPreferencesKey("phone_max_aspect")
         val PHONE_SCREEN_WIDTH = intPreferencesKey("phone_screen_width")
         val PHONE_SCREEN_HEIGHT = intPreferencesKey("phone_screen_height")
         val USE_MAL_FILTER = booleanPreferencesKey("use_mal_filter")
@@ -312,6 +314,7 @@ class RotatoPreferences(private val context: Context) {
                 } ?: AspectRatio.ANY,
                 phoneWidthParts = prefs[PHONE_WIDTH_PARTS] ?: 0,
                 phoneHeightParts = prefs[PHONE_HEIGHT_PARTS] ?: 0,
+                phoneMaxAspect = prefs[PHONE_MAX_ASPECT] ?: 0f,
                 phoneScreenWidth = prefs[PHONE_SCREEN_WIDTH] ?: 0,
                 phoneScreenHeight = prefs[PHONE_SCREEN_HEIGHT] ?: 0,
                 useMalFilter = prefs[USE_MAL_FILTER] ?: true,
@@ -331,6 +334,11 @@ class RotatoPreferences(private val context: Context) {
             it[PHONE_WIDTH_PARTS] = widthParts
             it[PHONE_HEIGHT_PARTS] = heightParts
         }
+    }
+
+    /** Widest screen's width/height on a foldable; 0 when every screen shares one ratio. */
+    suspend fun setPhoneMaxAspect(aspect: Float) {
+        context.dataStore.edit { it[PHONE_MAX_ASPECT] = aspect }
     }
 
     suspend fun setPhoneScreen(width: Int, height: Int) {

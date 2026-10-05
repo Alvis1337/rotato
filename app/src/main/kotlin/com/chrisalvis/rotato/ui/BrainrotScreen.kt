@@ -1571,7 +1571,7 @@ private fun WallpaperDetailOverlay(
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.aboveTabletopFold().fillMaxSize(),
             beyondViewportPageCount = 1,
         ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
@@ -2157,7 +2157,7 @@ private fun DiscoverSettingsSheetContent(
                     if (ratio == AspectRatio.MY_PHONE) {
                         TooltipBox(
                             positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                            tooltip = { PlainTooltip { Text("Shows only portrait images. Your phone crops them to fit at set time.") } },
+                            tooltip = { PlainTooltip { Text("Shows images shaped for your screen (both screens on a foldable). Your phone crops them to fit at set time.") } },
                             state = rememberTooltipState()
                         ) {
                             FilterChip(

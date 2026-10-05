@@ -37,6 +37,7 @@ import com.chrisalvis.rotato.data.ScreenRotationTarget
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.fitWallpaperBitmap
+import com.chrisalvis.rotato.data.setWallpaperBitmap
 import com.chrisalvis.rotato.data.loadScaledBitmap
 import com.chrisalvis.rotato.data.wallpaperTargetSize
 import com.chrisalvis.rotato.data.sanitizeFilename
@@ -216,7 +217,7 @@ class WallpaperWorker(
             val target = wallpaperTargetSize(applicationContext)
 
             fun scaleBitmap(bitmap: Bitmap): Bitmap =
-                fitWallpaperBitmap(bitmap, settings.wallpaperFit, target.width, target.height)
+                fitWallpaperBitmap(bitmap, settings.wallpaperFit, target)
 
             val homeBitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
                 ?: run {
@@ -234,25 +235,25 @@ class WallpaperWorker(
 
             try {
                 when (effectiveTarget) {
-                    WallpaperTarget.HOME_ONLY -> wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                    WallpaperTarget.LOCK_ONLY -> wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                    WallpaperTarget.HOME_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM)
+                    WallpaperTarget.LOCK_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK)
                     WallpaperTarget.BOTH -> {
                         if (hasPerScreen && lockTargetFile != targetFile) {
-                            wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM)
                             val lockBitmap = loadScaledBitmap(applicationContext, lockTargetFile.absolutePath)
                             if (lockBitmap != null) {
                                 val lockScreenBitmap = scaleBitmap(lockBitmap)
                                 lockBitmap.recycle()
-                                try { wallpaperManager.setBitmap(lockScreenBitmap, null, true, WallpaperManager.FLAG_LOCK) }
+                                try { setWallpaperBitmap(applicationContext, wallpaperManager, lockScreenBitmap, WallpaperManager.FLAG_LOCK) }
                                 finally { lockScreenBitmap.recycle() }
                             } else {
                                 // Lock image unreadable — fall back to home screen image and record a warning
                                 val errorType = if (lockTargetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
                                 prefs.addRotationError(RotationError(errorType, "Lock screen image unavailable: ${lockTargetFile.name}"))
-                                wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                                setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK)
                             }
                         } else {
-                            wallpaperManager.setBitmap(screenBitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
                         }
                     }
                 }

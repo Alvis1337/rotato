@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,6 +74,7 @@ class MainActivity : AppCompatActivity() {
     private val _pendingSharedImages = mutableStateOf<List<Uri>>(emptyList())
     private val _pendingMalCode = mutableStateOf<String?>(null)
 
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -204,6 +209,29 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
+                // Unfolded: Settings keeps its category list beside the open category.
+                val settingsTwoPane = LocalConfiguration.current.screenWidthDp >= 700
+                val openSettingsCategory: (String) -> Unit = { route ->
+                    navController.navigate(route) {
+                        // Swap the right pane instead of stacking categories on the back stack.
+                        if (settingsTwoPane) popUpTo("settings")
+                        launchSingleTop = true
+                    }
+                }
+                val settingsList: @Composable (Modifier) -> Unit = { paneModifier ->
+                    SettingsScreen(
+                        onNavigateBack = {
+                            if (!navController.popBackStack("settings", inclusive = true)) navController.popBackStack()
+                        },
+                        onNavigateToRotationWallpaper = { openSettingsCategory("settings_rotation_wallpaper") },
+                        onNavigateToNsfwPrivacy = { openSettingsCategory("settings_nsfw_privacy") },
+                        onNavigateToDiscoverSources = { openSettingsCategory("settings_discover_sources") },
+                        onNavigateToIntegrations = { openSettingsCategory("settings_integrations") },
+                        onNavigateToAboutData = { openSettingsCategory("settings_about_data") },
+                        modifier = paneModifier,
+                    )
+                }
+
                 Row(modifier = Modifier.fillMaxSize()) {
                     if (showBottomBar && useNavRail) {
                         NavigationRail {
@@ -243,6 +271,15 @@ class MainActivity : AppCompatActivity() {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(paddingValues)
+                                // The rail already pads for the start-side system bar (3-button
+                                // nav in landscape); without this every screen padded it again.
+                                .then(
+                                    if (showBottomBar && useNavRail) {
+                                        Modifier.consumeWindowInsets(
+                                            WindowInsets.safeDrawing.only(WindowInsetsSides.Start)
+                                        )
+                                    } else Modifier
+                                )
                         ) {
                             composable("setup") {
                                 SetupScreen(
@@ -278,49 +315,64 @@ class MainActivity : AppCompatActivity() {
                                 )
                             }
                             composable("settings") {
-                                SettingsScreen(
-                                    onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToRotationWallpaper = { navController.navigate("settings_rotation_wallpaper") },
-                                    onNavigateToNsfwPrivacy = { navController.navigate("settings_nsfw_privacy") },
-                                    onNavigateToDiscoverSources = { navController.navigate("settings_discover_sources") },
-                                    onNavigateToIntegrations = { navController.navigate("settings_integrations") },
-                                    onNavigateToAboutData = { navController.navigate("settings_about_data") },
-                                )
+                                if (settingsTwoPane) {
+                                    SettingsPanes(twoPane = true, list = settingsList) {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Text(
+                                                "Choose a category",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    settingsList(Modifier)
+                                }
                             }
                             composable("settings_rotation_wallpaper") {
-                                RotationWallpaperSettingsScreen(
-                                    viewModel = homeViewModel,
-                                    onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToSchedule = { navController.navigate("schedule") },
-                                )
+                                SettingsPanes(settingsTwoPane, settingsList) {
+                                    RotationWallpaperSettingsScreen(
+                                        viewModel = homeViewModel,
+                                        onNavigateBack = { navController.popBackStack() },
+                                        onNavigateToSchedule = { navController.navigate("schedule") },
+                                    )
+                                }
                             }
                             composable("settings_nsfw_privacy") {
-                                NsfwPrivacySettingsScreen(
-                                    viewModel = homeViewModel,
-                                    onNavigateBack = { navController.popBackStack() },
-                                )
+                                SettingsPanes(settingsTwoPane, settingsList) {
+                                    NsfwPrivacySettingsScreen(
+                                        viewModel = homeViewModel,
+                                        onNavigateBack = { navController.popBackStack() },
+                                    )
+                                }
                             }
                             composable("settings_discover_sources") {
-                                DiscoverSourcesSettingsScreen(
-                                    viewModel = homeViewModel,
-                                    onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToSources = { navController.navigate("sources") },
-                                )
+                                SettingsPanes(settingsTwoPane, settingsList) {
+                                    DiscoverSourcesSettingsScreen(
+                                        viewModel = homeViewModel,
+                                        onNavigateBack = { navController.popBackStack() },
+                                        onNavigateToSources = { navController.navigate("sources") },
+                                    )
+                                }
                             }
                             composable("settings_integrations") {
-                                IntegrationsSettingsScreen(
-                                    malViewModel = malViewModel,
-                                    onNavigateBack = { navController.popBackStack() },
-                                )
+                                SettingsPanes(settingsTwoPane, settingsList) {
+                                    IntegrationsSettingsScreen(
+                                        malViewModel = malViewModel,
+                                        onNavigateBack = { navController.popBackStack() },
+                                    )
+                                }
                             }
                             composable("settings_about_data") {
-                                AboutDataSettingsScreen(
-                                    viewModel = homeViewModel,
-                                    onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToStats = { navController.navigate("stats") },
-                                    onNavigateToSourceHealth = { navController.navigate("source_health") },
-                                    onShowOnboarding = { navController.navigate("onboarding") },
-                                )
+                                SettingsPanes(settingsTwoPane, settingsList) {
+                                    AboutDataSettingsScreen(
+                                        viewModel = homeViewModel,
+                                        onNavigateBack = { navController.popBackStack() },
+                                        onNavigateToStats = { navController.navigate("stats") },
+                                        onNavigateToSourceHealth = { navController.navigate("source_health") },
+                                        onShowOnboarding = { navController.navigate("onboarding") },
+                                    )
+                                }
                             }
                             composable("sources") {
                                 LocalSourcesScreen(
@@ -409,6 +461,24 @@ class MainActivity : AppCompatActivity() {
 private const val STATE_PENDING_NAV = "pending_nav"
 private const val STATE_PENDING_SHARED = "pending_shared"
 private const val STATE_PENDING_MAL_CODE = "pending_mal_code"
+
+/** Single pane: just [detail]. Two panes: the Settings category list beside [detail]. */
+@Composable
+private fun SettingsPanes(
+    twoPane: Boolean,
+    list: @Composable (Modifier) -> Unit,
+    detail: @Composable () -> Unit,
+) {
+    if (!twoPane) {
+        detail()
+        return
+    }
+    Row(modifier = Modifier.fillMaxSize()) {
+        list(Modifier.weight(0.4f))
+        VerticalDivider()
+        Box(modifier = Modifier.weight(0.6f)) { detail() }
+    }
+}
 
 private data class NavTab(val route: String, val label: String, val icon: ImageVector)
 
