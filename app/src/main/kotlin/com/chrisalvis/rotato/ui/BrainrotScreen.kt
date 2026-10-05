@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -170,6 +171,8 @@ fun BrainrotScreen(
     val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
     val savedListIds by vm.savedListIds.collectAsStateWithLifecycle()
     val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
+    val foldPairOuter by vm.foldPairOuter.collectAsStateWithLifecycle()
+    val foldPairBusy by vm.foldPairBusy.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
@@ -1097,6 +1100,11 @@ fun BrainrotScreen(
                             onLoadMore = { vm.loadMore() },
                             savedListIdsFn = { w -> savedListIds["${w.source}:${w.id}"].orEmpty() },
                             onToggleInList = { w, list -> vm.toggleInList(list.id, w) },
+                            canFoldPair = vm.canFoldPair,
+                            foldPairOuter = foldPairOuter,
+                            foldPairBusy = foldPairBusy,
+                            onPickFoldOuter = { vm.pickFoldOuter(it) },
+                            onSaveFoldPair = { o, i -> vm.saveFoldPair(o, i) },
                             lockedHiddenCount = lockedHiddenCount,
                             onUnlockLists = {
                                 (context as? androidx.fragment.app.FragmentActivity)?.let { activity ->
@@ -1518,11 +1526,17 @@ private fun WallpaperDetailOverlay(
     onToggleInList: (BrainrotWallpaper, LocalList) -> Unit,
     lockedHiddenCount: Int,
     onUnlockLists: () -> Unit,
+    canFoldPair: Boolean,
+    foldPairOuter: BrainrotWallpaper?,
+    foldPairBusy: Boolean,
+    onPickFoldOuter: (BrainrotWallpaper?) -> Unit,
+    onSaveFoldPair: (BrainrotWallpaper, BrainrotWallpaper) -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
     var tagActionTag by remember { mutableStateOf<String?>(null) }
     // Zoom happens in place on the current page; one tap hides/shows everything around the image.
     val zoom = remember { ZoomState() }
+    var showFoldPreview by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
     val zoomed = zoom.zoomed
     var showInfoExpanded by remember { mutableStateOf(false) }
@@ -1621,6 +1635,12 @@ private fun WallpaperDetailOverlay(
                             totalDx += (changeI.position - changeI.previousPosition).x
                             val totalDxAbs = kotlin.math.abs(totalDx)
 
+                            // Upward swipe opens the details panel
+                            if (-totalDy > viewConfiguration.touchSlop * 2 && -totalDy > totalDxAbs) {
+                                changeI.consume()
+                                showInfoExpanded = true
+                                break@trackGesture
+                            }
                             if (totalDy > viewConfiguration.touchSlop && totalDy > totalDxAbs) {
                                 // Downward vertical drag confirmed — consume before children see it
                                 changeI.consume()
@@ -1795,6 +1815,7 @@ private fun WallpaperDetailOverlay(
             modifier = Modifier.align(Alignment.TopStart)
         ) {
             ImageInfoPills(
+                onClick = { showInfoExpanded = true },
                 wallpaper = wallpaper,
                 foldCanvas = foldCanvas,
                 position = if (items.size > 1) "${pagerState.currentPage + 1} / ${items.size}" +
@@ -1927,6 +1948,39 @@ private fun WallpaperDetailOverlay(
                     }
                 }
 
+                // Fold pair straight from the viewer: pick this image for the cover screen, swipe to
+                // another and pair it for the big screen (with a preview before anything is set).
+                if (canFoldPair && !wallpaper.isVideo) {
+                    val outer = foldPairOuter
+                    val pickedHere = outer != null && outer.id == wallpaper.id && outer.source == wallpaper.source
+                    FilledTonalButton(
+                        onClick = {
+                            when {
+                                outer == null -> {
+                                    onPickFoldOuter(wallpaper)
+                                    Toast.makeText(context, "Cover screen picked. Swipe to an image for the big screen.", Toast.LENGTH_LONG).show()
+                                }
+                                pickedHere -> onPickFoldOuter(null)
+                                else -> showFoldPreview = true
+                            }
+                        },
+                        enabled = !foldPairBusy,
+                        modifier = Modifier.height(44.dp)
+                    ) {
+                        Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            when {
+                                foldPairBusy -> "Pairing…"
+                                outer == null -> "Fold pair"
+                                pickedHere -> "Cover ✓"
+                                else -> "Pair as inner"
+                            },
+                            maxLines = 1
+                        )
+                    }
+                }
+
                 Spacer(Modifier.weight(1f))
 
                 var showMore by remember { mutableStateOf(false) }
@@ -1968,6 +2022,28 @@ private fun WallpaperDetailOverlay(
             }
         }
         } // end bottom panel visibility
+
+        val pairOuter = foldPairOuter
+        if (showFoldPreview && pairOuter != null) {
+            FoldPairPreviewDialog(
+                outer = pairOuter,
+                inner = wallpaper,
+                foldCanvas = foldCanvas,
+                onConfirm = { o, i -> showFoldPreview = false; onSaveFoldPair(o, i) },
+                onDismiss = { showFoldPreview = false },
+            )
+        }
+
+        if (showInfoExpanded) {
+            ImageDetailsSheet(
+                wallpaper = wallpaper,
+                foldCanvas = foldCanvas,
+                onTagSearch = { tag -> showInfoExpanded = false; onTagSearch(tag) },
+                onMoreLikeThis = { query -> showInfoExpanded = false; onTagSearch(query) },
+                onTagActions = { tag -> showInfoExpanded = false; tagActionTag = tag },
+                onDismiss = { showInfoExpanded = false },
+            )
+        }
 
         // Back while zoomed zooms out instead of closing the viewer.
         BackHandler(enabled = zoomed) { zoom.reset() }
@@ -2607,6 +2683,7 @@ private fun ListRail(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ImageInfoPills(
+    onClick: () -> Unit,
     wallpaper: BrainrotWallpaper,
     foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
     position: String?,
@@ -2618,7 +2695,11 @@ private fun ImageInfoPills(
     }
     val foldFriendly = foldCanvas != null && w > 0 && com.chrisalvis.rotato.data.isFoldFriendly(w, h, foldCanvas)
     FlowRow(
-        modifier = modifier,
+        modifier = modifier.clickable(
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+            indication = null,
+            onClick = onClick
+        ),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -2678,4 +2759,149 @@ private fun InfoPill(
             )
         }
     }
+}
+
+
+/**
+ * Everything about the current image, opened by swiping up (or tapping the info pills): its
+ * facts, a link to the post, every tag, and a "more like this" search built from its top tags.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ImageDetailsSheet(
+    wallpaper: BrainrotWallpaper,
+    foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
+    onTagSearch: (String) -> Unit,
+    onMoreLikeThis: (String) -> Unit,
+    onTagActions: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("About this image", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            ImageInfoPills(onClick = {}, wallpaper = wallpaper, foldCanvas = foldCanvas, position = null)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
+                if (page != null) {
+                    FilledTonalButton(onClick = {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(page))) }
+                    }) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Open post")
+                    }
+                }
+                val related = wallpaper.tags.take(2).joinToString(" ")
+                if (related.isNotBlank()) {
+                    FilledTonalButton(onClick = { onMoreLikeThis(related) }) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("More like this")
+                    }
+                }
+            }
+
+            if (wallpaper.tags.isNotEmpty()) {
+                Text(
+                    "Tags · tap to search, hold for options",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    wallpaper.tags.forEach { tag ->
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.combinedClickable(
+                                onClick = { onTagSearch(tag) },
+                                onLongClick = { onTagActions(tag) }
+                            )
+                        ) {
+                            Text(
+                                tag.replace('_', ' '),
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * Shows the two images the way they'll appear: the cover image on a tall narrow screen and the
+ * inner image on the near-square big screen, sized from this phone's real panels when known.
+ */
+@Composable
+private fun FoldPairPreviewDialog(
+    outer: BrainrotWallpaper,
+    inner: BrainrotWallpaper,
+    foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
+    onConfirm: (BrainrotWallpaper, BrainrotWallpaper) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var swapped by remember { mutableStateOf(false) }
+    val cover = if (swapped) inner else outer
+    val big = if (swapped) outer else inner
+    val screens = foldCanvas?.screens.orEmpty().sortedBy { it.width.toFloat() / it.height }
+    val coverRatio = screens.firstOrNull()?.let { it.width.toFloat() / it.height } ?: 0.45f
+    val bigRatio = screens.lastOrNull()?.let { it.width.toFloat() / it.height } ?: 0.9f
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Fold pair preview") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.fillMaxWidth().height(220.dp)
+                ) {
+                    listOf(Triple(cover, coverRatio, "Folded"), Triple(big, bigRatio, "Unfolded")).forEach { (wp, ratio, label) ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxHeight()) {
+                            AsyncImage(
+                                model = wp.gridUrl,
+                                contentDescription = label,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(ratio)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black)
+                            )
+                            Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+                        }
+                    }
+                }
+                Text(
+                    "Both images are saved to your Library and set now. Rotation keeps them together.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(cover, big) }) { Text("Set pair") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { swapped = !swapped }) { Text("Swap") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
+    )
 }

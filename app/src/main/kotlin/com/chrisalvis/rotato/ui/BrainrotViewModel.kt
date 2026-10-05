@@ -142,6 +142,48 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         entries.filter { it.listId in visibleIds }.mapTo(HashSet()) { "${it.source}:${it.sourceId}" }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    /** True when this phone can show a different wallpaper on each Fold screen. */
+    val canFoldPair: Boolean = com.chrisalvis.rotato.data.supportsFoldPairs(app)
+
+    private val _foldPairOuter = MutableStateFlow<BrainrotWallpaper?>(null)
+    /** Image picked for the outer screen while the user looks for an inner one. */
+    val foldPairOuter: StateFlow<BrainrotWallpaper?> = _foldPairOuter.asStateFlow()
+    private val _foldPairBusy = MutableStateFlow(false)
+    val foldPairBusy: StateFlow<Boolean> = _foldPairBusy.asStateFlow()
+
+    fun pickFoldOuter(wp: BrainrotWallpaper?) { _foldPairOuter.value = wp }
+
+    /**
+     * Downloads both images into the Library, saves them as a fold pair and sets it right away:
+     * [outer] on the cover screen, [inner] on the big screen.
+     */
+    fun saveFoldPair(outer: BrainrotWallpaper, inner: BrainrotWallpaper) {
+        if (_foldPairBusy.value) return
+        viewModelScope.launch {
+            _foldPairBusy.value = true
+            val ctx = getApplication<Application>().applicationContext
+            try {
+                val dir = File(ctx.filesDir, "rotato_images")
+                val files = listOf(outer, inner).map { wp ->
+                    feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl, source = wp.source)
+                        ?.also { if (wp.isNsfw) prefs.setFileNsfw(it, true) }
+                        ?.let { File(dir, it) }
+                }
+                val (outerFile, innerFile) = files
+                if (outerFile == null || innerFile == null) {
+                    Toast.makeText(ctx, "Couldn't download both images", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                prefs.saveFoldPair(com.chrisalvis.rotato.data.FoldPair(outerFile.absolutePath, innerFile.absolutePath))
+                val err = withContext(Dispatchers.IO) { com.chrisalvis.rotato.data.applyWallpaperFile(ctx, outerFile) }
+                _foldPairOuter.value = null
+                Toast.makeText(ctx, err ?: "Fold pair set · saved to Library", Toast.LENGTH_SHORT).show()
+            } finally {
+                _foldPairBusy.value = false
+            }
+        }
+    }
+
     /** "source:id" → the visible collections that already hold that image, for the list rail. */
     val savedListIds: StateFlow<Map<String, Set<String>>> = combine(localLists.allWallpapers, lists) { entries, visible ->
         val visibleIds = visible.mapTo(HashSet()) { it.id }
@@ -858,9 +900,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     if (!_downloadingIds.value.contains(key)) {
                         _downloadingIds.update { it + key }
                         try {
-                            // Same file name the collection entry resolves to (sanitizeFilename(sourceId)),
+                            // Same file name the collection entry resolves to (poolKey(source, sourceId)),
                             // so the pool, per-screen and stealth lookups find it and it isn't fetched twice.
-                            val downloadedFile = feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl)
+                            val downloadedFile = feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl, source = wp.source)
                             if (downloadedFile != null) {
                                 if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)
                                 Toast.makeText(ctx, "Saved to \"$listName\" · added to rotation", Toast.LENGTH_SHORT).show()
@@ -1232,7 +1274,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _downloadingIds.update { it + key }
             try {
-                val downloadedFile = feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl)
+                val downloadedFile = feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl, source = wp.source)
                 val ctx = getApplication<Application>().applicationContext
                 if (downloadedFile != null) {
                     if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)

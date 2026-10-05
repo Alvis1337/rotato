@@ -19,13 +19,13 @@ private const val TAG = "FeedRepository"
 class FeedRepository(private val imageDir: File) {
 
     /** Downloads into the rotation pool. Returns the resulting on-disk filename (e.g. "12345.jpg"), or null on failure. */
-    suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null): String? = withContext(Dispatchers.IO) {
+    suspend fun downloadWallpaper(sourceId: String, fullUrl: String, fallbackUrl: String = "", authHeader: String? = null, source: String = ""): String? = withContext(Dispatchers.IO) {
         if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper: sourceId=$sourceId, fullUrl=$fullUrl")
         if (fullUrl.isBlank()) {
             Log.e(TAG, "downloadWallpaper: fullUrl is blank!")
             return@withContext null
         }
-        val sanitized = sanitizeFilename(sourceId)
+        val sanitized = poolKey(source, sourceId)
         // Check if any previously-downloaded file for this sourceId is still valid (extension-agnostic).
         val existing = imageDir.listFiles()?.firstOrNull { it.nameWithoutExtension == sanitized }
         if (existing != null && existing.isValidImage()) return@withContext existing.name

@@ -37,7 +37,7 @@ suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Bo
     }
     if (recordAsCurrent) prefs.pushAppliedWallpaper(file.absolutePath)
     val entry = LocalListsPreferences(context).allWallpapers.first()
-        .firstOrNull { sanitizeFilename(it.sourceId) == file.nameWithoutExtension }
+        .let { all -> all.firstOrNull { poolKey(it.source, it.sourceId) == file.nameWithoutExtension } ?: all.firstOrNull { sanitizeFilename(it.sourceId) == file.nameWithoutExtension } }
     prefs.recordWallpaperShown(
         WallpaperHistoryItem(
             thumbUrl = entry?.thumbUrl ?: file.absolutePath,

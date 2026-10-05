@@ -13,6 +13,9 @@ import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.poolKey
+import com.chrisalvis.rotato.data.poolKeys
+import com.chrisalvis.rotato.data.findPoolFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,7 +71,7 @@ class DislikeWallpaperReceiver : BroadcastReceiver() {
                 // for remote sources, so match on all of them or the file keeps rotating.
                 val keys = buildSet {
                     add(sanitizeFilename(wallpaper.id))
-                    matched.forEach { add(sanitizeFilename(it.sourceId)) }
+                    matched.forEach { addAll(poolKeys(it.source, it.sourceId)) }
                     if (wallpaper.fullUrl.isNotBlank()) {
                         add(sanitizeFilename(wallpaper.fullUrl.substringAfterLast('/').substringBeforeLast('.')))
                     }

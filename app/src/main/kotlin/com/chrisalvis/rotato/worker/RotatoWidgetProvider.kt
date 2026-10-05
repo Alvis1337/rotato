@@ -22,6 +22,9 @@ import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.poolKey
+import com.chrisalvis.rotato.data.poolKeys
+import com.chrisalvis.rotato.data.findPoolFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -162,7 +165,7 @@ class RotatoWidgetProvider : AppWidgetProvider() {
             if (preferredUrl.startsWith("file://")) return preferredUrl
 
             val localFile = File(context.filesDir, "rotato_images").listFiles()
-                ?.firstOrNull { it.nameWithoutExtension == sanitizeFilename(entry.sourceId) }
+                ?.toList()?.findPoolFile(entry.source, entry.sourceId)
             if (localFile?.exists() == true) return localFile.toURI().toString()
 
             return preferredUrl.ifBlank { entry.fullUrl }

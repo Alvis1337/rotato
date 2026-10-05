@@ -42,6 +42,9 @@ import com.chrisalvis.rotato.data.loadScaledBitmap
 import com.chrisalvis.rotato.data.foldPairWallpaperFor
 import com.chrisalvis.rotato.data.wallpaperTargetSize
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.poolKey
+import com.chrisalvis.rotato.data.poolKeys
+import com.chrisalvis.rotato.data.findPoolFile
 import com.chrisalvis.rotato.data.toJson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -163,9 +166,7 @@ class WallpaperWorker(
         val stealthCollectionId = if (stealthActive) prefs.stealthCollectionId.first() else ""
         val stealthWallpapers = if (stealthCollectionId.isNotBlank())
             allWallpapers.filter { it.listId == stealthCollectionId } else emptyList()
-        val stealthFiles = stealthWallpapers.mapNotNull { entry ->
-            allImages.find { it.nameWithoutExtension == sanitizeFilename(entry.sourceId) }
-        }
+        val stealthFiles = stealthWallpapers.mapNotNull { entry -> allImages.findPoolFile(entry.source, entry.sourceId) }
         val effectiveScheduledEntry = if (stealthFiles.isNotEmpty()) null else scheduledEntry
 
         // Build per-screen file sets when per-screen pools are configured and target is BOTH.
@@ -183,7 +184,7 @@ class WallpaperWorker(
                 .map { it.id }.toSet()
             fun entriesForLists(ids: Set<String>) = allWallpapers
                 .filter { it.listId in ids }
-                .mapNotNull { entry -> allImages.find { it.nameWithoutExtension == sanitizeFilename(entry.sourceId) } }
+                .mapNotNull { entry -> allImages.findPoolFile(entry.source, entry.sourceId) }
             homeFiles = entriesForLists(homeListIds).ifEmpty { allImages }
             lockFiles = entriesForLists(lockListIds).ifEmpty { allImages }
         } else {
@@ -269,6 +270,7 @@ class WallpaperWorker(
                 prefs.pushAppliedWallpaper(targetFile.absolutePath)
 
                 val matchingEntry = effectiveScheduledEntry
+                    ?: allWallpapers.find { poolKey(it.source, it.sourceId) == targetFile.nameWithoutExtension }
                     ?: allWallpapers.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
                 // Update lastRotationMs for per-collection interval tracking
@@ -383,7 +385,7 @@ class WallpaperWorker(
                 }
                 entry.fullUrl.isBlank() -> null
                 else -> {
-                    val fileName = feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, authHeader)
+                    val fileName = feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, authHeader, source = entry.source)
                         ?: return@withContext null
                     if (entry.isNsfw) prefs.setFileNsfw(fileName, true)
                     imageDir.listFiles()?.firstOrNull { it.isFile && it.name == fileName }

@@ -38,6 +38,7 @@ import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.dataStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.poolKey
+import com.chrisalvis.rotato.data.poolKeys
+import com.chrisalvis.rotato.data.findPoolFile
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginRepository
@@ -192,16 +196,17 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     val listCovers: StateFlow<Map<String, String?>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
         val wallpapersByList = all.groupBy { it.listId }
+        val poolFiles = poolFilesByStem(app.filesDir)
         lists.associate { list ->
             val explicitCover = list.coverUrl
                 .takeIf { it.isNotBlank() }
-                ?.let { resolveEntryUrl(it, app.filesDir) }
+                ?.let { resolveEntryUrl(it, app.filesDir, "", "", poolFiles) }
                 ?.takeIf { it.isNotBlank() }
             val fallbackCover = wallpapersByList[list.id]
                 ?.maxByOrNull { it.addedAt }
                 ?.let { entry ->
                     val rawUrl = entry.thumbUrl.ifBlank { entry.fullUrl }
-                    resolveEntryUrl(rawUrl, app.filesDir, entry.sourceId)
+                    resolveEntryUrl(rawUrl, app.filesDir, entry.source, entry.sourceId, poolFiles)
                 }
                 ?.takeIf { it.isNotBlank() }
             list.id to (explicitCover ?: fallbackCover)
@@ -257,7 +262,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val wallpapers: StateFlow<List<BrowseWallpaper>> = visibleWallpaperEntries
-        .map { entries -> entries.map { it.toBrowseWallpaper(app.filesDir) } }
+        .map { entries ->
+            // One directory listing for the whole collection, not one per image.
+            val poolFiles = poolFilesByStem(app.filesDir)
+            entries.map { it.toBrowseWallpaper(app.filesDir, poolFiles) }
+        }
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _inRotation = MutableStateFlow<Set<String>>(emptySet())
@@ -1152,18 +1162,20 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun isInRotation(wallpaper: BrowseWallpaper) = _inRotation.value.contains(sanitize(wallpaper.sourceId))
+    fun isInRotation(wallpaper: BrowseWallpaper) =
+        poolKeys(wallpaper.source, wallpaper.sourceId).any { it in _inRotation.value }
 
     fun toggleRotation(wallpaper: BrowseWallpaper) {
         if (wallpaper.isVideo) {
             Toast.makeText(app.applicationContext, "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
             return
         }
-        val key = sanitize(wallpaper.sourceId)
+        val key = poolKey(wallpaper.source, wallpaper.sourceId)
         if (_downloading.value.contains(wallpaper.sourceId)) return
-        if (_inRotation.value.contains(key)) {
-            imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
-            _inRotation.update { it - key }
+        val presentKeys = poolKeys(wallpaper.source, wallpaper.sourceId).filter { it in _inRotation.value }
+        if (presentKeys.isNotEmpty()) {
+            imageDir.listFiles()?.filter { it.nameWithoutExtension in presentKeys }?.forEach { it.delete() }
+            _inRotation.update { it - presentKeys.toSet() }
             return
         }
         viewModelScope.launch {
@@ -1172,7 +1184,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 val ok = if (wallpaper.source == "device") {
                     copyLocalToRotation(wallpaper.fullUrl, key)
                 } else {
-                    val fileName = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+                    val fileName = feedRepo.downloadWallpaper(wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl }, source = wallpaper.source)
                     if (fileName != null && wallpaper.isNsfw) prefs.setFileNsfw(fileName, true)
                     fileName != null
                 }
@@ -1188,7 +1200,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val ctx = app.applicationContext
         viewModelScope.launch {
             val pending = localLists.wallpapersForList(listId).first()
-                .filterNot { it.isVideo || _inRotation.value.contains(sanitize(it.sourceId)) }
+                .filterNot { e -> e.isVideo || poolKeys(e.source, e.sourceId).any { it in _inRotation.value } }
             if (pending.isEmpty()) {
                 Toast.makeText(ctx, "Downloaded 0 images to rotation", Toast.LENGTH_SHORT).show()
                 return@launch
@@ -1202,7 +1214,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         _downloadAllProgress.update { (index + 1) to pending.size }
                         return@forEachIndexed
                     }
-                    val key = sanitize(entry.sourceId)
+                    val key = poolKey(entry.source, entry.sourceId)
                     val wallpaper = entry.toBrowseWallpaper(app.filesDir)
                     _downloading.update { it + entry.sourceId }
                     val ok = try {
@@ -1213,6 +1225,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                                 sourceId = entry.sourceId,
                                 fullUrl = wallpaper.fullUrl.ifBlank { wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl } },
                                 fallbackUrl = wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl },
+                                source = entry.source,
                             )
                             if (fileName != null && entry.isNsfw) prefs.setFileNsfw(fileName, true)
                             fileName != null
@@ -1259,6 +1272,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             val broken = mutableSetOf<String>()
+            val poolFiles = poolFilesByStem(app.filesDir)
             val semaphore = Semaphore(4) // max 4 parallel HTTP requests to avoid rate limiting
             coroutineScope {
                 rawEntries.map { entry ->
@@ -1269,7 +1283,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         val urlToCheck = resolveEntryUrl(
                             entry.fullUrl.ifBlank { entry.thumbUrl },
                             app.filesDir,
-                            entry.sourceId
+                            entry.source,
+                            entry.sourceId,
+                            poolFiles,
                         )
                         // For local file:// URIs, just check existence — no HTTP needed
                         if (urlToCheck.startsWith("file://")) {
@@ -1545,12 +1561,18 @@ private fun LocalWallpaperEntry.resolutionArea(): Long {
     return width * height
 }
 
-private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpaper(
+private fun poolFilesByStem(filesDir: File): Map<String, File> =
+    File(filesDir, "rotato_images").listFiles().orEmpty().associateBy { it.nameWithoutExtension }
+
+private fun LocalWallpaperEntry.toBrowseWallpaper(
+    filesDir: File,
+    poolFiles: Map<String, File> = poolFilesByStem(filesDir),
+) = BrowseWallpaper(
     sourceId = sourceId,
     entryId = id,
-    fullUrl = resolveEntryUrl(fullUrl, filesDir, sourceId),
+    fullUrl = resolveEntryUrl(fullUrl, filesDir, source, sourceId, poolFiles),
     sampleUrl = sampleUrl,
-    thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir, sourceId),
+    thumbUrl = resolveEntryUrl(thumbUrl.ifBlank { fullUrl }, filesDir, source, sourceId, poolFiles),
     animeTitle = tags.take(3).joinToString(", "),
     source = source,
     tags = tags,
@@ -1567,14 +1589,18 @@ private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpa
  * 3. If a local downloaded copy exists in rotato_images/ for this sourceId → use it
  * 4. Otherwise return the remote URL as-is (may be dead)
  */
-private fun resolveEntryUrl(url: String, filesDir: File, sourceId: String = ""): String {
+private fun resolveEntryUrl(
+    url: String,
+    filesDir: File,
+    source: String,
+    sourceId: String,
+    poolFiles: Map<String, File>,
+): String {
     if (url.startsWith("list_images/")) return File(filesDir, url).toURI().toString()
     if (url.startsWith("file://")) return url
     if (sourceId.isNotBlank()) {
-        val sanitized = sanitizeFilename(sourceId)
-        val localFile = File(filesDir, "rotato_images").listFiles()
-            ?.find { it.nameWithoutExtension == sanitized }
-        if (localFile?.exists() == true) return localFile.toURI().toString()
+        val localFile = poolKeys(source, sourceId).firstNotNullOfOrNull { poolFiles[it] }
+        if (localFile != null) return localFile.toURI().toString()
     }
     return url
 }

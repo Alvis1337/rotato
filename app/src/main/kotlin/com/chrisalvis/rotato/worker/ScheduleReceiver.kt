@@ -14,6 +14,9 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.poolKey
+import com.chrisalvis.rotato.data.poolKeys
+import com.chrisalvis.rotato.data.findPoolFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -95,8 +98,8 @@ class ScheduleReceiver : BroadcastReceiver() {
 
             // Download any missing wallpapers
             wallpapers.forEach { entry ->
-                val key = sanitizeFilename(entry.sourceId)
-                val alreadyOnDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
+                val key = poolKey(entry.source, entry.sourceId)
+                val alreadyOnDisk = imageDir.listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId) != null
                 if (alreadyOnDisk) return@forEach
                 when {
                     entry.source == "device" && entry.fullUrl.startsWith("list_images/") -> {
@@ -107,7 +110,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                         }
                     }
                     entry.fullUrl.isNotBlank() -> {
-                        val fileName = feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                        val fileName = feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, source = entry.source)
                         if (fileName != null && entry.isNsfw) prefs.setFileNsfw(fileName, true)
                     }
                 }
@@ -117,10 +120,10 @@ class ScheduleReceiver : BroadcastReceiver() {
             // applyEntry already calls removeRotationFiles for other *scheduled* lists, but may
             // miss lists that were unscheduled. Files that were removed from ALL collections
             // cannot be identified without a per-file manifest and are left in place.
-            val validKeys = wallpapers.map { sanitizeFilename(it.sourceId) }.toSet()
+            val validKeys = wallpapers.flatMap { poolKeys(it.source, it.sourceId) }.toSet()
             val otherCollectionKeys = listPrefs.allWallpapers.first()
                 .filter { it.listId !in listIds }
-                .map { sanitizeFilename(it.sourceId) }
+                .flatMap { poolKeys(it.source, it.sourceId) }
                 .toSet()
             imageDir.listFiles()?.forEach { file ->
                 val stem = file.nameWithoutExtension
@@ -128,10 +131,8 @@ class ScheduleReceiver : BroadcastReceiver() {
             }
 
             // Count only this list's wallpapers that are now present on disk.
-            return wallpapers.count { wp ->
-                val key = sanitizeFilename(wp.sourceId)
-                imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
-            }
+            val onDisk = imageDir.listFiles()?.toList().orEmpty()
+            return wallpapers.count { wp -> onDisk.findPoolFile(wp.source, wp.sourceId) != null }
         }
 
         private suspend fun removeRotationFiles(
@@ -142,8 +143,7 @@ class ScheduleReceiver : BroadcastReceiver() {
             val wallpapers = listPrefs.wallpapersForList(listId).first()
             val imageDir = File(context.filesDir, "rotato_images")
             wallpapers.forEach { entry ->
-                val key = sanitizeFilename(entry.sourceId)
-                imageDir.listFiles()?.filter { it.nameWithoutExtension == key }?.forEach { it.delete() }
+                imageDir.listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId)?.delete()
             }
         }
     }

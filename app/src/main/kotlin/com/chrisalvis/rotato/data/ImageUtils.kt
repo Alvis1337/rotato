@@ -30,6 +30,26 @@ private val UNSAFE_FILENAME_CHARS = Regex("[^a-zA-Z0-9._-]")
 
 fun sanitizeFilename(s: String): String = s.replace(UNSAFE_FILENAME_CHARS, "_").take(80)
 
+/**
+ * File name (without extension) for an image downloaded into the rotation pool. Booru post ids
+ * are plain numbers, so Gelbooru #12345 and Danbooru #12345 used to share "12345.jpg" and one
+ * overwrote (or was mistaken for) the other; ids are now prefixed with their source. Device
+ * images keep their plain id.
+ */
+fun poolKey(source: String, sourceId: String): String =
+    if (source.isBlank() || source == "device") sanitizeFilename(sourceId)
+    else sanitizeFilename("${source.lowercase()}_$sourceId")
+
+/** Names an entry's pool file may have: the source-prefixed one, then the older unprefixed one. */
+fun poolKeys(source: String, sourceId: String): List<String> =
+    listOf(poolKey(source, sourceId), sanitizeFilename(sourceId)).distinct()
+
+/** The pool file for an entry, preferring the source-prefixed name over the older one. */
+fun Iterable<java.io.File>.findPoolFile(source: String, sourceId: String): java.io.File? {
+    val byStem = associateBy { it.nameWithoutExtension }
+    return poolKeys(source, sourceId).firstNotNullOfOrNull { byStem[it] }
+}
+
 private const val DISPLAY_PREFS = "rotato_display_sizes"
 private const val KEY_SIZES = "sizes"
 private const val MAX_KNOWN_SIZES = 4

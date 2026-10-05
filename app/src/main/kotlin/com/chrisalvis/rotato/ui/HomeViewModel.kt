@@ -18,6 +18,9 @@ import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
 import com.chrisalvis.rotato.data.sanitizeFilename
+import com.chrisalvis.rotato.data.poolKey
+import com.chrisalvis.rotato.data.poolKeys
+import com.chrisalvis.rotato.data.findPoolFile
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
@@ -257,8 +260,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val stemsOnDisk = imageDir.listFiles()?.mapTo(HashSet()) { it.nameWithoutExtension } ?: hashSetOf()
                 toSync.forEach { entry ->
                     if (entry.fullUrl.isBlank()) return@forEach
-                    val key = sanitizeFilename(entry.sourceId)
-                    val onDisk = key in stemsOnDisk
+                    val key = poolKey(entry.source, entry.sourceId)
+                    val onDisk = poolKeys(entry.source, entry.sourceId).any { it in stemsOnDisk }
                     if (!onDisk) {
                         if (entry.source == "device" && entry.fullUrl.startsWith("list_images/")) {
                             // Local image — copy from list_images/ to rotation pool
@@ -274,7 +277,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         } else {
                             try {
-                                val fileName = feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl })
+                                val fileName = feedRepo.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, source = entry.source)
                                 if (fileName != null && entry.isNsfw) preferences.setFileNsfw(fileName, true)
                                 changed = true
                             } catch (e: Exception) {
