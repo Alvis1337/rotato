@@ -2144,12 +2144,11 @@ private fun WallpaperUrlPreviewDialog(
                         }
                     }
                 } else {
-                    SubcomposeAsyncImage(
-                        model = imageUrl,
+                    FullscreenImage(
+                        url = imageUrl,
+                        placeholderKey = wp.thumbUrl.ifBlank { null },
                         contentDescription = wp.animeTitle.ifBlank { null },
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
+                        imageModifier = Modifier
                             .graphicsLayer {
                                 val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
                                 scaleX = shrink
@@ -2157,30 +2156,7 @@ private fun WallpaperUrlPreviewDialog(
                             }
                             .pointerInput(Unit) {
                                 detectTapGestures(onDoubleTap = { showZoom = true })
-                            },
-                        error = {
-                            Box(
-                                Modifier.fillMaxSize().background(Color.Black),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.Wallpaper,
-                                        contentDescription = null,
-                                        tint = Color.White.copy(alpha = 0.4f),
-                                        modifier = Modifier.size(48.dp)
-                                    )
-                                    Text(
-                                        "Image unavailable",
-                                        color = Color.White.copy(alpha = 0.6f),
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                }
                             }
-                        }
                     )
                 }
             }
@@ -2435,12 +2411,9 @@ private fun ZoomUrlImageDialog(imageUrl: String, onDismiss: () -> Unit) {
                     })
                 }
         ) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
+            FullscreenImage(
+                url = imageUrl,
+                imageModifier = Modifier
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale

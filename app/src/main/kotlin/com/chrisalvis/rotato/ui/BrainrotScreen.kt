@@ -1666,18 +1666,10 @@ private fun WallpaperDetailOverlay(
                     }
                 }
             } else {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(pagerImageUrl)
-                        .memoryCacheKey(pagerImageUrl)
-                        .diskCacheKey(pagerImageUrl)
-                        .placeholderMemoryCacheKey(placeholderKey)
-                        .crossfade(false)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
+                FullscreenImage(
+                    url = pagerImageUrl,
+                    placeholderKey = placeholderKey,
+                    imageModifier = Modifier
                         .graphicsLayer {
                             val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
                             scaleX = scaleFactor
@@ -1881,7 +1873,11 @@ private fun WallpaperDetailOverlay(
         }
 
         if (showZoom) {
-            ZoomImageDialog(wallpaper = wallpaper, onDismiss = { showZoom = false })
+            ZoomImageDialog(
+                wallpaper = wallpaper,
+                placeholderKey = wallpaper.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: wallpaper.gridUrl,
+                onDismiss = { showZoom = false }
+            )
         }
     }
 }
@@ -2390,6 +2386,7 @@ private fun NoResultsState(
 @Composable
 private fun ZoomImageDialog(
     wallpaper: BrainrotWallpaper,
+    placeholderKey: String? = null,
     onDismiss: () -> Unit
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
@@ -2417,16 +2414,10 @@ private fun ZoomImageDialog(
                 }
         ) {
             val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(imageUrl)
-                    .memoryCacheKey(imageUrl)
-                    .diskCacheKey(imageUrl)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
+            FullscreenImage(
+                url = imageUrl,
+                placeholderKey = placeholderKey,
+                imageModifier = Modifier
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
