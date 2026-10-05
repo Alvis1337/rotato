@@ -6,6 +6,7 @@ import android.service.quicksettings.TileService
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.chrisalvis.rotato.data.RotatoPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +45,9 @@ class StealthTileService : TileService() {
             updateTile(newActive, configured = true)
 
             // Apply immediately rather than waiting for the next scheduled rotation.
-            val request = OneTimeWorkRequestBuilder<WallpaperWorker>().build()
+            val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
+                .setInputData(workDataOf(WallpaperWorker.KEY_MANUAL to true))
+                .build()
             WorkManager.getInstance(applicationContext)
                 .enqueueUniqueWork("stealth_toggle_apply", ExistingWorkPolicy.REPLACE, request)
         }

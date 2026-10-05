@@ -2,7 +2,6 @@ package com.chrisalvis.rotato.ui
 
 import android.app.Application
 import android.app.WallpaperManager
-import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.widget.Toast
@@ -12,6 +11,9 @@ import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.size.Scale
+import com.chrisalvis.rotato.data.fitWallpaperBitmap
+import com.chrisalvis.rotato.data.wallpaperTargetSize
 import com.chrisalvis.rotato.data.AppErrorLog
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.BrainrotFilters
@@ -55,6 +57,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONArray
 import java.io.File
@@ -723,16 +726,24 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch(Dispatchers.IO) {
             val app = getApplication<Application>()
+            // Toasts must be shown from the main thread; this coroutine runs on IO.
+            suspend fun toast(msg: String) = withContext(Dispatchers.Main) {
+                Toast.makeText(app, msg, Toast.LENGTH_SHORT).show()
+            }
+            val target = wallpaperTargetSize(app)
             val request = ImageRequest.Builder(app)
                 .data(wp.fullUrl.ifBlank { wp.thumbUrl })
                 .allowHardware(false)
+                // Decode near wallpaper resolution instead of the original, which can be huge.
+                .size(target.width, target.height)
+                .scale(Scale.FILL)
                 .build()
             val result = app.imageLoader.execute(request)
             val bitmap = (result as? SuccessResult)?.drawable?.let {
                 (it as? BitmapDrawable)?.bitmap
             }
             if (bitmap == null) {
-                Toast.makeText(app, "Failed to load image", Toast.LENGTH_SHORT).show()
+                toast("Failed to load image")
                 return@launch
             }
             try {
@@ -744,22 +755,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                     WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
                 }
-                val metrics = app.resources.displayMetrics
-                val screenW = metrics.widthPixels
-                val screenH = metrics.heightPixels
-                val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
-                val scaledW = (bitmap.width * scale).roundToInt()
-                val scaledH = (bitmap.height * scale).roundToInt()
-                val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-                val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
-                val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
-                val cropped = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
-                wm.setBitmap(cropped, null, true, flags)
-                if (cropped != scaled) cropped.recycle()
-                if (scaled != bitmap) scaled.recycle()
-                Toast.makeText(app, "Wallpaper set!", Toast.LENGTH_SHORT).show()
+                // The source bitmap belongs to Coil's memory cache, so only the copy is recycled.
+                val screenBitmap = fitWallpaperBitmap(bitmap, settings.wallpaperFit, target.width, target.height)
+                try {
+                    wm.setBitmap(screenBitmap, null, true, flags)
+                } finally {
+                    screenBitmap.recycle()
+                }
+                toast("Wallpaper set!")
             } catch (e: Exception) {
-                Toast.makeText(app, "Failed to set wallpaper", Toast.LENGTH_SHORT).show()
+                toast("Failed to set wallpaper")
             }
         }
     }

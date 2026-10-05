@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -400,7 +401,7 @@ private fun LibraryContent(
                     )
                 }
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Adaptive(minSize = 100.dp),
                     state = dragSelectState.gridState,
                     modifier = Modifier
                         .fillMaxSize()
@@ -512,6 +513,7 @@ private fun SaveToCollectionDialog(
         Card(
             modifier = androidx.compose.ui.Modifier
                 .fillMaxWidth(0.9f)
+                .widthIn(max = 560.dp)
                 .padding(vertical = 24.dp),
             shape = RoundedCornerShape(16.dp)
         ) {

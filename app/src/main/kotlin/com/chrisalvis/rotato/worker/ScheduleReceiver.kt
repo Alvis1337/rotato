@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.LocalListsPreferences
 import com.chrisalvis.rotato.data.RotatoPreferences
@@ -62,15 +63,21 @@ class ScheduleReceiver : BroadcastReceiver() {
             val triggerResult = if (imagesInPool == 0) "applied (empty pool!)" else "applied ($imagesInPool images)"
             schedPrefs.recordTrigger(entry.id, triggerResult)
 
+            enqueueRotation(context)
+
+            ScheduleManager.scheduleIfEnabled(context, entry)
+            return triggerResult
+        }
+
+        private fun enqueueRotation(context: Context) {
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(
                     "schedule_trigger",
                     ExistingWorkPolicy.REPLACE,
-                    OneTimeWorkRequestBuilder<WallpaperWorker>().build(),
+                    OneTimeWorkRequestBuilder<WallpaperWorker>()
+                        .setInputData(workDataOf(WallpaperWorker.KEY_MANUAL to true))
+                        .build(),
                 )
-
-            ScheduleManager.scheduleIfEnabled(context, entry)
-            return triggerResult
         }
 
         private suspend fun syncRotationPool(
@@ -147,32 +154,39 @@ class ScheduleReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             val schedPrefs = SchedulePreferences(context)
+            var fired: ScheduleEntry? = null
             try {
                 withTimeout(8_000L) {
                     val listPrefs = LocalListsPreferences(context)
                     val entries = schedPrefs.entries.first()
-                    val fired = entries.find { it.id == entryId } ?: run {
+                    val entry = entries.find { it.id == entryId } ?: run {
                         // Entry was deleted after the alarm was set — nothing to do.
                         schedPrefs.recordTrigger(entryId, "entry not found")
                         return@withTimeout
                     }
 
-                    if (!fired.enabled) {
+                    fired = entry
+                    if (!entry.enabled) {
                         // Entry was disabled after alarm was queued — skip silently.
                         schedPrefs.recordTrigger(entryId, "skipped: disabled")
                         return@withTimeout
                     }
 
-                    Log.d(TAG, "  listIds=${fired.listIds}")
-                    applyEntry(context, fired, entries, schedPrefs, listPrefs)
+                    Log.d(TAG, "  listIds=${entry.listIds}")
+                    applyEntry(context, entry, entries, schedPrefs, listPrefs)
                 }
             } catch (e: TimeoutCancellationException) {
                 Log.e(TAG, "Timed out processing entry $entryId", e)
                 runCatching { schedPrefs.recordTrigger(entryId, "error: timeout") }
+                // Pool sync ran long; still rotate from whatever made it onto disk.
+                if (fired?.enabled == true) enqueueRotation(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Unhandled error processing entry $entryId", e)
                 runCatching { schedPrefs.recordTrigger(entryId, "error: ${e.javaClass.simpleName}") }
             } finally {
+                // Re-arm the next occurrence even when applying this one failed or timed out,
+                // otherwise the schedule silently stops until the user edits it or reboots.
+                fired?.let { runCatching { ScheduleManager.scheduleIfEnabled(context, it) } }
                 pendingResult.finish()
             }
         }

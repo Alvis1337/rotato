@@ -34,12 +34,14 @@ import com.chrisalvis.rotato.data.ScheduleEntry
 import com.chrisalvis.rotato.data.SchedulePreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.ScreenRotationTarget
-import com.chrisalvis.rotato.data.WallpaperFit
 import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.fitWallpaperBitmap
 import com.chrisalvis.rotato.data.loadScaledBitmap
+import com.chrisalvis.rotato.data.wallpaperTargetSize
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.toJson
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -48,7 +50,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
-import kotlin.math.roundToInt
 
 class WallpaperWorker(
     context: Context,
@@ -56,6 +57,17 @@ class WallpaperWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        val result = rotate()
+        // Keep a sub-15-minute self-chain alive even when this run was skipped (auto-pause,
+        // empty pool) or failed; previously only a successful set re-armed the chain.
+        val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, 0L)
+        if (intervalMinutes in 1..14 && RotatoPreferences(applicationContext).settings.first().isEnabled) {
+            scheduleNextRun(intervalMinutes)
+        }
+        return result
+    }
+
+    private suspend fun rotate(): Result {
         val repository = ImageRepository(applicationContext)
         val prefs = RotatoPreferences(applicationContext)
         val listPrefs = LocalListsPreferences(applicationContext)
@@ -94,15 +106,20 @@ class WallpaperWorker(
             )
         }
 
+        // Auto-pause only applies to automatic rotations. An explicit user action (Set now,
+        // Skip, widget, Stealth tile, a schedule firing) must not silently report success
+        // without changing anything.
+        val manual = inputData.getBoolean(KEY_MANUAL, false)
+
         // Auto-pause: night window
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        if (autoPause.isInNightWindow(currentHour)) {
+        if (!manual && autoPause.isInNightWindow(currentHour)) {
             prefs.setLastSkipReason("Paused: night schedule is active")
             return Result.success()
         }
 
         // Auto-pause: charging
-        if (autoPause.chargingEnabled) {
+        if (!manual && autoPause.chargingEnabled) {
             val bm = applicationContext.getSystemService(BatteryManager::class.java)
             if (bm?.isCharging == true) {
                 prefs.setLastSkipReason("Paused: charging-only mode")
@@ -111,7 +128,7 @@ class WallpaperWorker(
         }
 
         // Auto-pause: screen on (skip rotation while device is interactive)
-        if (!autoPause.rotateScreenOn) {
+        if (!manual && !autoPause.rotateScreenOn) {
             val pm = applicationContext.getSystemService(PowerManager::class.java)
             if (pm?.isInteractive == true) {
                 prefs.setLastSkipReason("Paused: rotates when screen is off")
@@ -196,37 +213,10 @@ class WallpaperWorker(
 
         return try {
             val wallpaperManager = WallpaperManager.getInstance(applicationContext)
-            val metrics = applicationContext.resources.displayMetrics
-            val screenW = metrics.widthPixels
-            val screenH = metrics.heightPixels
+            val target = wallpaperTargetSize(applicationContext)
 
-            fun scaleBitmap(bitmap: Bitmap): Bitmap {
-                return when (settings.wallpaperFit) {
-                    WallpaperFit.STRETCH -> Bitmap.createScaledBitmap(bitmap, screenW, screenH, true)
-                    WallpaperFit.FIT -> {
-                        val scale = minOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
-                        val scaledW = (bitmap.width * scale).roundToInt()
-                        val scaledH = (bitmap.height * scale).roundToInt()
-                        val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-                        val result = Bitmap.createBitmap(screenW, screenH, Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(result)
-                        canvas.drawBitmap(scaled, ((screenW - scaledW) / 2f), ((screenH - scaledH) / 2f), null)
-                        if (scaled != bitmap) scaled.recycle()
-                        result
-                    }
-                    WallpaperFit.FILL -> {
-                        val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
-                        val scaledW = (bitmap.width * scale).roundToInt()
-                        val scaledH = (bitmap.height * scale).roundToInt()
-                        val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-                        val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
-                        val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
-                        val cropped = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
-                        if (scaled != bitmap) scaled.recycle()
-                        cropped
-                    }
-                }
-            }
+            fun scaleBitmap(bitmap: Bitmap): Bitmap =
+                fitWallpaperBitmap(bitmap, settings.wallpaperFit, target.width, target.height)
 
             val homeBitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
                 ?: run {
@@ -322,11 +312,6 @@ class WallpaperWorker(
 
             mainQueueCount?.takeIf { it in 1..4 }?.let { postLowQueueNotification(it) }
 
-            val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, 0L)
-            if (intervalMinutes in 1..14 && settings.isEnabled) {
-                scheduleNextRun(intervalMinutes)
-            }
-
             if (prefs.autoRefillEnabled.first()) {
                 val minCount = prefs.autoRefillMinCount.first()
                 try {
@@ -338,6 +323,9 @@ class WallpaperWorker(
 
             prefs.setLastSkipReason(null)
             Result.success()
+        } catch (e: CancellationException) {
+            // Superseded by a newer request (ExistingWorkPolicy.REPLACE); not a failure.
+            throw e
         } catch (e: Exception) {
             prefs.addRotationError(RotationError(
                 RotationErrorType.SET_FAILED,
@@ -556,6 +544,7 @@ class WallpaperWorker(
 
     companion object {
         const val KEY_INTERVAL_MINUTES = "interval_minutes"
+        const val KEY_MANUAL = "manual"
         const val CHAIN_WORK_NAME = "rotato_chain"
         private const val NOTIF_ID_WALLPAPER_SET = 1001
         private const val NOTIF_ID_LOW_QUEUE = 1002

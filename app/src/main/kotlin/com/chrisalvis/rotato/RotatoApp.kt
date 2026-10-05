@@ -3,10 +3,19 @@ package com.chrisalvis.rotato
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.res.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.VideoFrameDecoder
 import com.chrisalvis.rotato.data.AppErrorLog
+import com.chrisalvis.rotato.data.SchedulePreferences
+import com.chrisalvis.rotato.data.recordDisplaySize
+import com.chrisalvis.rotato.worker.ScheduleManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -16,10 +25,25 @@ class RotatoApp : Application(), ImageLoaderFactory {
     /** Session-level unlocked list IDs — shared across all ViewModels. */
     val unlockedListIds = MutableStateFlow<Set<String>>(emptySet())
 
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         AppErrorLog.init(this)
         createNotificationChannels()
+        recordDisplaySize(this)
+        // Alarms are wiped by force-stop and by revoking the exact-alarm permission; BOOT_COMPLETED
+        // alone doesn't restore them in those cases. scheduleAll is idempotent.
+        appScope.launch {
+            runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Folding/unfolding swaps the active panel; remember both so rotated wallpapers
+        // are sized to cover the outer and inner screens.
+        recordDisplaySize(this)
     }
 
     override fun newImageLoader(): ImageLoader {

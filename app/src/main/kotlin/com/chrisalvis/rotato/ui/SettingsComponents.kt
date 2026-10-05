@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -97,6 +98,7 @@ internal fun UpdateAvailableDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
+                .widthIn(max = 560.dp)
                 .padding(vertical = 24.dp),
             shape = MaterialTheme.shapes.large
         ) {

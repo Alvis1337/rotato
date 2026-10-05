@@ -638,7 +638,7 @@ fun BrainrotScreen(
                         ) {
                             if (gridMode) {
                                 LazyVerticalGrid(
-                                    columns = GridCells.Fixed(3),
+                                    columns = GridCells.Adaptive(minSize = 100.dp),
                                     state = compactGridState,
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
@@ -704,7 +704,7 @@ fun BrainrotScreen(
                                 }
                             } else {
                                 LazyVerticalStaggeredGrid(
-                                    columns = StaggeredGridCells.Fixed(2),
+                                    columns = StaggeredGridCells.Adaptive(minSize = 150.dp),
                                     state = gridState,
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),

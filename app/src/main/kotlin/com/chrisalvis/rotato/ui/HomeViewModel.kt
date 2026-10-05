@@ -2,8 +2,6 @@ package com.chrisalvis.rotato.ui
 
 import android.app.Application
 import android.app.WallpaperManager
-import android.graphics.Bitmap
-import kotlin.math.roundToInt
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -207,16 +205,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Auto-download wallpapers from any collection marked useAsRotation into the Library pool. */
     private fun observeRotationCollections() {
-        viewModelScope.launch {
+        // Directory scans, file copies and downloads below must stay off the main thread;
+        // large rotation collections froze the UI here.
+        viewModelScope.launch(Dispatchers.IO) {
             localLists.lists.combine(localLists.allWallpapers) { lists, wallpapers ->
                 val rotationIds = lists.filter { it.useAsRotation }.map { it.id }.toSet()
                 wallpapers.filter { it.listId in rotationIds }
             }.collect { toSync ->
                 var changed = false
+                val stemsOnDisk = imageDir.listFiles()?.mapTo(HashSet()) { it.nameWithoutExtension } ?: hashSetOf()
                 toSync.forEach { entry ->
                     if (entry.fullUrl.isBlank()) return@forEach
                     val key = sanitizeFilename(entry.sourceId)
-                    val onDisk = imageDir.listFiles()?.any { it.nameWithoutExtension == key } == true
+                    val onDisk = key in stemsOnDisk
                     if (!onDisk) {
                         if (entry.source == "device" && entry.fullUrl.startsWith("list_images/")) {
                             // Local image — copy from list_images/ to rotation pool
@@ -480,7 +481,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _setNowState.update { SetNowState.SETTING }
             _setNowErrorMessage.update { null }
             try {
-                val request = OneTimeWorkRequestBuilder<WallpaperWorker>().build()
+                val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
+                    .setInputData(workDataOf(WallpaperWorker.KEY_MANUAL to true))
+                    .build()
                 workManager.enqueueUniqueWork(SET_NOW_WORK_NAME, ExistingWorkPolicy.REPLACE, request).await()
                 val terminalStates = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
                 val info = workManager.getWorkInfoByIdFlow(request.id)
@@ -491,7 +494,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         resetSetNowUi()
                     }
                     else -> {
-                        _setNowErrorMessage.update { rotationErrors.value.lastOrNull()?.message ?: "Rotation failed" }
+                        _setNowErrorMessage.update { preferences.rotationErrors.first().firstOrNull()?.message ?: "Rotation failed" }
                         _setNowState.update { SetNowState.ERROR }
                         resetSetNowUi()
                     }
@@ -538,20 +541,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     com.chrisalvis.rotato.data.WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
                     com.chrisalvis.rotato.data.WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
                 }
-                val metrics = app.resources.displayMetrics
-                val screenW = metrics.widthPixels
-                val screenH = metrics.heightPixels
-                val scale = maxOf(screenW.toFloat() / bitmap.width, screenH.toFloat() / bitmap.height)
-                val scaledW = (bitmap.width * scale).roundToInt()
-                val scaledH = (bitmap.height * scale).roundToInt()
-                val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
-                val srcX = ((scaledW - screenW) / 2).coerceAtLeast(0)
-                val srcY = ((scaledH - screenH) / 2).coerceAtLeast(0)
-                val screenBitmap = Bitmap.createBitmap(scaled, srcX, srcY, screenW, screenH)
-                if (scaled != bitmap) scaled.recycle()
-                wallpaperManager.setBitmap(screenBitmap, null, true, flags)
-                screenBitmap.recycle()
+                val target = com.chrisalvis.rotato.data.wallpaperTargetSize(app)
+                val screenBitmap = com.chrisalvis.rotato.data.fitWallpaperBitmap(
+                    bitmap, settingsVal.wallpaperFit, target.width, target.height
+                )
                 bitmap.recycle()
+                try {
+                    wallpaperManager.setBitmap(screenBitmap, null, true, flags)
+                } finally {
+                    screenBitmap.recycle()
+                }
                 _setNowState.update { SetNowState.DONE }
                 resetSetNowUi()
             } catch (e: Exception) {

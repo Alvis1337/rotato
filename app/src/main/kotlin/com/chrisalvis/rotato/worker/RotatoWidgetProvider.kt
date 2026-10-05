@@ -49,15 +49,13 @@ class RotatoWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_NEXT) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val prefs = RotatoPreferences(context)
-                val settings = prefs.settings.first()
-                val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
-                    .setInputData(workDataOf(WallpaperWorker.KEY_INTERVAL_MINUTES to settings.intervalMinutes))
-                    .build()
-                WorkManager.getInstance(context)
-                    .enqueueUniqueWork(WallpaperWorker.CHAIN_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
-            }
+            // Own work name: replacing CHAIN_WORK_NAME here cancelled the pending interval
+            // chain, and its Int interval extra was unreadable by the worker's getLong().
+            val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
+                .setInputData(workDataOf(WallpaperWorker.KEY_MANUAL to true))
+                .build()
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork("widget_next", ExistingWorkPolicy.REPLACE, request)
         } else if (intent.action == ACTION_REFRESH_WIDGET) {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, RotatoWidgetProvider::class.java))
