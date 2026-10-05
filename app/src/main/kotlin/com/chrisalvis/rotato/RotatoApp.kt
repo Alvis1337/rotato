@@ -36,6 +36,20 @@ class RotatoApp : Application(), ImageLoaderFactory {
         recordDisplaySize(this)
         // Alarms are wiped by force-stop and by revoking the exact-alarm permission; BOOT_COMPLETED
         // alone doesn't restore them in those cases. scheduleAll is idempotent.
+        // Unlocked collections re-lock once the app has sat in the background for a while, so a
+        // phone handed to someone later doesn't still show them.
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            private var backgroundedAt = 0L
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+                backgroundedAt = android.os.SystemClock.elapsedRealtime()
+            }
+            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                if (backgroundedAt != 0L &&
+                    android.os.SystemClock.elapsedRealtime() - backgroundedAt > RELOCK_AFTER_MS
+                ) unlockedListIds.value = emptySet()
+                backgroundedAt = 0L
+            }
+        })
         appScope.launch {
             runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
             UnfoldWatcherService.sync(this@RotatoApp, RotatoPreferences(this@RotatoApp).rotateOnUnfold.first())
@@ -132,6 +146,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
         const val CHANNEL_LOCKED_LIST = "rotato_locked_list"
         const val CHANNEL_FILL = "rotato_fill"
         const val CHANNEL_UNFOLD = "rotato_unfold"
+        private const val RELOCK_AFTER_MS = 5 * 60_000L
     }
 }
 

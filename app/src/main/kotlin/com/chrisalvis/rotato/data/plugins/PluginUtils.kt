@@ -42,44 +42,34 @@ internal fun getJsonArray(url: String, vararg headers: Pair<String, String>): JS
 } catch (e: Exception) { null }
 
 /**
- * Normalises a free-text anime title into a single booru compound tag.
- * Converts spaces to underscores so a multi-word title maps to one tag.
- *   "Re:ZERO - Starting Life in Another World" → "re_zero_-_starting_life_in_another_world"
- *   "Steins;Gate" → "steinsgate"
+ * Normalises a free-text anime title into a single booru compound tag: lowercase, spaces become
+ * underscores. Punctuation is kept because it is part of real tags:
+ *   "Fate/Zero" → "fate/zero", "Steins;Gate" → "steins;gate", "shaula_(re:zero)" stays as is.
+ * A leading "-" or "~" is dropped so a title can't turn into an exclude or OR operator.
  * Use this only for MAL-derived titles; for user search queries use [normalizeUserQuery].
  */
 internal fun normalizeBooruQuery(q: String): String =
     q.trim()
         .lowercase()
-        .replace(Regex("[^a-z0-9 _-]"), "")
-        .trim()
+        .filterNot { it.isISOControl() }
         .replace(Regex("\\s+"), "_")
-        .replace(Regex("-+"), "-")
         .replace(Regex("_+"), "_")
-        .trim('_', '-')
+        .trim('_')
+        .trimStart('-', '~')
 
 /**
- * Normalises an explicit user search query for booru APIs.
- * Each space-separated token is individually cleaned (special chars stripped, lowercased)
- * and tokens are re-joined with spaces so the booru API treats them as separate AND tags.
- *   "anime 1girl" → "anime 1girl"          (two tags, ANDed)
- *   "Steins;Gate" → "steinsgate"           (one tag, special char stripped)
- *   "attack_on_titan" → "attack_on_titan"  (pre-normalised MAL titles pass through unchanged)
- *   "shaula_(re:zero)" → "shaula_(re:zero)"  (parentheses + colon preserved for character disambiguation)
+ * Normalises an explicit user search query for booru APIs. Tokens stay space-separated (ANDed
+ * tags); each is lowercased with control characters removed and trailing underscores trimmed.
+ * Everything else is kept: "-tag" excludes, "~tag" ORs, "*" wildcards, and punctuation in real
+ * tags such as "fate/grand_order", "k-on!" or "jojo's_bizarre_adventure". URL encoding
+ * happens later.
  */
 internal fun normalizeUserQuery(q: String): String =
     q.trim()
         .split(Regex("\\s+"))
-        .filter { it.isNotBlank() }
-        .joinToString(" ") { token ->
-            token.lowercase()
-                // Keep alphanumeric, underscore, hyphen, parentheses, and colon.
-                // Parentheses and colons are part of the standard booru tag convention:
-                // e.g. "character_(series)" or "re:zero" — stripping them breaks lookups.
-                .replace(Regex("[^a-z0-9_()\\.:-]"), "")
-                .trim('_', '-')
-        }
-        .trim()
+        .map { token -> token.lowercase().filterNot { it.isISOControl() }.trimEnd('_') }
+        .filter { it.isNotBlank() && it != "-" && it != "~" }
+        .joinToString(" ")
 
 internal fun pickRandom(arr: JSONArray, exclude: List<String> = emptyList()): JSONObject? {
     if (arr.length() == 0) return null

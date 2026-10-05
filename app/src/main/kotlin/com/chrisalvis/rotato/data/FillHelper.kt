@@ -48,6 +48,8 @@ class FillHelper(private val context: Context) {
             matchAny = matchAny,
         )
 
+        // Fill respects the same blacklist, "Never" tags and blocked images as Discover.
+        val blocklist = com.chrisalvis.rotato.data.ContentBlocklist.load(context, globalNsfw)
         var added = 0
         val shuffledCandidates = candidates.shuffled()
         var round = 0
@@ -67,6 +69,7 @@ class FillHelper(private val context: Context) {
                 }
                 for (wp in wallpapers) {
                     if (added >= count) break
+                    if (blocklist.blocks(wp)) continue
                     val ok = localLists.addWallpaper(list.id, wp)
                     if (ok) { added++; addedThisRound++ }
                 }

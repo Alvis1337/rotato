@@ -302,14 +302,7 @@ class WallpaperWorker(
                     tags = matchingEntry?.tags ?: emptyList(),
                     pageUrl = matchingEntry?.pageUrl ?: ""
                 )
-                val updatedHistory = history.toMutableList().apply { add(0, historyItem) }
-                prefs.setHistoryJson(updatedHistory.take(200).toJson())
-                prefs.setLastWallpaperState(
-                    thumbUrl = currentThumbUrl,
-                    fullUrl = currentFullUrl,
-                    source = currentSource,
-                    setMs = now,
-                )
+                prefs.recordWallpaperShown(historyItem)
 
                 postWallpaperSetNotification(screenBitmap, isTargetNsfw && prefs.nsfwBlurEnabled.first(), matchingEntry?.pageUrl.orEmpty(), currentSource)
             } finally {

@@ -292,8 +292,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         _inRotation.update {
             imageDir.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
         }
-        // Session unlock persists for the process lifetime — re-locks only when the OS kills the app.
-        // This allows background wallpaper rotation on locked collections without constant re-prompts.
+        // Session unlock is cleared by RotatoApp after the app has been in the background for a
+        // few minutes; rotation workers don't depend on it.
         processLifecycleObserver = object : DefaultLifecycleObserver {}
         ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
 
@@ -564,6 +564,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             matchAny = matchAny,
         )
         Log.d("BrowseViewModel", "fillCollectionFromSources: tags=\"$tags\" count=$count candidates=${candidates.size} nsfwOverride=$nsfwOverride globalNsfw=$globalNsfw")
+        // Fill respects the same blacklist, "Never" tags and blocked images as Discover.
+        val blocklist = com.chrisalvis.rotato.data.ContentBlocklist.load(app, globalNsfw)
         var added = 0
         val shuffledCandidates = candidates.shuffled()
         var round = 0
@@ -585,6 +587,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 Log.d("BrowseViewModel", "fillCollectionFromSources: src=${src.pluginId} returned ${wallpapers.size}")
                 for (wp in wallpapers) {
                     if (added >= count) break
+                    if (blocklist.blocks(wp)) continue
                     val ok = localLists.addWallpaper(list.id, wp)
                     if (ok) { added++; addedThisRound++ }
                 }
@@ -762,17 +765,16 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteList(list: LocalList) {
         viewModelScope.launch {
             if (_selectedListId.value == list.id) clearSelection()
-            // Collect device-image entries before they're deleted from DataStore
-            val deviceEntries = localLists.allWallpapers.first()
-                .filter { it.listId == list.id && it.source == "device" }
+            val all = localLists.allWallpapers.first()
+            val removed = all.filter { it.listId == list.id }
             localLists.deleteList(list.id)
-            // Remove all local image files for this collection
-            File(app.filesDir, "list_images/${list.id}").deleteRecursively()
-            // Also clean rotation-pool copies for device images from this list
-            deviceEntries.forEach { entry ->
-                val key = sanitize(entry.sourceId)
-                imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
-                _inRotation.update { it - key }
+            val remaining = all.filter { it.listId != list.id }
+            deleteOwnedDeviceFiles(removed, remaining)
+            // Smart-collection copies elsewhere can still point into this folder.
+            val dir = File(app.filesDir, "list_images/${list.id}")
+            val dirPrefix = dir.canonicalPath + File.separator
+            if (remaining.none { resolveShareFile(it.fullUrl)?.canonicalPath?.startsWith(dirPrefix) == true }) {
+                withContext(Dispatchers.IO) { dir.deleteRecursively() }
             }
         }
     }
@@ -871,16 +873,36 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun removeWallpaper(entryId: String) {
-        val wp = wallpapers.value.find { it.entryId == entryId }
-        viewModelScope.launch {
-            localLists.removeWallpaper(entryId)
-            if (wp?.source == "device") {
-                // Delete the local image file
-                val uri = Uri.parse(wp.fullUrl)
-                uri.path?.let { File(it).delete() }
-                // Also remove from rotation pool if present
-                val key = sanitize(wp.sourceId)
-                imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
+        viewModelScope.launch { removeEntries(setOf(entryId)) }
+    }
+
+    private suspend fun removeEntries(entryIds: Set<String>) {
+        val all = localLists.allWallpapers.first()
+        localLists.removeWallpapers(entryIds)
+        deleteOwnedDeviceFiles(all.filter { it.id in entryIds }, remaining = all.filter { it.id !in entryIds })
+    }
+
+    /**
+     * Deletes the files behind removed device-photo entries, but only files a collection owns
+     * (under list_images/) that no remaining entry still uses, plus their rotation-pool copies.
+     * Entries made by "Save library as collection" point straight at rotation-pool files; those
+     * used to be deleted here, wiping photos out of the Library.
+     */
+    private suspend fun deleteOwnedDeviceFiles(
+        removed: List<com.chrisalvis.rotato.data.LocalWallpaperEntry>,
+        remaining: List<com.chrisalvis.rotato.data.LocalWallpaperEntry>,
+    ) = withContext(Dispatchers.IO) {
+        val ownedRoot = File(app.filesDir, "list_images").canonicalPath + File.separator
+        val stillUsedFiles = remaining.mapNotNullTo(HashSet()) { resolveShareFile(it.fullUrl)?.canonicalPath }
+        val stillUsedIds = remaining.mapTo(HashSet()) { it.sourceId }
+        val poolByStem = imageDir.listFiles().orEmpty().associateBy { it.nameWithoutExtension }
+        removed.filter { it.source == "device" }.forEach { entry ->
+            val file = resolveShareFile(entry.fullUrl)?.canonicalFile ?: return@forEach
+            if (!file.path.startsWith(ownedRoot)) return@forEach
+            if (file.path !in stillUsedFiles) file.delete()
+            if (entry.sourceId !in stillUsedIds) {
+                val key = sanitize(entry.sourceId)
+                poolByStem[key]?.delete()
                 _inRotation.update { it - key }
             }
         }
@@ -943,40 +965,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun removeSelected() {
-        val toRemove = wallpapers.value.filter { _selected.value.contains(it.entryId) }
+        val ids = wallpapers.value.filter { _selected.value.contains(it.entryId) }.map { it.entryId }.toSet()
         exitSelectionMode()
-        viewModelScope.launch {
-            toRemove.forEach { wp ->
-                localLists.removeWallpaper(wp.entryId)
-                if (wp.source == "device") {
-                    val uri = android.net.Uri.parse(wp.fullUrl)
-                    uri.path?.let { java.io.File(it).delete() }
-                    val key = sanitize(wp.sourceId)
-                    imageDir.listFiles()?.find { it.nameWithoutExtension == key }?.delete()
-                    _inRotation.update { it - key }
-                }
-            }
-        }
-    }
-
-    fun saveWallpaper(wallpaper: BrowseWallpaper) {
-        if (wallpaper.source == "device") {
-            Toast.makeText(app.applicationContext, "Already on device", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val ctx = app.applicationContext
-        viewModelScope.launch {
-            if (_downloading.value.contains(wallpaper.sourceId)) return@launch
-            _downloading.update { it + wallpaper.sourceId }
-            var ok = false
-            try {
-                ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
-            } finally {
-                _downloading.update { it - wallpaper.sourceId }
-            }
-            val msg = if (ok) "Saved to Pictures/Rotato" else "Failed to save"
-            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-        }
+        viewModelScope.launch { removeEntries(ids) }
     }
 
     fun setCoverImage(wallpaper: LocalWallpaperEntry) {
@@ -1313,9 +1304,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(Dispatchers.IO) {
             val list = localLists.createList(listName) ?: return@launch
             val files = imageDir.listFiles() ?: return@launch
-            files.sortedBy { it.name }.forEach { file ->
-                val relativePath = "rotato_images/${file.name}"
-                localLists.addWallpaperEntry(
+            // One write for the whole Library instead of re-parsing the store per image.
+            localLists.addWallpaperEntries(files.sortedBy { it.name }.map { file ->
                     com.chrisalvis.rotato.data.LocalWallpaperEntry(
                         listId = list.id,
                         sourceId = file.nameWithoutExtension,
@@ -1326,8 +1316,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         pageUrl = "",
                         tags = emptyList(),
                     )
-                )
-            }
+            })
             withContext(Dispatchers.Main) {
                 Toast.makeText(app, "Saved ${files.size} images to \"$listName\"", Toast.LENGTH_SHORT).show()
             }

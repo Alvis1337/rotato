@@ -54,8 +54,7 @@ object GelbooruEngine : PluginEngine() {
         val authSuffix = buildAuthSuffix(source)
         val url = "$apiBase&limit=$limit&tags=${tagQuery.urlEncode()}$authSuffix"
 
-        val pid = resolvePid(url, base, tagQuery, authSuffix, limit, extras)
-        val arr = loadArray(url, pid, extras["response"] ?: "object") ?: return@onIO null
+        val arr = loadPage(url, base, tagQuery, authSuffix, limit, extras) ?: return@onIO null
 
         val post = pickFiltered(arr, filters, exclude) { obj ->
             postId(obj) to (obj.optInt("width") to obj.optInt("height"))
@@ -80,8 +79,7 @@ object GelbooruEngine : PluginEngine() {
         val authSuffix = buildAuthSuffix(source)
         val url = "$apiBase&limit=$limit&tags=${tagQuery.urlEncode()}$authSuffix"
 
-        val pid = resolvePid(url, base, tagQuery, authSuffix, limit, extras)
-        val arr = loadArray(url, pid, extras["response"] ?: "object") ?: return@onIO emptyList()
+        val arr = loadPage(url, base, tagQuery, authSuffix, limit, extras) ?: return@onIO emptyList()
 
         (0 until arr.length()).mapNotNull { i ->
             val post = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -116,6 +114,36 @@ object GelbooruEngine : PluginEngine() {
         if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
             "&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
         else ""
+
+    /**
+     * Loads a random page of results. The page-0 response used to read the post count is reused
+     * when page 0 is picked instead of being fetched twice. Sites without a usable count
+     * ("random" strategy, e.g. Safebooru) guess a page; when the guess is past the end of the
+     * results it falls back to page 0, so tag searches with few posts still return something.
+     */
+    private fun loadPage(
+        url: String,
+        host: String,
+        tagQuery: String,
+        authSuffix: String,
+        limit: Int,
+        extras: Map<String, String>,
+    ): JSONArray? {
+        val format = extras["response"] ?: "object"
+        val strategy = extras["count"] ?: "json"
+        var page0: JSONObject? = null
+        val pid = if (strategy == "json") {
+            page0 = getJson("$url&pid=0")
+            val count = page0?.optJSONObject("@attributes")?.optInt("count", 0) ?: 0
+            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else 0
+        } else {
+            resolvePid(url, host, tagQuery, authSuffix, limit, extras)
+        }
+        val arr = if (pid == 0 && page0 != null && format == "object") page0.optJSONArray("post")
+        else loadArray(url, pid, format)
+        if ((arr == null || arr.length() == 0) && pid > 0) return loadArray(url, 0, format)
+        return arr
+    }
 
     /** Determines the pid to fetch based on the `count` strategy in extras. */
     private fun resolvePid(

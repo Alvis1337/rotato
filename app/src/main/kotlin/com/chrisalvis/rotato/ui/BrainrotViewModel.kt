@@ -32,6 +32,7 @@ import com.chrisalvis.rotato.data.TagTier
 import com.chrisalvis.rotato.data.TastePreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.WallpaperTarget
+import com.chrisalvis.rotato.data.normalizeTag
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginManifest
@@ -127,16 +128,19 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _noSources = MutableStateFlow(false)
     val noSources: StateFlow<Boolean> = _noSources.asStateFlow()
 
-    val savedSourceIds: StateFlow<Set<String>> = localLists.allWallpapers
-        .map { entries -> entries.map { "${it.source}:${it.sourceId}" }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
-
     val lists: StateFlow<List<LocalList>> = combine(
         localLists.lists,
         (app as com.chrisalvis.rotato.RotatoApp).unlockedListIds
     ) { all, unlocked ->
         all.filter { !it.isLocked || it.id in unlocked }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Only collections the user can currently see count as "saved", so a locked collection's
+    // contents don't show up as saved badges in Discover.
+    val savedSourceIds: StateFlow<Set<String>> = combine(localLists.allWallpapers, lists) { entries, visible ->
+        val visibleIds = visible.mapTo(HashSet()) { it.id }
+        entries.filter { it.listId in visibleIds }.mapTo(HashSet()) { "${it.source}:${it.sourceId}" }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     private val _selectedListId = MutableStateFlow<String?>(null)
     val selectedListId: StateFlow<String?> = _selectedListId.asStateFlow()
@@ -362,18 +366,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             // NSFW tier tags only apply when NSFW mode is on
             val nsfwTierMap = if (alignInterests && nsfw) tastePrefs.nsfwTagTiers.first() else emptyMap()
             val combinedTierMap = sfwTierMap + nsfwTierMap
-            val neverTagSet = combinedTierMap.filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+            val neverTagSet = combinedTierMap.filterValues { it == TagTier.NEVER }.keys.map(::normalizeTag).toSet()
             val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
-            val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
-            val profileIncludes = activeProfiles.flatMap { it.includeTags }.map { it.lowercase() }.toSet()
+            val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map(::normalizeTag).toSet()
+            val profileIncludes = activeProfiles.flatMap { it.includeTags }.map(::normalizeTag).toSet()
             // When align is on but no profiles selected, fall back to tier-based boosting/deprioritizing
             val tierBoostTags = if (alignInterests && activeProfiles.isEmpty())
-                combinedTierMap.filterValues { it == TagTier.LOVE || it == TagTier.LIKE }.keys.map { it.lowercase() }.toSet()
+                combinedTierMap.filterValues { it == TagTier.LOVE || it == TagTier.LIKE }.keys.map(::normalizeTag).toSet()
             else emptySet()
             val tierDemoteTags = if (alignInterests && activeProfiles.isEmpty())
-                combinedTierMap.filterValues { it == TagTier.DISLIKE }.keys.map { it.lowercase() }.toSet()
+                combinedTierMap.filterValues { it == TagTier.DISLIKE }.keys.map(::normalizeTag).toSet()
             else emptySet()
-            val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
+            val blacklist = prefs.globalBlacklist.first().map(::normalizeTag).toSet() + neverTagSet + profileExcludes
             val blockedUrls = prefs.blockedUrls.first()
             val explicitQuery = _searchQuery.value
             val batchSize = prefs.discoverBatchSize.first()
@@ -419,7 +423,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val wp = drainOne(sourcesWithQueries) ?: break  // null = all caches empty
                 val key = "${wp.source}:${wp.id}"
                 if (key in displayedKeys) { if (++totalSkipped >= 200) break; continue }
-                if (blacklist.isNotEmpty() && wp.tags.any { it.lowercase() in blacklist }) { totalSkipped++; continue }
+                if (blacklist.isNotEmpty() && wp.tags.any { normalizeTag(it) in blacklist }) { totalSkipped++; continue }
                 if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
@@ -459,16 +463,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val boostTags = profileIncludes.ifEmpty { tierBoostTags }
                 val orderedItems = when {
                     boostTags.isNotEmpty() && tierDemoteTags.isNotEmpty() -> {
-                        val (boosted, remaining) = newItems.partition { wp -> wp.tags.any { it.lowercase() in boostTags } }
-                        val (demoted, neutral) = remaining.partition { wp -> wp.tags.any { it.lowercase() in tierDemoteTags } }
+                        val (boosted, remaining) = newItems.partition { wp -> wp.tags.any { normalizeTag(it) in boostTags } }
+                        val (demoted, neutral) = remaining.partition { wp -> wp.tags.any { normalizeTag(it) in tierDemoteTags } }
                         boosted + neutral + demoted
                     }
                     boostTags.isNotEmpty() -> {
-                        val (boosted, rest) = newItems.partition { wp -> wp.tags.any { it.lowercase() in boostTags } }
+                        val (boosted, rest) = newItems.partition { wp -> wp.tags.any { normalizeTag(it) in boostTags } }
                         boosted + rest
                     }
                     tierDemoteTags.isNotEmpty() -> {
-                        val (demoted, rest) = newItems.partition { wp -> wp.tags.any { it.lowercase() in tierDemoteTags } }
+                        val (demoted, rest) = newItems.partition { wp -> wp.tags.any { normalizeTag(it) in tierDemoteTags } }
                         rest + demoted
                     }
                     else -> newItems
@@ -780,6 +784,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 } finally {
                     screenBitmap.recycle()
                 }
+                prefs.recordWallpaperShown(
+                    WallpaperHistoryItem(
+                        thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl, fullUrl = wp.fullUrl,
+                        source = wp.source, timestamp = System.currentTimeMillis(),
+                        tags = wp.tags, pageUrl = wp.pageUrl,
+                    )
+                )
                 toast("Wallpaper set!")
             } catch (e: Exception) {
                 toast("Failed to set wallpaper")
@@ -802,18 +813,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     if (!_downloadingIds.value.contains(key)) {
                         _downloadingIds.update { it + key }
                         try {
-                            val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                            val downloadedFile = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                            // Same file name the collection entry resolves to (sanitizeFilename(sourceId)),
+                            // so the pool, per-screen and stealth lookups find it and it isn't fetched twice.
+                            val downloadedFile = feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl)
                             if (downloadedFile != null) {
                                 if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)
-                                val history = historyFromJson(prefs.historyJson.first()).toMutableList()
-                                history.add(0, WallpaperHistoryItem(
-                                    thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl,
-                                    fullUrl = wp.fullUrl, source = wp.source,
-                                    timestamp = System.currentTimeMillis(),
-                                    tags = wp.tags, pageUrl = wp.pageUrl
-                                ))
-                                prefs.setHistoryJson(history.take(50).toJson())
                                 Toast.makeText(ctx, "Saved to \"$listName\" · added to rotation", Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(ctx, "Saved to \"$listName\" (download failed)", Toast.LENGTH_SHORT).show()
@@ -915,10 +919,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val alignInterests = prefs.interestAlignEnabled.first()
                 val sfwTierMap = if (alignInterests) tastePrefs.sfwTagTiers.first() else emptyMap()
                 val nsfwTierMap = if (alignInterests && nsfw) tastePrefs.nsfwTagTiers.first() else emptyMap()
-                val neverTagSet = (sfwTierMap + nsfwTierMap).filterValues { it == TagTier.NEVER }.keys.map { it.lowercase() }.toSet()
+                val neverTagSet = (sfwTierMap + nsfwTierMap).filterValues { it == TagTier.NEVER }.keys.map(::normalizeTag).toSet()
                 val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
-                val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map { it.lowercase() }.toSet()
-                val blacklist = prefs.globalBlacklist.first() + neverTagSet + profileExcludes
+                val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map(::normalizeTag).toSet()
+                val blacklist = prefs.globalBlacklist.first().map(::normalizeTag).toSet() + neverTagSet + profileExcludes
                 val blockedUrls = prefs.blockedUrls.first()
                 val explicitQuery = _searchQuery.value
                 val requests = buildDiscoverRequests(nsfw, filters, explicitQuery)
@@ -941,7 +945,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     .filter { wp ->
                         val key = "${wp.source}:${wp.id}"
                         key !in seenKeys &&
-                            (blacklist.isEmpty() || wp.tags.none { it.lowercase() in blacklist }) &&
+                            (blacklist.isEmpty() || wp.tags.none { normalizeTag(it) in blacklist }) &&
                             (blockedUrls.isEmpty() || wp.fullUrl !in blockedUrls)
                     }
                     .distinctBy { "${it.source}:${it.id}" }
@@ -1183,22 +1187,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _downloadingIds.update { it + key }
             try {
-                val sourceId = wp.fullUrl.substringAfterLast('/').substringBeforeLast('.')
-                val downloadedFile = feedRepo.downloadWallpaper(sourceId, wp.fullUrl, wp.sampleUrl)
+                val downloadedFile = feedRepo.downloadWallpaper(wp.id, wp.fullUrl, wp.sampleUrl)
                 val ctx = getApplication<Application>().applicationContext
                 if (downloadedFile != null) {
                     if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)
-                    val history = historyFromJson(prefs.historyJson.first()).toMutableList()
-                    history.add(0, WallpaperHistoryItem(
-                        thumbUrl = wp.thumbUrl,
-                        sampleUrl = wp.sampleUrl,
-                        fullUrl = wp.fullUrl,
-                        source = wp.source,
-                        timestamp = System.currentTimeMillis(),
-                        tags = wp.tags,
-                        pageUrl = wp.pageUrl
-                    ))
-                    prefs.setHistoryJson(history.take(50).toJson())
                     val rotationList = localLists.lists.first().firstOrNull { it.useAsRotation }
                     if (rotationList != null) localLists.addWallpaper(rotationList.id, wp)
                     val msg = if (rotationList != null) "Added to rotation · saved to \"${rotationList.name}\"" else "Added to rotation"

@@ -58,7 +58,8 @@ object WallhavenEngine : PluginEngine() {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
         // categories = general/anime/people bits.
         val categories = if (filters.animeOnly) "010" else "111"
-        var url = "$base/api/v1/search?q=${query.trim().urlEncode()}&categories=$categories&purity=$purity&sorting=random"
+        // Wallhaven tags use spaces; MAL and tier queries arrive booru-style ("shingeki_no_kyojin").
+        var url = "$base/api/v1/search?q=${query.trim().replace('_', ' ').urlEncode()}&categories=$categories&purity=$purity&sorting=random"
         when (filters.minResolution) {
             MinResolution.ANY -> Unit
             MinResolution.MY_PHONE ->

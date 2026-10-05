@@ -29,6 +29,7 @@ class RotatoPreferences(private val context: Context) {
         val LAST_ROTATION_MS = longPreferencesKey("last_rotation_ms")
         val WALLPAPER_TARGET = stringPreferencesKey("wallpaper_target")
         val HISTORY_JSON = stringPreferencesKey("wallpaper_history_json")
+        const val HISTORY_CAP = 200
         val SETUP_DONE = booleanPreferencesKey("setup_done")
         val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
@@ -285,6 +286,22 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setHistoryJson(json: String) {
         context.dataStore.edit { it[HISTORY_JSON] = json }
+    }
+
+    /**
+     * Records a wallpaper that was just set: prepends it to history (read and written inside one
+     * edit, so concurrent rotations can't overwrite each other) and makes it the "current"
+     * wallpaper that auto-favorite and the notification's Save act on.
+     */
+    suspend fun recordWallpaperShown(item: WallpaperHistoryItem) {
+        context.dataStore.edit { prefs ->
+            val history = historyFromJson(prefs[HISTORY_JSON] ?: "[]")
+            prefs[HISTORY_JSON] = (listOf(item) + history).take(HISTORY_CAP).toJson()
+            prefs[LAST_WALLPAPER_THUMB_URL] = item.thumbUrl
+            prefs[LAST_WALLPAPER_FULL_URL] = item.fullUrl
+            prefs[LAST_WALLPAPER_SOURCE] = item.source
+            prefs[LAST_WALLPAPER_SET_MS] = item.timestamp
+        }
     }
 
     suspend fun setWallpaperRating(filename: String, rating: Int) {

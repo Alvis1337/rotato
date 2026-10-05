@@ -1,5 +1,8 @@
 package com.chrisalvis.rotato.ui
 
+import android.app.KeyguardManager
+import android.os.Build
+import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -11,8 +14,10 @@ object BiometricHelper {
      * Shows a biometric / device-credential prompt.
      *
      * [onSuccess] is called on the main thread when the user authenticates successfully.
-     * [onUnavailable] is called when no authentication method is enrolled — defaults to
-     * failing open so the feature doesn't permanently block users on devices with no biometrics.
+     * [onUnavailable] is called only when the device has no screen lock at all, so there is
+     * nothing to authenticate against; it defaults to failing open so the feature doesn't
+     * permanently block those users. Any other problem (hardware busy, security update
+     * required) keeps the collection locked.
      */
     fun authenticate(
         activity: FragmentActivity,
@@ -21,8 +26,11 @@ object BiometricHelper {
         onSuccess: () -> Unit,
         onUnavailable: () -> Unit = onSuccess
     ) {
+        // BIOMETRIC_STRONG | DEVICE_CREDENTIAL isn't supported below API 30 and reports an
+        // error there, which used to unlock the collection without any prompt.
         val authenticators =
-            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) BiometricManager.Authenticators.BIOMETRIC_STRONG
+             else BiometricManager.Authenticators.BIOMETRIC_WEAK) or
                     BiometricManager.Authenticators.DEVICE_CREDENTIAL
 
         when (BiometricManager.from(activity).canAuthenticate(authenticators)) {
@@ -54,7 +62,11 @@ object BiometricHelper {
                     }
                 ).authenticate(promptInfo)
             }
-            else -> onUnavailable()
+            else -> {
+                val keyguard = activity.getSystemService(KeyguardManager::class.java)
+                if (keyguard?.isDeviceSecure == false) onUnavailable()
+                else Toast.makeText(activity, "Couldn't open the unlock prompt. Try again.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }

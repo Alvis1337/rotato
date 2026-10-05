@@ -219,6 +219,26 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
+    /** Removes several entries in one write. */
+    suspend fun removeWallpapers(entryIds: Set<String>) {
+        if (entryIds.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val updated = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.id !in entryIds }
+            prefs[WALLPAPERS_KEY] = serializeWallpapers(updated)
+        }
+    }
+
+    /** Adds several entries in one write, skipping ones already in their collection. */
+    suspend fun addWallpaperEntries(entries: List<LocalWallpaperEntry>) {
+        if (entries.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
+            val existing = current.mapTo(HashSet()) { it.listId to it.sourceId }
+            val fresh = entries.filter { existing.add(it.listId to it.sourceId) }
+            if (fresh.isNotEmpty()) prefs[WALLPAPERS_KEY] = serializeWallpapers(current + fresh)
+        }
+    }
+
     suspend fun removeWallpaper(entryId: String) {
         context.dataStore.edit { prefs ->
             val updated = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.id != entryId }

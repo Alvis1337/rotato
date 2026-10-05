@@ -26,7 +26,9 @@ import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
-fun sanitizeFilename(s: String): String = s.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(80)
+private val UNSAFE_FILENAME_CHARS = Regex("[^a-zA-Z0-9._-]")
+
+fun sanitizeFilename(s: String): String = s.replace(UNSAFE_FILENAME_CHARS, "_").take(80)
 
 private const val DISPLAY_PREFS = "rotato_display_sizes"
 private const val KEY_SIZES = "sizes"

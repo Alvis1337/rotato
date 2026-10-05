@@ -96,6 +96,8 @@ object DanbooruEngine : PluginEngine() {
     private fun accountLevel(source: LocalSource, auth: String, base: String): Int {
         val cacheKey = "${source.apiUser}:${source.apiKey}@$base"
         accountLevelCache[cacheKey]?.let { return it }
+        // Only a successful answer is cached: a timeout or 5xx used to pin a Gold account to
+        // level 0 (one tag, no excludes) until the app restarted.
         val level = runCatching {
             val req = Request.Builder()
                 .url("$base/profile.json")
@@ -103,10 +105,10 @@ object DanbooruEngine : PluginEngine() {
                 .addHeader("Authorization", auth)
                 .build()
             http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@runCatching 0
-                org.json.JSONObject(resp.body?.string() ?: return@runCatching 0).optInt("level", 0)
+                if (!resp.isSuccessful) return@runCatching null
+                org.json.JSONObject(resp.body?.string() ?: return@runCatching null).optInt("level", 0)
             }
-        }.getOrDefault(0)
+        }.getOrNull() ?: return 0
         accountLevelCache[cacheKey] = level
         return level
     }

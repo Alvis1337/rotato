@@ -36,6 +36,19 @@ suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Bo
         screenBitmap.recycle()
     }
     if (recordAsCurrent) prefs.pushAppliedWallpaper(file.absolutePath)
+    val entry = LocalListsPreferences(context).allWallpapers.first()
+        .firstOrNull { sanitizeFilename(it.sourceId) == file.nameWithoutExtension }
+    prefs.recordWallpaperShown(
+        WallpaperHistoryItem(
+            thumbUrl = entry?.thumbUrl ?: file.absolutePath,
+            sampleUrl = entry?.sampleUrl ?: "",
+            fullUrl = entry?.fullUrl ?: file.absolutePath,
+            source = entry?.source ?: "local",
+            timestamp = System.currentTimeMillis(),
+            tags = entry?.tags ?: emptyList(),
+            pageUrl = entry?.pageUrl ?: "",
+        )
+    )
     return null
 }
 
