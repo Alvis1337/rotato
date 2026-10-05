@@ -125,10 +125,12 @@
     .tag-safe { background: #d4edda; color: #276034; }
     .tag-nsfw { background: #f8d7da; color: #721c24; }
     .tag-key  { background: #fff3cd; color: #7d5a00; }
+    .tag-mixed { background: #e2e3f3; color: #3b3f73; }
     @media (prefers-color-scheme: dark) {
       .tag-safe { background: #1a3a24; color: #6fcf97; }
       .tag-nsfw { background: #3a1a1d; color: #f48c95; }
       .tag-key  { background: #3a2e0a; color: #f0c060; }
+      .tag-mixed { background: #262842; color: #b8bcf0; }
     }
     .plugin-card p { font-size: 0.82rem; color: var(--muted); margin-top: 0.2rem; }
     .links {
@@ -218,90 +220,81 @@
     </div>
     <div class="feature-card">
       <h3>Privacy first</h3>
-      <p>No accounts, no analytics, no ads. Everything stays on your device.</p>
+      <p>No Rotato account, no analytics, no ads. Your collections and settings stay on your device.</p>
     </div>
   </div>
 </div>
 <div class="plugins">
   <h2>Official Plugin Store</h2>
-  <p class="subtitle">Add the official store in-app, or paste the URL directly.</p>
+  <p class="subtitle">Built into the app, or installable from the official store at the URL below. Sources marked SFW + NSFW leave explicit images out while NSFW mode is off.</p>
   <div class="store-url">https://raw.githubusercontent.com/Alvis1337/rotato/main/plugin-store/index.json</div>
   <div class="plugin-grid">
-
     <div class="plugin-card">
       <div class="plugin-card-header">
         <h3>Safebooru</h3>
         <span class="tag tag-safe">Safe</span>
       </div>
-      <p>Safe-for-work anime art booru. No credentials required.</p>
+      <p>Safe-for-work anime art booru. No account needed.</p>
     </div>
-
     <div class="plugin-card">
       <div class="plugin-card-header">
         <h3>Zerochan</h3>
         <span class="tag tag-safe">Safe</span>
       </div>
-      <p>Curated anime art with high-quality images. No credentials required.</p>
+      <p>Curated, high-quality anime art. No account needed.</p>
     </div>
-
     <div class="plugin-card">
       <div class="plugin-card-header">
         <h3>Konachan</h3>
         <span class="tag tag-safe">Safe</span>
       </div>
-      <p>High-quality anime wallpapers. No credentials required.</p>
+      <p>High-quality anime wallpapers. No account needed.</p>
     </div>
-
-    <div class="plugin-card">
-      <div class="plugin-card-header">
-        <h3>Yande.re</h3>
-        <span class="tag tag-safe">Safe</span>
-      </div>
-      <p>High-resolution anime art booru.</p>
-    </div>
-
-    <div class="plugin-card">
-      <div class="plugin-card-header">
-        <h3>Danbooru</h3>
-        <span class="tag tag-safe">Safe</span>
-      </div>
-      <p>Large anime art booru. API credentials expand access.</p>
-    </div>
-
-    <div class="plugin-card">
-      <div class="plugin-card-header">
-        <h3>Wallhaven</h3>
-        <span class="tag tag-safe">Safe</span>
-        <span class="tag tag-key">API Key</span>
-      </div>
-      <p>Curated high-resolution wallpapers. API key enables NSFW content.</p>
-    </div>
-
     <div class="plugin-card">
       <div class="plugin-card-header">
         <h3>Reddit</h3>
         <span class="tag tag-safe">Safe</span>
       </div>
-      <p>Browse wallpaper subreddits. Add individual subreddits as sources.</p>
+      <p>Wallpaper subreddits. Add each subreddit as its own source.</p>
     </div>
-
+    <div class="plugin-card">
+      <div class="plugin-card-header">
+        <h3>Yande.re</h3>
+        <span class="tag tag-mixed">SFW + NSFW</span>
+      </div>
+      <p>High-resolution anime scans. No account needed.</p>
+    </div>
+    <div class="plugin-card">
+      <div class="plugin-card-header">
+        <h3>Danbooru</h3>
+        <span class="tag tag-mixed">SFW + NSFW</span>
+      </div>
+      <p>Large anime art booru. An optional account lifts the free two-tag search limit.</p>
+    </div>
+    <div class="plugin-card">
+      <div class="plugin-card-header">
+        <h3>Wallhaven</h3>
+        <span class="tag tag-mixed">SFW + NSFW</span>
+        <span class="tag tag-key">API Key</span>
+      </div>
+      <p>Curated high-resolution wallpapers. An optional API key enables NSFW content.</p>
+    </div>
     <div class="plugin-card">
       <div class="plugin-card-header">
         <h3>Gelbooru</h3>
-        <span class="tag tag-nsfw">NSFW</span>
+        <span class="tag tag-mixed">SFW + NSFW</span>
         <span class="tag tag-key">API Key</span>
       </div>
-      <p>High-volume anime/game art booru. Requires API credentials.</p>
+      <p>High-volume anime and game art booru. Requires an API key and user ID.</p>
     </div>
-
     <div class="plugin-card">
       <div class="plugin-card-header">
         <h3>Rule34</h3>
         <span class="tag tag-nsfw">NSFW</span>
+        <span class="tag tag-key">API Key</span>
       </div>
-      <p>Adult content booru. May contain NSFW material.</p>
+      <p>Adult-oriented booru. Requires a free account's API key and user ID.</p>
     </div>
-
   </div>
 </div>
 

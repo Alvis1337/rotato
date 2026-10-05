@@ -855,16 +855,17 @@ private fun SourceCard(
                             )
                         }
                     }
-                    val description = manifest?.description?.ifBlank { null } ?: run {
+                    val nsfwHidden = LocalNsfwHidden.current
+                    val description = (manifest?.description?.ifBlank { null } ?: run {
                         if (manifest?.safeContent == false) "May include adult content"
                         else if (manifest?.needsApiKey == false && manifest?.needsApiUser == false) "Works without credentials"
                         else null
-                    }
+                    })?.takeUnless { nsfwHidden && (it.contains("nsfw", ignoreCase = true) || it.contains("adult", ignoreCase = true)) }
                     if (description != null) {
                         Text(
                             description,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (manifest?.safeContent == false) MaterialTheme.colorScheme.error
+                            color = if (manifest?.safeContent == false && !nsfwHidden) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.outline
                         )
                     }
