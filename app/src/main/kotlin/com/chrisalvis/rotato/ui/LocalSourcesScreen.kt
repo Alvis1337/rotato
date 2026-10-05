@@ -110,6 +110,19 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Installed manifests, falling back to the built-in copy for a source whose plugin isn't
+     * installed. Without the fallback such a source's card had no manifest, so Configure showed
+     * only the tags box and no API key / user ID fields (e.g. Rule34 after an uninstall).
+     */
+    val manifestsWithBuiltIns: StateFlow<List<PluginManifest>> = pluginRepository.installedManifests
+        .map { installed ->
+            val have = installed.mapTo(HashSet()) { it.id }
+            installed + pluginRepository.bundledManifests().filter { it.id !in have }
+        }
+        .flowOn(kotlinx.coroutines.Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val missingBuiltIns: StateFlow<List<PluginManifest>> = pluginRepository.missingBundledManifests
         .flowOn(kotlinx.coroutines.Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -263,7 +276,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
     val keyValidationState by vm.keyValidationState.collectAsStateWithLifecycle()
     val keyNetworkError by vm.keyNetworkError.collectAsStateWithLifecycle()
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
-    val manifests by vm.manifests.collectAsStateWithLifecycle()
+    val manifests by vm.manifestsWithBuiltIns.collectAsStateWithLifecycle()
     val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
     val missingBuiltIns by vm.missingBuiltIns.collectAsStateWithLifecycle()
     val showMigrationNotice by vm.showMigrationNotice.collectAsStateWithLifecycle()
@@ -281,7 +294,9 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
     var showAddRedditDialog by remember { mutableStateOf(false) }
     var newSubreddit by remember { mutableStateOf("") }
     var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var showDisabledSources by remember { mutableStateOf(false) }
+    // Expanded by default: a source can only be configured from its card, and a collapsed list hid
+    // every disabled source (so a new or switched-off source looked impossible to set up).
+    var showDisabledSources by remember { mutableStateOf(true) }
 
     if (showAddRedditDialog) {
         val redditFocus = remember { FocusRequester() }

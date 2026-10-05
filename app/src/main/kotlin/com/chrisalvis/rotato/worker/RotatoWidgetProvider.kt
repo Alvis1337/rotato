@@ -131,7 +131,10 @@ class RotatoWidgetProvider : AppWidgetProvider() {
             val collectionId = RotatoPreferences(context).widgetCollectionId.first()
             if (collectionId.isBlank()) return null
 
-            val entry = LocalListsPreferences(context)
+            val listsPrefs = LocalListsPreferences(context)
+            // The widget sits on the home screen for anyone to see; never show a locked collection.
+            if (listsPrefs.lists.first().firstOrNull { it.id == collectionId }?.isLocked != false) return null
+            val entry = listsPrefs
                 .wallpapersForList(collectionId)
                 .first()
                 .randomOrNull()

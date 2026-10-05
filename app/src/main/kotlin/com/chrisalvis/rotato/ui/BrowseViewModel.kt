@@ -302,27 +302,40 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         // Use Eagerly so the observer stays hot even when no UI subscribers are active.
         viewModelScope.launch {
             combine(localLists.allWallpapers, localLists.lists) { allEntries, lists ->
-                val smartIds = lists.filter { it.isSmartCollection }.map { it.id }.toSet()
-                Triple(allEntries, lists.filter { it.isSmartCollection }, allEntries.filter { it.listId !in smartIds })
-            }.collect { (allEntries, smartLists, manualEntries) ->
+                allEntries to lists
+            }.collect { (allEntries, lists) ->
+                val smartLists = lists.filter { it.isSmartCollection }
                 if (smartLists.isEmpty()) return@collect
-                Log.d("SmartCollection", "observer fired: smartLists=${smartLists.size} manualEntries=${manualEntries.size}")
                 for (smartList in smartLists) {
                     val rule = smartList.smartRule ?: continue
-                    val alreadyIn = allEntries.filter { it.listId == smartList.id }.map { it.sourceId }.toSet()
-                    for (entry in manualEntries) {
-                        if (entry.sourceId in alreadyIn) continue
-                        if (rule.matches(entry)) {
-                            Log.d("SmartCollection", "observer match: sourceId=${entry.sourceId} tags=${entry.tags} → adding to ${smartList.id}")
-                            localLists.addWallpaperEntry(entry.copy(
-                                id = UUID.randomUUID().toString(),
-                                listId = smartList.id,
-                            ))
-                        }
-                    }
+                    val toAdd = smartCandidates(smartList, rule, allEntries, lists)
+                    // One write per smart collection; adding entry by entry re-fired this observer
+                    // for every single image.
+                    if (toAdd.isNotEmpty()) localLists.addWallpaperEntries(toAdd)
                 }
             }
         }
+    }
+
+    /**
+     * Entries a smart collection should pick up. Images from locked collections only flow into a
+     * smart collection that is itself locked, so a rule can't surface them in an unlocked one.
+     */
+    private fun smartCandidates(
+        smartList: LocalList,
+        rule: SmartRule,
+        allEntries: List<LocalWallpaperEntry>,
+        lists: List<LocalList>,
+        limit: Int = Int.MAX_VALUE,
+    ): List<LocalWallpaperEntry> {
+        val excludedListIds = lists.filter { it.isSmartCollection || (it.isLocked && !smartList.isLocked) }
+            .mapTo(HashSet()) { it.id }
+        val seen = allEntries.filter { it.listId == smartList.id }.mapTo(HashSet()) { it.sourceId }
+        return allEntries.asSequence()
+            .filter { it.listId !in excludedListIds && rule.matches(it) && seen.add(it.sourceId) }
+            .take(limit)
+            .map { it.copy(id = UUID.randomUUID().toString(), listId = smartList.id) }
+            .toList()
     }
 
     fun selectList(list: LocalList) {
@@ -480,26 +493,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE): Int {
-        val allEntries = localLists.allWallpapers.first()
-        val smartIds = localLists.lists.first().filter { it.isSmartCollection }.map { it.id }.toSet()
-        val alreadyInIds = allEntries.filter { it.listId == listId }.map { it.sourceId }.toSet()
-        val seenSourceIds = alreadyInIds.toMutableSet()
-        val sourceEntries = allEntries.filter { it.listId !in smartIds }
-        var added = 0
-        for (entry in sourceEntries) {
-            if (added >= limit) break
-            if (entry.sourceId in seenSourceIds) continue
-            if (rule.matches(entry)) {
-                localLists.addWallpaperEntry(entry.copy(
-                    id = UUID.randomUUID().toString(),
-                    listId = listId,
-                ))
-                seenSourceIds.add(entry.sourceId)
-                added++
-            }
-        }
-        Log.d("SmartCollection", "populate: allEntries=${allEntries.size} smartIds=$smartIds sourceEntries=${sourceEntries.size} alreadyIn=${alreadyInIds.size} added=$added rule=$rule")
-        return added
+        val lists = localLists.lists.first()
+        val smartList = lists.firstOrNull { it.id == listId } ?: return 0
+        val toAdd = smartCandidates(smartList, rule, localLists.allWallpapers.first(), lists, limit)
+        localLists.addWallpaperEntries(toAdd)
+        return toAdd.size
     }
 
     fun editSmartRule(list: LocalList, rule: SmartRule?) {
@@ -1001,7 +999,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun shareWallpapers(context: Context, wallpapers: List<LocalWallpaperEntry>) {
         if (wallpapers.isEmpty()) return
-        val text = wallpapers.joinToString("\n") { it.fullUrl }
+        // Post pages rather than raw image links, and never local file paths.
+        val text = wallpapers.mapNotNull { e ->
+            e.pageUrl.takeIf { it.startsWith("http") } ?: e.fullUrl.takeIf { it.startsWith("http") }
+        }.joinToString("\n")
         val intent = if (wallpapers.size == 1 && wallpapers.first().source == "device") {
             val entry = wallpapers.first()
             val shareFile = resolveShareFile(entry.fullUrl)
@@ -1555,7 +1556,8 @@ private fun LocalWallpaperEntry.toBrowseWallpaper(filesDir: File) = BrowseWallpa
     tags = tags,
     resolution = resolution,
     isVideo = isVideo,
-    isNsfw = isNsfw
+    isNsfw = isNsfw,
+    pageUrl = pageUrl,
 )
 
 /**

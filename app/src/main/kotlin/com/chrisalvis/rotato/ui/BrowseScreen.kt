@@ -269,7 +269,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             onToggleRotation = { vm.toggleRotation(wp); showActionsFor = null },
             onSaveToGallery = { vm.saveWallpaper(wp); showActionsFor = null },
             onCopyUrl = {
-                clipboard.setText(AnnotatedString(wp.fullUrl))
+                clipboard.setText(AnnotatedString(wp.shareLink.ifBlank { wp.fullUrl }))
                 android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
                 showActionsFor = null
             },
@@ -295,7 +295,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             },
             onSetAsCover = { wp -> updateCover(wp) },
             onCopyUrl = { wp ->
-                clipboard.setText(AnnotatedString(wp.fullUrl))
+                clipboard.setText(AnnotatedString(wp.shareLink.ifBlank { wp.fullUrl }))
                 android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
             },
             onShare = { wp ->
@@ -599,7 +599,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                                 leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                                 onClick = {
                                     showSelectionOverflow = false
-                                    val urls = selectedWallpapers.joinToString("\n") { it.fullUrl }
+                                    val urls = selectedWallpapers.map { it.shareLink }.filter { it.isNotBlank() }.joinToString("\n")
                                     if (urls.isNotBlank()) {
                                         clipboard.setText(AnnotatedString(urls))
                                         android.widget.Toast.makeText(context, "URL copied", android.widget.Toast.LENGTH_SHORT).show()
@@ -1794,7 +1794,7 @@ private fun BrowseWallpaper.toLocalWallpaperEntry(listId: String) = LocalWallpap
     sampleUrl = sampleUrl,
     fullUrl = fullUrl,
     resolution = resolution,
-    pageUrl = "",
+    pageUrl = pageUrl,
     tags = tags,
     isVideo = isVideo,
     isNsfw = isNsfw

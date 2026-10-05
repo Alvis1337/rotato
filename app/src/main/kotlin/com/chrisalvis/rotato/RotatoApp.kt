@@ -15,6 +15,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.debounce
+import com.chrisalvis.rotato.data.dataStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.chrisalvis.rotato.worker.UnfoldWatcherService
@@ -50,6 +53,14 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 backgroundedAt = 0L
             }
         })
+        // Key/value backup only uploads after dataChanged(); nothing ever called it, so the
+        // "Google Drive backup" setting never actually backed anything up after the first time.
+        appScope.launch {
+            this@RotatoApp.dataStore.data
+                .drop(1)
+                .debounce(30_000)
+                .collect { runCatching { android.app.backup.BackupManager(this@RotatoApp).dataChanged() } }
+        }
         appScope.launch {
             runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
             UnfoldWatcherService.sync(this@RotatoApp, RotatoPreferences(this@RotatoApp).rotateOnUnfold.first())

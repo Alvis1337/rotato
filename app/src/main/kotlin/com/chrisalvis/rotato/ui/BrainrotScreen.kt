@@ -1952,7 +1952,7 @@ private fun WallpaperDetailOverlay(
                         onShare = {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, wallpaper.fullUrl)
+                                putExtra(Intent.EXTRA_TEXT, wallpaper.pageUrl.takeIf { it.startsWith("http") } ?: wallpaper.fullUrl)
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share"))
                         },

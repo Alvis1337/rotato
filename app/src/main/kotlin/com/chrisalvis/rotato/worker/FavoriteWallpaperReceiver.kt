@@ -91,6 +91,11 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
             listsPrefs: LocalListsPreferences,
             wallpaper: BrainrotWallpaper,
         ): Boolean {
+            // Don't copy an image out of a locked collection into the (unlocked) Favorites list.
+            val lockedIds = listsPrefs.lists.first().filter { it.isLocked }.mapTo(HashSet()) { it.id }
+            if (lockedIds.isNotEmpty() && listsPrefs.allWallpapers.first().any {
+                    it.listId in lockedIds && (it.sourceId == wallpaper.id || (wallpaper.fullUrl.isNotBlank() && it.fullUrl == wallpaper.fullUrl))
+                }) return false
             val favorites = getOrCreateFavoritesList(listsPrefs)
             return listsPrefs.addWallpaper(favorites.id, wallpaper)
         }

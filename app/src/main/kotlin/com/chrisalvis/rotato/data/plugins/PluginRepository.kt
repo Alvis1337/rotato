@@ -111,6 +111,9 @@ class PluginRepository(private val context: Context) {
 
     private val bundledCache: List<PluginManifest> by lazy { loadBundledManifests() }
 
+    /** Every built-in manifest shipped with the app, installed or not. */
+    fun bundledManifests(): List<PluginManifest> = bundledCache
+
     /** Reinstalls a built-in plugin from assets, with no network needed. */
     suspend fun installBundled(id: String): PluginManifest? = withContext(Dispatchers.IO) {
         val manifest = bundledCache.firstOrNull { it.id == id } ?: return@withContext null
