@@ -1286,7 +1286,6 @@ private fun ListPickerContent(
                     onToggleBlurExempt = { onToggleBlurExempt(list) },
                 )
             }
-            }
         }
     }
 }
