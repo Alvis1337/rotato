@@ -12,7 +12,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
-import java.security.MessageDigest
 import java.security.SecureRandom
 
 class MalRepository(private val context: Context) {
@@ -30,14 +29,14 @@ class MalRepository(private val context: Context) {
         return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
 
-    private fun generateCodeChallenge(verifier: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII))
-        return Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-    }
-
     suspend fun buildAuthUrl(): String {
-        val verifier = generateCodeVerifier()
-        prefs.setCodeVerifier(verifier)
+        // Reuse a pending verifier so tapping Connect twice (or an older auth tab finishing
+        // last) still exchanges against the verifier MAL saw; it is cleared on success.
+        val verifier = prefs.codeVerifier.first().ifBlank {
+            generateCodeVerifier().also { prefs.setCodeVerifier(it) }
+        }
+        // MAL only implements the "plain" PKCE method: with S256 the token exchange always
+        // fails with invalid_grant "Failed to verify code_verifier".
         return Uri.Builder()
             .scheme("https")
             .authority("myanimelist.net")
@@ -45,8 +44,8 @@ class MalRepository(private val context: Context) {
             .appendQueryParameter("response_type", "code")
             .appendQueryParameter("client_id", BuildConfig.MAL_CLIENT_ID)
             .appendQueryParameter("redirect_uri", REDIRECT_URI)
-            .appendQueryParameter("code_challenge", generateCodeChallenge(verifier))
-            .appendQueryParameter("code_challenge_method", "S256")
+            .appendQueryParameter("code_challenge", verifier)
+            .appendQueryParameter("code_challenge_method", "plain")
             .build()
             .toString()
     }
