@@ -15,6 +15,10 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.constrainWidth
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
@@ -85,4 +89,42 @@ fun Modifier.aboveTabletopFold(): Modifier {
                 }
             }
         }
+}
+
+/** The wallpaper canvas covering every screen, or null on a single-screen phone. */
+@Composable
+fun rememberFoldCanvas(): com.chrisalvis.rotato.data.WallpaperCanvas? {
+    val context = LocalContext.current
+    return remember(context) {
+        val app = context.applicationContext
+        if (com.chrisalvis.rotato.data.isFoldable(app)) com.chrisalvis.rotato.data.wallpaperTargetSize(app) else null
+    }
+}
+
+/** Small "Fold" pill marking images big enough to fill both screens. */
+@Composable
+fun FoldBadge(modifier: Modifier = Modifier) {
+    androidx.compose.material3.Surface(
+        color = androidx.compose.material3.MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+        modifier = modifier,
+    ) {
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Default.Smartphone,
+                contentDescription = null,
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onTertiary,
+                modifier = Modifier.size(10.dp),
+            )
+            androidx.compose.material3.Text(
+                "Fold",
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onTertiary,
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(start = 2.dp),
+            )
+        }
+    }
 }

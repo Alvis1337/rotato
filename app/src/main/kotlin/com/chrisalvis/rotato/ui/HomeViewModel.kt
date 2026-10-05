@@ -42,6 +42,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import com.chrisalvis.rotato.data.pairedPaths
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -58,8 +61,20 @@ data class RotationStats(
     val totalRotations: Long = 0L,
     val recentCount: Int = 0,
     val topSources: List<Pair<String, Int>> = emptyList(),
-    val topTags: List<Pair<String, Int>> = emptyList()
+    val topTags: List<Pair<String, Int>> = emptyList(),
+    val recap: WeeklyRecap = WeeklyRecap(),
 )
+
+/** The last seven days at a glance on the Stats tab. */
+data class WeeklyRecap(
+    val shownThisWeek: Int = 0,
+    /** Image URL (or local path) and how many times it was set this week. */
+    val mostShown: List<Pair<String, Int>> = emptyList(),
+    val topRated: List<Pair<File, Int>> = emptyList(),
+    val newest: List<File> = emptyList(),
+) {
+    val isEmpty: Boolean get() = shownThisWeek == 0 && topRated.isEmpty() && newest.isEmpty()
+}
 
 sealed interface DuplicateScan {
     data object Idle : DuplicateScan
@@ -141,9 +156,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val stats: StateFlow<RotationStats> = combine(
         preferences.totalRotations,
-        preferences.historyJson
-    ) { total, histJson ->
+        preferences.historyJson,
+        _images,
+        preferences.wallpaperRatings,
+    ) { total, histJson, images, ratings ->
         val history = historyFromJson(histJson)
+        val weekAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)
+        val thisWeek = history.filter { it.timestamp >= weekAgo }
+        val recap = WeeklyRecap(
+            shownThisWeek = thisWeek.size,
+            mostShown = thisWeek
+                .groupBy { it.fullUrl.ifBlank { it.thumbUrl } }
+                .entries
+                .filter { it.value.size > 1 }
+                .sortedByDescending { it.value.size }
+                .take(5)
+                .map { (_, items) -> items.first().thumbUrl.ifBlank { items.first().fullUrl } to items.size },
+            topRated = images
+                .mapNotNull { file -> ratings[file.name]?.takeIf { it > 0 }?.let { file to it } }
+                .sortedByDescending { it.second }
+                .take(5),
+            newest = images
+                .filter { it.lastModified() >= weekAgo }
+                .sortedByDescending { it.lastModified() }
+                .take(5),
+        )
         val topSources = history
             .groupingBy { it.source.ifBlank { "local" } }
             .eachCount()
@@ -159,8 +196,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .sortedByDescending { it.value }
             .take(8)
             .map { it.key to it.value }
-        RotationStats(total, history.size, topSources, topTags)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RotationStats())
+        RotationStats(total, history.size, topSources, topTags, recap)
+    }.flowOn(kotlinx.coroutines.Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RotationStats())
 
     val rotationErrors: StateFlow<List<RotationError>> = preferences.rotationErrors
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -484,6 +521,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun removeDuplicates(groups: List<com.chrisalvis.rotato.data.DuplicateGroup>) {
         deleteSelected(groups.flatMap { it.duplicates }.toSet())
         _duplicateScan.update { DuplicateScan.Idle }
+    }
+
+    val foldPairsSupported: Boolean = com.chrisalvis.rotato.data.supportsFoldPairs(application)
+
+    val pairedPaths: StateFlow<Set<String>> = preferences.foldPairs
+        .map { it.pairedPaths() }
+        .flowOn(kotlinx.coroutines.Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Pairs [outer] (cover screen) with [inner] (unfolded screen) and shows them right away. */
+    fun saveFoldPair(outer: File, inner: File) {
+        viewModelScope.launch {
+            preferences.saveFoldPair(com.chrisalvis.rotato.data.FoldPair(outer.absolutePath, inner.absolutePath))
+            setSpecificWallpaper(outer)
+        }
+    }
+
+    fun unpair(files: Set<File>) {
+        viewModelScope.launch { preferences.removeFoldPairsContaining(files.map { it.absolutePath }.toSet()) }
     }
 
     fun deleteSelected(files: Set<File>) {

@@ -124,6 +124,14 @@ fun wallpaperTargetSize(context: Context): WallpaperCanvas {
     return WallpaperCanvas(width, height, narrowest, screens)
 }
 
+/**
+ * True when a [width]x[height] image covers the whole [canvas] (every screen of a foldable)
+ * with at most ~10% upscaling, so it looks sharp folded and unfolded. Same bar as the
+ * "My Phone" resolution filter.
+ */
+fun isFoldFriendly(width: Int, height: Int, canvas: WallpaperCanvas): Boolean =
+    width > 0 && height > 0 && width >= canvas.width * 0.9f && height >= canvas.height * 0.9f
+
 fun fitWallpaperBitmap(src: Bitmap, fit: WallpaperFit, canvas: WallpaperCanvas): Bitmap =
     fitWallpaperBitmap(src, fit, canvas.width, canvas.height, canvas.narrowestWidth)
 
@@ -177,10 +185,11 @@ fun setWallpaperBitmap(
     which: Int,
     fit: WallpaperFit = WallpaperFit.FILL,
     effects: WallpaperEffects = WallpaperEffects(),
+    crops: Map<Point, Rect>? = null,
 ) {
-    val focus = if (fit == WallpaperFit.SMART && Build.VERSION.SDK_INT >= 35) findFocusPoint(bitmap) else PointF(0.5f, 0.5f)
+    val focus = if (crops == null && fit == WallpaperFit.SMART && Build.VERSION.SDK_INT >= 35) findFocusPoint(bitmap) else PointF(0.5f, 0.5f)
     if (effects.isNone) {
-        applyWallpaper(context, wm, bitmap, which, focus)
+        applyWallpaper(context, wm, bitmap, which, focus, crops)
         return
     }
     val styled = applyWallpaperEffects(bitmap, effects)
@@ -190,23 +199,89 @@ fun setWallpaperBitmap(
         if (effects.onLockScreen || lockFlag == 0 || homeFlag == 0) {
             // Lock-only targets get effects only when asked to.
             val image = if (homeFlag == 0 && !effects.onLockScreen) bitmap else styled
-            applyWallpaper(context, wm, image, which, focus)
+            applyWallpaper(context, wm, image, which, focus, crops)
         } else {
-            applyWallpaper(context, wm, styled, homeFlag, focus)
-            applyWallpaper(context, wm, bitmap, lockFlag, focus)
+            applyWallpaper(context, wm, styled, homeFlag, focus, crops)
+            applyWallpaper(context, wm, bitmap, lockFlag, focus, crops)
         }
     } finally {
         styled.recycle()
     }
 }
 
-private fun applyWallpaper(context: Context, wm: WallpaperManager, bitmap: Bitmap, which: Int, focus: PointF) {
+private fun applyWallpaper(
+    context: Context,
+    wm: WallpaperManager,
+    bitmap: Bitmap,
+    which: Int,
+    focus: PointF,
+    customCrops: Map<Point, Rect>? = null,
+) {
     if (Build.VERSION.SDK_INT >= 35) {
-        val crops = screenCrops(bitmap.width, bitmap.height, knownDisplaySizes(context), focus)
+        val crops = customCrops ?: screenCrops(bitmap.width, bitmap.height, knownDisplaySizes(context), focus)
         if (setBitmapWithCrops(wm, bitmap, crops, which)) return
     }
     wm.setBitmap(bitmap, null, true, which)
 }
+
+/**
+ * Fold pairs need per-screen crops (Android 15+ multi-crop) on a foldable: one bitmap holds both
+ * images side by side and each screen is pointed at its own half.
+ */
+fun supportsFoldPairs(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < 35 || !isFoldable(context)) return false
+    return try {
+        WallpaperManager::class.java.getMethod("isMultiCropEnabled").invoke(null) as? Boolean == true
+    } catch (e: ReflectiveOperationException) {
+        false
+    } catch (e: RuntimeException) {
+        false
+    }
+}
+
+/** A composed fold-pair wallpaper and the crop that sends each screen to its own image. */
+class FoldPairWallpaper(val bitmap: Bitmap, val crops: Map<Point, Rect>)
+
+/**
+ * Lays [outer] (for the narrow cover screen) and [inner] (for the unfolded screen) side by side
+ * on one bitmap, each fitted to its screen's shape with [fit], and maps every screen size and
+ * orientation to its half. The caller owns (and recycles) the returned bitmap; [outer] and
+ * [inner] are left untouched.
+ */
+fun composeFoldPair(context: Context, outer: Bitmap, inner: Bitmap, fit: WallpaperFit): FoldPairWallpaper {
+    val screens = knownDisplaySizes(context)
+    val outerScreen = screens.minBy { it.width.toFloat() / it.height }
+    val innerScreen = screens.maxBy { it.width.toFloat() / it.height }
+    val height = maxOf(outerScreen.height, innerScreen.height)
+    val outerW = ceil(height * outerScreen.width.toFloat() / outerScreen.height).toInt()
+    val innerW = ceil(height * innerScreen.width.toFloat() / innerScreen.height).toInt()
+
+    val composite = Bitmap.createBitmap(outerW + innerW, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(composite)
+    val outerFitted = fitWallpaperBitmap(outer, fit, outerW, height)
+    canvas.drawBitmap(outerFitted, 0f, 0f, null)
+    outerFitted.recycle()
+    val innerFitted = fitWallpaperBitmap(inner, fit, innerW, height)
+    canvas.drawBitmap(innerFitted, outerW.toFloat(), 0f, null)
+    innerFitted.recycle()
+
+    val outerRegion = Rect(0, 0, outerW, height)
+    val innerRegion = Rect(outerW, 0, outerW + innerW, height)
+    val narrowest = outerScreen.width.toFloat() / outerScreen.height
+    val widest = innerScreen.width.toFloat() / innerScreen.height
+    val crops = LinkedHashMap<Point, Rect>()
+    screens.forEach { s ->
+        val aspect = s.width.toFloat() / s.height
+        // Whichever panel this screen size is closer to in shape.
+        val region = if (abs(aspect - narrowest) <= abs(aspect - widest)) outerRegion else innerRegion
+        crops[Point(s.width, s.height)] = regionCrop(region, aspect)
+        crops[Point(s.height, s.width)] = regionCrop(region, 1f / aspect)
+    }
+    return FoldPairWallpaper(composite, crops)
+}
+
+private fun regionCrop(region: Rect, aspect: Float): Rect =
+    focusedCrop(region.width(), region.height(), aspect, PointF(0.5f, 0.5f)).apply { offset(region.left, region.top) }
 
 /** Returns a new bitmap with [effects] (blur, then dim) applied to [src]. */
 fun applyWallpaperEffects(src: Bitmap, effects: WallpaperEffects): Bitmap {

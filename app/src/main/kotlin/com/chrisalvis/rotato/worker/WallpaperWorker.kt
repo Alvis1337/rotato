@@ -39,6 +39,7 @@ import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.fitWallpaperBitmap
 import com.chrisalvis.rotato.data.setWallpaperBitmap
 import com.chrisalvis.rotato.data.loadScaledBitmap
+import com.chrisalvis.rotato.data.foldPairWallpaperFor
 import com.chrisalvis.rotato.data.wallpaperTargetSize
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.toJson
@@ -219,15 +220,20 @@ class WallpaperWorker(
             fun scaleBitmap(bitmap: Bitmap): Bitmap =
                 fitWallpaperBitmap(bitmap, settings.wallpaperFit, target)
 
-            val homeBitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
-                ?: run {
-                    val errorType = if (targetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
-                    prefs.addRotationError(RotationError(errorType, "Could not load: ${targetFile.name}"))
-                    return Result.failure()
-                }
+            // A fold-paired image brings its partner along: one for the cover screen, one for
+            // the inner screen, combined into a single wallpaper with per-screen crops.
+            val foldPair = foldPairWallpaperFor(applicationContext, targetFile, settings.wallpaperFit)
+            val pairCrops = foldPair?.crops
 
-            val screenBitmap = scaleBitmap(homeBitmap)
-            homeBitmap.recycle()
+            val screenBitmap = foldPair?.bitmap ?: run {
+                val homeBitmap = loadScaledBitmap(applicationContext, targetFile.absolutePath)
+                    ?: run {
+                        val errorType = if (targetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
+                        prefs.addRotationError(RotationError(errorType, "Could not load: ${targetFile.name}"))
+                        return Result.failure()
+                    }
+                scaleBitmap(homeBitmap).also { homeBitmap.recycle() }
+            }
 
             val isTargetNsfw = prefs.nsfwFileNames.first().contains(targetFile.name)
             // Opt-in: NSFW-tagged wallpapers stay off the lock screen regardless of the global target.
@@ -235,25 +241,25 @@ class WallpaperWorker(
 
             try {
                 when (effectiveTarget) {
-                    WallpaperTarget.HOME_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM, settings.wallpaperFit, settings.wallpaperEffects)
-                    WallpaperTarget.LOCK_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects)
+                    WallpaperTarget.HOME_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM, settings.wallpaperFit, settings.wallpaperEffects, pairCrops)
+                    WallpaperTarget.LOCK_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects, pairCrops)
                     WallpaperTarget.BOTH -> {
-                        if (hasPerScreen && lockTargetFile != targetFile) {
-                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM, settings.wallpaperFit, settings.wallpaperEffects)
+                        if (hasPerScreen && lockTargetFile != targetFile && pairCrops == null) {
+                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM, settings.wallpaperFit, settings.wallpaperEffects, pairCrops)
                             val lockBitmap = loadScaledBitmap(applicationContext, lockTargetFile.absolutePath)
                             if (lockBitmap != null) {
                                 val lockScreenBitmap = scaleBitmap(lockBitmap)
                                 lockBitmap.recycle()
-                                try { setWallpaperBitmap(applicationContext, wallpaperManager, lockScreenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects) }
+                                try { setWallpaperBitmap(applicationContext, wallpaperManager, lockScreenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects, pairCrops) }
                                 finally { lockScreenBitmap.recycle() }
                             } else {
                                 // Lock image unreadable — fall back to home screen image and record a warning
                                 val errorType = if (lockTargetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
                                 prefs.addRotationError(RotationError(errorType, "Lock screen image unavailable: ${lockTargetFile.name}"))
-                                setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects)
+                                setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects, pairCrops)
                             }
                         } else {
-                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects)
+                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK, settings.wallpaperFit, settings.wallpaperEffects, pairCrops)
                         }
                     }
                 }
@@ -297,7 +303,7 @@ class WallpaperWorker(
                     pageUrl = matchingEntry?.pageUrl ?: ""
                 )
                 val updatedHistory = history.toMutableList().apply { add(0, historyItem) }
-                prefs.setHistoryJson(updatedHistory.take(50).toJson())
+                prefs.setHistoryJson(updatedHistory.take(200).toJson())
                 prefs.setLastWallpaperState(
                     thumbUrl = currentThumbUrl,
                     fullUrl = currentFullUrl,
@@ -305,7 +311,7 @@ class WallpaperWorker(
                     setMs = now,
                 )
 
-                postWallpaperSetNotification(screenBitmap, isTargetNsfw && prefs.nsfwBlurEnabled.first())
+                postWallpaperSetNotification(screenBitmap, isTargetNsfw && prefs.nsfwBlurEnabled.first(), matchingEntry?.pageUrl.orEmpty(), currentSource)
             } finally {
                 screenBitmap.recycle()
             }
@@ -457,13 +463,20 @@ class WallpaperWorker(
         FavoriteWallpaperReceiver.saveWallpaperToFavorites(listPrefs, wallpaper)
     }
 
-    private fun postWallpaperSetNotification(bitmap: Bitmap, blurThumbnail: Boolean) {
+    private fun postWallpaperSetNotification(bitmap: Bitmap, blurThumbnail: Boolean, pageUrl: String, source: String) {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
         if (!nm.areNotificationsEnabled()) return
 
+        // Tapping opens the image's page on its source site (artist, tags, related posts) when
+        // there is one; local photos open Rotato.
+        val sourcePage = pageUrl.takeIf { it.startsWith("http://") || it.startsWith("https://") }
         val openIntent = PendingIntent.getActivity(
             applicationContext, 0,
-            Intent(applicationContext, MainActivity::class.java),
+            if (sourcePage != null) {
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(sourcePage)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            } else {
+                Intent(applicationContext, MainActivity::class.java)
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -489,15 +502,15 @@ class WallpaperWorker(
         val bigPicture = centerCropBitmap(bitmap, NOTIF_BIG_W, NOTIF_BIG_H).let { if (blurThumbnail) it.alsoBlurAndRecycle() else it }
         val notif = NotificationCompat.Builder(applicationContext, RotatoApp.CHANNEL_WALLPAPER_SET)
             .setContentTitle("Wallpaper changed")
-            .setContentText("Tap to open Rotato")
+            .setContentText(if (sourcePage != null) "Tap to see it on ${source.replaceFirstChar { it.uppercase() }}" else "Tap to open Rotato")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setLargeIcon(thumb)
             .setStyle(NotificationCompat.BigPictureStyle().bigPicture(bigPicture))
             .setContentIntent(openIntent)
             .setAutoCancel(true)
             .addAction(0, "Skip", skipIntent)
-            .addAction(0, "⭐ Favorite", favoriteIntent)
-            .addAction(0, "👎 Dislike", dislikeIntent)
+            .addAction(0, "⭐ Save", favoriteIntent)
+            .addAction(0, "🚫 Block", dislikeIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 

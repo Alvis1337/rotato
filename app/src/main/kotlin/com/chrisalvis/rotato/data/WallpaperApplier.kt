@@ -12,8 +12,8 @@ import java.io.File
  */
 suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Boolean = true): String? {
     val prefs = RotatoPreferences(context)
-    val bitmap = loadScaledBitmap(context, file.absolutePath) ?: return "Could not load image"
     val settings = prefs.settings.first()
+    val pair = foldPairWallpaperFor(context, file, settings.wallpaperFit)
     val isNsfwHomeOnly = prefs.nsfwHomeOnly.first() && prefs.nsfwFileNames.first().contains(file.name)
     val target = if (isNsfwHomeOnly) WallpaperTarget.HOME_ONLY else settings.wallpaperTarget
     val flags = when (target) {
@@ -21,10 +21,17 @@ suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Bo
         WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
         WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
     }
-    val screenBitmap = fitWallpaperBitmap(bitmap, settings.wallpaperFit, wallpaperTargetSize(context))
-    bitmap.recycle()
+    val screenBitmap = if (pair != null) {
+        pair.bitmap
+    } else {
+        val bitmap = loadScaledBitmap(context, file.absolutePath) ?: return "Could not load image"
+        fitWallpaperBitmap(bitmap, settings.wallpaperFit, wallpaperTargetSize(context)).also { bitmap.recycle() }
+    }
     try {
-        setWallpaperBitmap(context, WallpaperManager.getInstance(context), screenBitmap, flags, settings.wallpaperFit, settings.wallpaperEffects)
+        setWallpaperBitmap(
+            context, WallpaperManager.getInstance(context), screenBitmap, flags,
+            settings.wallpaperFit, settings.wallpaperEffects, crops = pair?.crops,
+        )
     } finally {
         screenBitmap.recycle()
     }

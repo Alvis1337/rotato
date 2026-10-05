@@ -1373,20 +1373,32 @@ private fun DiscoverGridItem(
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
         }
 
-        // Source color badge — bottom-left
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(6.dp)
-                .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
-                .padding(horizontal = 6.dp, vertical = 2.dp)
+        // Source color badge (and Fold badge on foldables) — bottom-left
+        val foldCanvas = rememberFoldCanvas()
+        val foldFriendly = foldCanvas != null && remember(wallpaper.resolution, foldCanvas) {
+            val (w, h) = wallpaper.resolution.split('x').mapNotNull { it.trim().toIntOrNull() }.let {
+                if (it.size == 2) it[0] to it[1] else 0 to 0
+            }
+            com.chrisalvis.rotato.data.isFoldFriendly(w, h, foldCanvas)
+        }
+        Row(
+            modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                sourceDisplayName(wallpaper.source),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+            Box(
+                modifier = Modifier
+                    .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    sourceDisplayName(wallpaper.source),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            if (foldFriendly) FoldBadge()
         }
 
         if (wallpaper.isVideo) {

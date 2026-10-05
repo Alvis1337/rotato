@@ -87,6 +87,7 @@ class RotatoPreferences(private val context: Context) {
         val EFFECT_ON_LOCK = booleanPreferencesKey("effect_on_lock")
         val ROTATE_ON_UNFOLD = booleanPreferencesKey("rotate_on_unfold")
         val DISCOVER_DATA_SAVER = booleanPreferencesKey("discover_data_saver")
+        val FOLD_PAIRS = stringPreferencesKey("fold_pairs_json")
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
     }
 
@@ -122,6 +123,33 @@ class RotatoPreferences(private val context: Context) {
             it[EFFECT_ON_LOCK] = effects.onLockScreen
         }
     }
+
+    val foldPairs: Flow<List<FoldPair>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parseFoldPairs(it[FOLD_PAIRS]) }
+
+    private fun parseFoldPairs(json: String?): List<FoldPair> = runCatching {
+        JSONArray(json ?: "[]").mapObjectsSafely { FoldPair(it.getString("outer"), it.getString("inner")) }
+    }.getOrDefault(emptyList())
+
+    /** Saves [pair], replacing any pair either image was already part of. */
+    suspend fun saveFoldPair(pair: FoldPair) {
+        context.dataStore.edit { prefs ->
+            val pairs = parseFoldPairs(prefs[FOLD_PAIRS]).filterNot { it.contains(pair.outerPath) || it.contains(pair.innerPath) } + pair
+            prefs[FOLD_PAIRS] = serializeFoldPairs(pairs)
+        }
+    }
+
+    suspend fun removeFoldPairsContaining(paths: Set<String>) {
+        context.dataStore.edit { prefs ->
+            val pairs = parseFoldPairs(prefs[FOLD_PAIRS]).filterNot { p -> paths.any { p.contains(it) } }
+            prefs[FOLD_PAIRS] = serializeFoldPairs(pairs)
+        }
+    }
+
+    private fun serializeFoldPairs(pairs: List<FoldPair>): String = JSONArray().also { arr ->
+        pairs.forEach { arr.put(JSONObject().put("outer", it.outerPath).put("inner", it.innerPath)) }
+    }.toString()
 
     private fun parsePaths(json: String?): MutableList<String> = runCatching {
         val arr = JSONArray(json ?: "[]")

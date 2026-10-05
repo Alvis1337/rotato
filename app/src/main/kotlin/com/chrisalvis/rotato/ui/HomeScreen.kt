@@ -53,6 +53,8 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wallpaper
@@ -169,6 +171,20 @@ fun HomeScreen(
     val inSelectionMode = dragSelectState.inSelectionMode
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val pairedPaths by viewModel.pairedPaths.collectAsStateWithLifecycle()
+    var foldPairCandidates by remember { mutableStateOf<Pair<File, File>?>(null) }
+
+    foldPairCandidates?.let { (first, second) ->
+        FoldPairDialog(
+            first = first,
+            second = second,
+            onDismiss = { foldPairCandidates = null },
+            onConfirm = { outer, inner ->
+                viewModel.saveFoldPair(outer, inner)
+                foldPairCandidates = null
+            }
+        )
+    }
 
     BackHandler(enabled = inSelectionMode) { dragSelectState.disableSelectionMode() }
 
@@ -193,6 +209,19 @@ fun HomeScreen(
                     },
                     title = { Text("${dragSelectState.selected.size} selected") },
                     actions = {
+                        val selection = dragSelectState.selected.toList()
+                        if (viewModel.foldPairsSupported && selection.size == 2) {
+                            TextButton(onClick = {
+                                foldPairCandidates = selection[0] to selection[1]
+                                dragSelectState.disableSelectionMode()
+                            }) { Text("Fold pair") }
+                        }
+                        if (selection.any { it.absolutePath in pairedPaths }) {
+                            TextButton(onClick = {
+                                viewModel.unpair(selection.toSet())
+                                dragSelectState.disableSelectionMode()
+                            }) { Text("Unpair") }
+                        }
                         IconButton(
                             onClick = {
                                 viewModel.deleteSelected(dragSelectState.selected.toSet())
@@ -441,6 +470,7 @@ private fun LibraryContent(
                                 inSelectionMode = inSelectionMode,
                                 isNsfw = file.name in nsfwFileNames,
                                 nsfwBlurEnabled = nsfwBlurEnabled,
+                                isPaired = file.absolutePath in pairedPaths,
                                 onClick = { if (!inSelectionMode) selectedFile = file },
                             )
                         }
@@ -713,6 +743,7 @@ private fun ImageThumbnail(
     inSelectionMode: Boolean,
     isNsfw: Boolean = false,
     nsfwBlurEnabled: Boolean = true,
+    isPaired: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: (() -> Unit)? = null
 ) {
@@ -722,6 +753,9 @@ private fun ImageThumbnail(
     }
     var revealed by rememberNsfwRevealed(file.absolutePath)
     val isBlurred = isNsfw && nsfwBlurEnabled && !revealed
+    val foldCanvas = rememberFoldCanvas()
+    val foldFriendly = foldCanvas != null && badgeInfo != null &&
+        com.chrisalvis.rotato.data.isFoldFriendly(badgeInfo.width, badgeInfo.height, foldCanvas)
 
     Box(
         modifier = Modifier
@@ -749,6 +783,24 @@ private fun ImageThumbnail(
         )
 
         NsfwBlurLayer(isNsfw, nsfwBlurEnabled, revealed, compact = true)
+
+        if (foldFriendly) {
+            FoldBadge(Modifier.align(Alignment.TopStart).padding(6.dp))
+        }
+
+        if (isPaired) {
+            Icon(
+                Icons.Default.Link,
+                contentDescription = "Fold pair",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(999.dp))
+                    .padding(3.dp)
+                    .size(14.dp)
+            )
+        }
 
         if (isSelected) {
             Box(
@@ -1322,6 +1374,10 @@ private fun StatsContent(stats: RotationStats, modifier: Modifier = Modifier) {
             }
         }
 
+        if (!stats.recap.isEmpty) {
+            WeeklyRecapCard(stats.recap)
+        }
+
         if (stats.topSources.isNotEmpty()) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1615,6 +1671,117 @@ private fun DuplicatesDialog(
                     },
                     dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FoldPairDialog(
+    first: File,
+    second: File,
+    onDismiss: () -> Unit,
+    onConfirm: (outer: File, inner: File) -> Unit,
+) {
+    var swapped by remember { mutableStateOf(false) }
+    val outer = if (swapped) second else first
+    val inner = if (swapped) first else second
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.widthIn(max = 560.dp),
+        title = { Text("Make a fold pair") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "One image shows on the cover screen and the other when you unfold. Rotation sets them together whenever either comes up.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(0.8f)) {
+                        AsyncImage(
+                            model = outer,
+                            contentDescription = "Cover screen image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(0.45f).clip(MaterialTheme.shapes.small)
+                        )
+                        Text("Cover screen", style = MaterialTheme.typography.labelMedium)
+                    }
+                    IconButton(onClick = { swapped = !swapped }) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Swap")
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1.6f)) {
+                        AsyncImage(
+                            model = inner,
+                            contentDescription = "Inner screen image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(0.95f).clip(MaterialTheme.shapes.small)
+                        )
+                        Text("Unfolded", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(outer, inner) }) { Text("Pair and set") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun WeeklyRecapCard(recap: WeeklyRecap) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column {
+                Text("This week", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${recap.shownThisWeek} wallpaper${if (recap.shownThisWeek == 1) "" else "s"} shown in the last 7 days",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (recap.mostShown.isNotEmpty()) {
+                RecapRow("Most shown", recap.mostShown.map { (url, count) -> url as Any to "×$count" })
+            }
+            if (recap.topRated.isNotEmpty()) {
+                RecapRow("Highest rated", recap.topRated.map { (file, rating) -> file as Any to "★$rating" })
+            }
+            if (recap.newest.isNotEmpty()) {
+                RecapRow("New this week", recap.newest.map { it as Any to null })
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecapRow(title: String, items: List<Pair<Any, String?>>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items.forEach { (model, label) ->
+                Box(modifier = Modifier.weight(1f, fill = false).size(64.dp)) {
+                    AsyncImage(
+                        model = model,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
+                    )
+                    if (label != null) {
+                        Text(
+                            label,
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(3.dp)
+                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(999.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
+                }
             }
         }
     }
