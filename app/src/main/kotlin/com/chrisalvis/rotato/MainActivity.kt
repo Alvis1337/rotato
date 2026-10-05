@@ -100,8 +100,8 @@ class MainActivity : AppCompatActivity() {
             val themeMode by themePrefs.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
             val dynamicColor by themePrefs.dynamicColor.collectAsStateWithLifecycle(initialValue = true)
             val nsfwHidden by themePrefs.nsfwHidden.collectAsStateWithLifecycle(initialValue = false)
+            androidx.compose.runtime.CompositionLocalProvider(com.chrisalvis.rotato.ui.LocalNsfwHidden provides nsfwHidden) {
             RotatoTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
-              androidx.compose.runtime.CompositionLocalProvider(com.chrisalvis.rotato.ui.LocalNsfwHidden provides nsfwHidden) {
                 val rotatoPrefs = remember { RotatoPreferences(applicationContext) }
                 val setupDone by rotatoPrefs.setupDone.collectAsStateWithLifecycle(initialValue = null)
 
