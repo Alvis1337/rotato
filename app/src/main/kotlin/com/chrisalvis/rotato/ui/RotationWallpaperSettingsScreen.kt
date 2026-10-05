@@ -26,12 +26,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -141,6 +143,55 @@ fun RotationWallpaperSettingsScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Text(fit.label)
                             }
+                        }
+                    }
+
+                    SettingsSection(title = "Home Screen Effects") {
+                        val effects = settings.wallpaperEffects
+                        Text(
+                            "Soften busy wallpapers so icons and widgets stay readable. Applies from the next wallpaper change.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text("Blur", style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0 to "Off", 1 to "Soft", 2 to "Strong").forEach { (level, label) ->
+                                FilterChip(
+                                    selected = effects.blur == level,
+                                    onClick = { viewModel.setWallpaperEffects(effects.copy(blur = level)) },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            if (effects.dimPercent == 0) "Dim: off" else "Dim: ${effects.dimPercent}%",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        var dimDraft by androidx.compose.runtime.remember(effects.dimPercent) {
+                            androidx.compose.runtime.mutableFloatStateOf(effects.dimPercent.toFloat())
+                        }
+                        Slider(
+                            value = dimDraft,
+                            onValueChange = { dimDraft = it },
+                            onValueChangeFinished = {
+                                viewModel.setWallpaperEffects(effects.copy(dimPercent = dimDraft.toInt()))
+                            },
+                            valueRange = 0f..60f,
+                            steps = 11,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setWallpaperEffects(effects.copy(onLockScreen = !effects.onLockScreen)) },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Apply to lock screen too", modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = effects.onLockScreen,
+                                onCheckedChange = { viewModel.setWallpaperEffects(effects.copy(onLockScreen = it)) }
+                            )
                         }
                     }
 

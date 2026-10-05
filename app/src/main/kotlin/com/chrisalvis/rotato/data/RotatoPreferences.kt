@@ -82,6 +82,10 @@ class RotatoPreferences(private val context: Context) {
         val STEALTH_COLLECTION_ID = stringPreferencesKey("stealth_collection_id")
         val STEALTH_ACTIVE = booleanPreferencesKey("stealth_active")
         val STEALTH_PREV_NSFW_MODE = booleanPreferencesKey("stealth_prev_nsfw_mode")
+        val EFFECT_BLUR = intPreferencesKey("effect_home_blur")
+        val EFFECT_DIM = intPreferencesKey("effect_home_dim")
+        val EFFECT_ON_LOCK = booleanPreferencesKey("effect_on_lock")
+        val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -101,7 +105,55 @@ class RotatoPreferences(private val context: Context) {
             videoPreviewMode = prefs[VIDEO_PREVIEW_MODE]?.let {
                 runCatching { VideoPreviewMode.valueOf(it) }.getOrNull()
             } ?: VideoPreviewMode.AUTOPLAY,
+            wallpaperEffects = WallpaperEffects(
+                blur = (prefs[EFFECT_BLUR] ?: 0).coerceIn(0, 2),
+                dimPercent = (prefs[EFFECT_DIM] ?: 0).coerceIn(0, 60),
+                onLockScreen = prefs[EFFECT_ON_LOCK] ?: false,
+            ),
         )
+    }
+
+    suspend fun setWallpaperEffects(effects: WallpaperEffects) {
+        context.dataStore.edit {
+            it[EFFECT_BLUR] = effects.blur.coerceIn(0, 2)
+            it[EFFECT_DIM] = effects.dimPercent.coerceIn(0, 60)
+            it[EFFECT_ON_LOCK] = effects.onLockScreen
+        }
+    }
+
+    private fun parsePaths(json: String?): MutableList<String> = runCatching {
+        val arr = JSONArray(json ?: "[]")
+        (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableList()
+    }.getOrDefault(mutableListOf())
+
+    /** True when there is an earlier applied wallpaper to go back to. */
+    val hasPreviousWallpaper: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parsePaths(it[APPLIED_WALLPAPER_PATHS]).size >= 2 }
+
+    /** Records [path] as the wallpaper now showing, keeping the last 20. */
+    suspend fun pushAppliedWallpaper(path: String) {
+        context.dataStore.edit { prefs ->
+            val paths = parsePaths(prefs[APPLIED_WALLPAPER_PATHS])
+            if (paths.lastOrNull() != path) paths.add(path)
+            prefs[APPLIED_WALLPAPER_PATHS] = JSONArray(paths.takeLast(20)).toString()
+        }
+    }
+
+    /**
+     * Drops the current wallpaper from the applied list and returns the one before it, skipping
+     * files that have since been deleted. Returns null when there is nothing to go back to.
+     */
+    suspend fun popPreviousWallpaper(exists: (String) -> Boolean): String? {
+        var previous: String? = null
+        context.dataStore.edit { prefs ->
+            val paths = parsePaths(prefs[APPLIED_WALLPAPER_PATHS])
+            if (paths.isNotEmpty()) paths.removeAt(paths.lastIndex)
+            while (paths.isNotEmpty() && !exists(paths.last())) paths.removeAt(paths.lastIndex)
+            previous = paths.lastOrNull()
+            prefs[APPLIED_WALLPAPER_PATHS] = JSONArray(paths).toString()
+        }
+        return previous
     }
 
     val lastRotationMs: Flow<Long> = context.dataStore.data

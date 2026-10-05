@@ -27,7 +27,21 @@ data class RotatoSettings(
     val wallpaperTarget: WallpaperTarget = WallpaperTarget.BOTH,
     val wallpaperFit: WallpaperFit = WallpaperFit.SMART,
     val videoPreviewMode: VideoPreviewMode = VideoPreviewMode.AUTOPLAY,
+    val wallpaperEffects: WallpaperEffects = WallpaperEffects(),
 )
+
+/**
+ * Effects baked into the home screen wallpaper so icons and widgets stay readable over busy art.
+ * [blur] is 0 (off), 1 (soft) or 2 (strong); [dimPercent] darkens by 0 to 60 percent. The lock
+ * screen keeps the untouched image unless [onLockScreen] is set.
+ */
+data class WallpaperEffects(
+    val blur: Int = 0,
+    val dimPercent: Int = 0,
+    val onLockScreen: Boolean = false,
+) {
+    val isNone: Boolean get() = blur <= 0 && dimPercent <= 0
+}
 
 enum class RotationInterval(val minutes: Int, val label: String) {
     FIFTEEN(15, "15 min"),

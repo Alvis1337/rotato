@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.PointF
 import android.graphics.Point
 import android.graphics.Rect
@@ -175,13 +176,100 @@ fun setWallpaperBitmap(
     bitmap: Bitmap,
     which: Int,
     fit: WallpaperFit = WallpaperFit.FILL,
+    effects: WallpaperEffects = WallpaperEffects(),
 ) {
+    val focus = if (fit == WallpaperFit.SMART && Build.VERSION.SDK_INT >= 35) findFocusPoint(bitmap) else PointF(0.5f, 0.5f)
+    if (effects.isNone) {
+        applyWallpaper(context, wm, bitmap, which, focus)
+        return
+    }
+    val styled = applyWallpaperEffects(bitmap, effects)
+    try {
+        val homeFlag = which and WallpaperManager.FLAG_SYSTEM
+        val lockFlag = which and WallpaperManager.FLAG_LOCK
+        if (effects.onLockScreen || lockFlag == 0 || homeFlag == 0) {
+            // Lock-only targets get effects only when asked to.
+            val image = if (homeFlag == 0 && !effects.onLockScreen) bitmap else styled
+            applyWallpaper(context, wm, image, which, focus)
+        } else {
+            applyWallpaper(context, wm, styled, homeFlag, focus)
+            applyWallpaper(context, wm, bitmap, lockFlag, focus)
+        }
+    } finally {
+        styled.recycle()
+    }
+}
+
+private fun applyWallpaper(context: Context, wm: WallpaperManager, bitmap: Bitmap, which: Int, focus: PointF) {
     if (Build.VERSION.SDK_INT >= 35) {
-        val focus = if (fit == WallpaperFit.SMART) findFocusPoint(bitmap) else PointF(0.5f, 0.5f)
         val crops = screenCrops(bitmap.width, bitmap.height, knownDisplaySizes(context), focus)
         if (setBitmapWithCrops(wm, bitmap, crops, which)) return
     }
     wm.setBitmap(bitmap, null, true, which)
+}
+
+/** Returns a new bitmap with [effects] (blur, then dim) applied to [src]. */
+fun applyWallpaperEffects(src: Bitmap, effects: WallpaperEffects): Bitmap {
+    val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    if (effects.blur > 0) {
+        val blurred = blurredThumbnail(src, if (effects.blur >= 2) 24 else 10)
+        canvas.drawBitmap(blurred, null, Rect(0, 0, out.width, out.height), Paint(Paint.FILTER_BITMAP_FLAG))
+        blurred.recycle()
+    } else {
+        canvas.drawBitmap(src, 0f, 0f, null)
+    }
+    if (effects.dimPercent > 0) {
+        canvas.drawColor(Color.argb(effects.dimPercent.coerceIn(0, 100) * 255 / 100, 0, 0, 0))
+    }
+    return out
+}
+
+/**
+ * Cheap large-radius blur: shrink by [factor], box-blur the small copy three times (which
+ * approximates a Gaussian), and let the caller scale it back up with filtering.
+ */
+private fun blurredThumbnail(src: Bitmap, factor: Int): Bitmap {
+    val w = (src.width / factor).coerceAtLeast(2)
+    val h = (src.height / factor).coerceAtLeast(2)
+    val small = Bitmap.createScaledBitmap(src, w, h, true)
+    val px = IntArray(w * h)
+    small.getPixels(px, 0, w, 0, 0, w, h)
+    if (small !== src) small.recycle()
+    val tmp = IntArray(px.size)
+    repeat(3) {
+        boxBlurPass(px, tmp, w, h, radius = 2, horizontal = true)
+        boxBlurPass(tmp, px, w, h, radius = 2, horizontal = false)
+    }
+    return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+}
+
+private fun boxBlurPass(input: IntArray, output: IntArray, w: Int, h: Int, radius: Int, horizontal: Boolean) {
+    val lines = if (horizontal) h else w
+    val length = if (horizontal) w else h
+    val window = radius * 2 + 1
+    for (line in 0 until lines) {
+        fun at(i: Int): Int {
+            val c = i.coerceIn(0, length - 1)
+            return if (horizontal) input[line * w + c] else input[c * w + line]
+        }
+        var r = 0
+        var g = 0
+        var b = 0
+        for (i in -radius..radius) {
+            val c = at(i)
+            r += (c shr 16) and 0xFF; g += (c shr 8) and 0xFF; b += c and 0xFF
+        }
+        for (i in 0 until length) {
+            val idx = if (horizontal) line * w + i else i * w + line
+            output[idx] = (0xFF shl 24) or ((r / window) shl 16) or ((g / window) shl 8) or (b / window)
+            val add = at(i + radius + 1)
+            val remove = at(i - radius)
+            r += ((add shr 16) and 0xFF) - ((remove shr 16) and 0xFF)
+            g += ((add shr 8) and 0xFF) - ((remove shr 8) and 0xFF)
+            b += (add and 0xFF) - (remove and 0xFF)
+        }
+    }
 }
 
 private fun screenCrops(bitmapW: Int, bitmapH: Int, screens: List<Size>, focus: PointF): Map<Point, Rect> {

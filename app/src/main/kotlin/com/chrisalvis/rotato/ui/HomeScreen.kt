@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
@@ -277,6 +278,7 @@ private fun LibraryContent(
     val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
     val lastSkipReason by viewModel.lastSkipReason.collectAsStateWithLifecycle()
     val setNowErrorMessage by viewModel.setNowErrorMessage.collectAsStateWithLifecycle()
+    val hasPreviousWallpaper by viewModel.hasPreviousWallpaper.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
@@ -437,6 +439,18 @@ private fun LibraryContent(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            OutlinedButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.setPreviousWallpaper()
+                },
+                enabled = hasPreviousWallpaper && setNowState == SetNowState.IDLE,
+                contentPadding = PaddingValues(14.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Previous wallpaper", modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Back")
+            }
             OutlinedButton(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)

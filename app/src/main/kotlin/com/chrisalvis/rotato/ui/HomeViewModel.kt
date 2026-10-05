@@ -338,6 +338,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { preferences.setWallpaperFit(fit) }
     }
 
+    fun setWallpaperEffects(effects: com.chrisalvis.rotato.data.WallpaperEffects) {
+        viewModelScope.launch { preferences.setWallpaperEffects(effects) }
+    }
+
+    val hasPreviousWallpaper: StateFlow<Boolean> = preferences.hasPreviousWallpaper
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Goes back to the wallpaper that was showing before the current one. */
+    fun setPreviousWallpaper() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val path = preferences.popPreviousWallpaper { File(it).exists() }
+            if (path == null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "No earlier wallpaper to go back to", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            setSpecificWallpaper(File(path), recordAsCurrent = false)
+        }
+    }
+
     fun setVideoPreviewMode(mode: com.chrisalvis.rotato.data.VideoPreviewMode) {
         viewModelScope.launch { preferences.setVideoPreviewMode(mode) }
     }
@@ -520,7 +541,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setSpecificWallpaper(file: File) {
+    fun setSpecificWallpaper(file: File, recordAsCurrent: Boolean = true) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _setNowState.update { SetNowState.SETTING }
             _setNowErrorMessage.update { null }
@@ -546,10 +567,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val screenBitmap = com.chrisalvis.rotato.data.fitWallpaperBitmap(bitmap, settingsVal.wallpaperFit, target)
                 bitmap.recycle()
                 try {
-                    setWallpaperBitmap(app, wallpaperManager, screenBitmap, flags, settingsVal.wallpaperFit)
+                    setWallpaperBitmap(app, wallpaperManager, screenBitmap, flags, settingsVal.wallpaperFit, settingsVal.wallpaperEffects)
                 } finally {
                     screenBitmap.recycle()
                 }
+                if (recordAsCurrent) preferences.pushAppliedWallpaper(file.absolutePath)
                 _setNowState.update { SetNowState.DONE }
                 resetSetNowUi()
             } catch (e: Exception) {
