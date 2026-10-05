@@ -206,14 +206,19 @@ fun BrainrotScreen(
                 val total = compactGridState.layoutInfo.totalItemsCount
                 total > 0 && lastVisible >= total - 16
             } else {
-                val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                // Staggered lanes don't list visible items in index order; use the furthest one.
+                val lastVisible = gridState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
                 val total = gridState.layoutInfo.totalItemsCount
                 total > 0 && lastVisible >= total - 10
             }
         }
     }
-    LaunchedEffect(shouldLoadMore, gridMode) {
-        if (shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null) vm.loadMore()
+    // Re-evaluated whenever any input changes, not just shouldLoadMore. Keyed on shouldLoadMore
+    // alone, a page that finished (or came back empty) while the user was already at the bottom
+    // never triggered the next one until they scrolled away and back.
+    LaunchedEffect(gridMode) {
+        snapshotFlow { shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null }
+            .collect { ready -> if (ready) vm.loadMore() }
     }
     LaunchedEffect(resetVersion, gridMode) {
         if (resetVersion > 0) {
