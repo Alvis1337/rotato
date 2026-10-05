@@ -80,6 +80,7 @@ fun FullscreenImage(
     placeholderKey: String? = null,
     contentDescription: String? = null,
     blurPlaceholder: Boolean = true,
+    indicatorTopPadding: androidx.compose.ui.unit.Dp = 12.dp,
 ) {
     val context = LocalContext.current
     var attempt by remember(url) { mutableIntStateOf(0) }
@@ -141,7 +142,7 @@ fun FullscreenImage(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(top = 12.dp)
+                .padding(top = indicatorTopPadding)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

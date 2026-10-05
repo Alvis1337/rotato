@@ -1582,7 +1582,7 @@ private fun WallpaperDetailOverlay(
 
     // Unfolded (or any wide window): a rail of collections on the right for one-tap saving.
     val wide = LocalConfiguration.current.screenWidthDp >= 600
-    val railWidth = if (wide) 184.dp else 0.dp
+    val foldCanvas = rememberFoldCanvas()
 
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
@@ -1686,7 +1686,7 @@ private fun WallpaperDetailOverlay(
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.aboveTabletopFold().fillMaxSize().padding(end = railWidth),
+            modifier = Modifier.aboveTabletopFold().fillMaxSize(),
             beyondViewportPageCount = 1,
             userScrollEnabled = !zoomed,
         ) { page ->
@@ -1747,6 +1747,7 @@ private fun WallpaperDetailOverlay(
                     url = if (isCurrent && zoomed) fullImageUrl else pagerImageUrl,
                     placeholderKey = if (isCurrent && zoomed) pagerImageUrl else placeholderKey,
                     blurPlaceholder = !(isCurrent && zoomed),
+                    indicatorTopPadding = 56.dp,
                     modifier = Modifier.onSizeChanged { zoom.size = it },
                     imageModifier = Modifier
                         .zoomTransform(zoom, active = isCurrent) {
@@ -1776,10 +1777,33 @@ private fun WallpaperDetailOverlay(
                 onToggle = { list -> onToggleInList(wallpaper, list) },
                 onCreateList = { onAddToList(wallpaper, null) },
                 onUnlock = onUnlockLists,
+                // Floats over the image (which keeps the full width) and stays clear of the
+                // info pills at the top and the tags/actions at the bottom.
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .width(railWidth)
-                    .fillMaxHeight()
+                    .statusBarsPadding()
+                    .padding(top = 64.dp, bottom = bottomPanelHeight + 8.dp, end = 12.dp)
+                    .widthIn(max = 220.dp)
+            )
+        }
+
+        // Info about the image as pills along the top
+        AnimatedVisibility(
+            visible = chromeVisible && !zoomed,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(180)),
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            ImageInfoPills(
+                wallpaper = wallpaper,
+                foldCanvas = foldCanvas,
+                position = if (items.size > 1) "${pagerState.currentPage + 1} / ${items.size}" +
+                    (if (loadingMore && pagerState.currentPage >= items.size - 3) " · loading more…" else "") else null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.55f), 1f to Color.Transparent))
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
             )
         }
 
@@ -1792,7 +1816,6 @@ private fun WallpaperDetailOverlay(
         ) {
         Column(
             modifier = Modifier
-                .padding(end = railWidth)
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
@@ -1810,39 +1833,6 @@ private fun WallpaperDetailOverlay(
                 .padding(bottom = 20.dp, top = 48.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = sourceColor(wallpaper.source).copy(alpha = 0.85f)
-                ) {
-                    Text(
-                        sourceDisplayName(wallpaper.source),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-                if (wallpaper.resolution.isNotBlank()) {
-                    Text(
-                        wallpaper.resolution,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-                if (items.size > 1) {
-                    Text(
-                        "${pagerState.currentPage + 1} / ${items.size}" +
-                            if (loadingMore && pagerState.currentPage >= items.size - 3) " · loading more…" else "",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            }
-
             // Tag chips — the first chip stands in for the old separate title line, so it's
             // styled distinctly instead of duplicating the same text twice on screen.
             if (wallpaper.tags.isNotEmpty()) {
@@ -2550,20 +2540,10 @@ private fun ListRail(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier
-            .background(Color.Black.copy(alpha = 0.55f))
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 16.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            "Save to",
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White.copy(alpha = 0.7f),
-            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-        )
         lists.forEach { list ->
             val saved = list.id in savedIn
             FilterChip(
@@ -2583,11 +2563,16 @@ private fun ListRail(
                 },
                 shape = RoundedCornerShape(50),
                 colors = FilterChipDefaults.filterChipColors(
-                    containerColor = Color.White.copy(alpha = 0.08f),
+                    containerColor = Color.Black.copy(alpha = 0.55f),
                     labelColor = Color.White,
-                    iconColor = Color.White.copy(alpha = 0.8f),
+                    iconColor = Color.White.copy(alpha = 0.85f),
                 ),
-                modifier = Modifier.fillMaxWidth().height(40.dp)
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = saved,
+                    borderColor = Color.White.copy(alpha = 0.25f),
+                ),
+                modifier = Modifier.height(40.dp)
             )
         }
         if (lists.isEmpty()) {
@@ -2596,20 +2581,101 @@ private fun ListRail(
                 label = { Text("New collection") },
                 leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 shape = RoundedCornerShape(50),
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White),
-                modifier = Modifier.fillMaxWidth().height(40.dp)
+                colors = AssistChipDefaults.assistChipColors(containerColor = Color.Black.copy(alpha = 0.55f), labelColor = Color.White, leadingIconContentColor = Color.White),
+                modifier = Modifier.height(40.dp)
             )
         }
         if (lockedHiddenCount > 0) {
             FilledTonalButton(
                 onClick = onUnlock,
                 shape = RoundedCornerShape(50),
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                modifier = Modifier.padding(top = 4.dp)
             ) {
                 Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Unlock $lockedHiddenCount", maxLines = 1)
             }
+        }
+    }
+}
+
+
+/**
+ * Facts about the image as pills: where it's from, its size class and exact resolution, shape,
+ * whether it covers both Fold screens, and the position in the feed.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ImageInfoPills(
+    wallpaper: BrainrotWallpaper,
+    foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
+    position: String?,
+    modifier: Modifier = Modifier,
+) {
+    val (w, h) = remember(wallpaper.resolution) {
+        wallpaper.resolution.lowercase().split('x', '×').mapNotNull { it.trim().toIntOrNull() }
+            .let { if (it.size == 2) it[0] to it[1] else 0 to 0 }
+    }
+    val foldFriendly = foldCanvas != null && w > 0 && com.chrisalvis.rotato.data.isFoldFriendly(w, h, foldCanvas)
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        InfoPill(sourceDisplayName(wallpaper.source), container = sourceColor(wallpaper.source).copy(alpha = 0.9f), bold = true)
+        if (w > 0 && h > 0) {
+            val longSide = maxOf(w, h)
+            val sizeClass = when {
+                longSide >= 7680 -> "8K"
+                longSide >= 3840 -> "4K"
+                longSide >= 2560 -> "QHD"
+                longSide >= 1920 -> "FHD"
+                longSide >= 1280 -> "HD"
+                else -> "Low res"
+            }
+            InfoPill(sizeClass, bold = true)
+            InfoPill("$w × $h")
+            val ratio = w.toFloat() / h
+            InfoPill(
+                when {
+                    ratio > 1.15f -> "Landscape"
+                    ratio < 0.87f -> "Portrait"
+                    else -> "Square"
+                }
+            )
+        }
+        if (foldFriendly) {
+            InfoPill("Fold-friendly", icon = Icons.Default.Smartphone, container = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f), content = MaterialTheme.colorScheme.onTertiary)
+        }
+        if (wallpaper.isVideo) InfoPill("Video", icon = Icons.Default.PlayArrow)
+        if (wallpaper.isNsfw) InfoPill("NSFW", container = MaterialTheme.colorScheme.error.copy(alpha = 0.85f))
+        if (position != null) InfoPill(position)
+    }
+}
+
+@Composable
+private fun InfoPill(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    container: Color = Color.Black.copy(alpha = 0.55f),
+    content: Color = Color.White,
+    bold: Boolean = false,
+) {
+    Surface(shape = RoundedCornerShape(50), color = container) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        ) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                text,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+                color = content
+            )
         }
     }
 }
