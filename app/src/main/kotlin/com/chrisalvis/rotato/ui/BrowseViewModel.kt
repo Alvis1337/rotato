@@ -970,6 +970,26 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { removeEntries(ids) }
     }
 
+    fun saveWallpaper(wallpaper: BrowseWallpaper) {
+        if (wallpaper.source == "device") {
+            Toast.makeText(app.applicationContext, "Already on device", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ctx = app.applicationContext
+        viewModelScope.launch {
+            if (_downloading.value.contains(wallpaper.sourceId)) return@launch
+            _downloading.update { it + wallpaper.sourceId }
+            var ok = false
+            try {
+                ok = feedRepo.saveToGallery(ctx, wallpaper.sourceId, wallpaper.fullUrl, wallpaper.sampleUrl.ifBlank { wallpaper.thumbUrl })
+            } finally {
+                _downloading.update { it - wallpaper.sourceId }
+            }
+            val msg = if (ok) "Saved to Pictures/Rotato" else "Failed to save"
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun setCoverImage(wallpaper: LocalWallpaperEntry) {
         val currentListId = _selectedListId.value ?: return
         viewModelScope.launch {
