@@ -13,6 +13,10 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -153,6 +157,8 @@ fun BrainrotScreen(
     val selectedItem by vm.selectedItem.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val loadingMore by vm.loadingMore.collectAsStateWithLifecycle()
+    val savedListIds by vm.savedListIds.collectAsStateWithLifecycle()
+    val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
@@ -1074,7 +1080,22 @@ fun BrainrotScreen(
                             onAddTagToTier = { tag, tier, isNsfw ->
                                 vm.addTagToTier(tag, tier, isNsfw)
                             },
-                            onDismiss = { vm.selectItem(null) }
+                            onDismiss = { vm.selectItem(null) },
+                            loadingMore = loadingMore,
+                            endReached = endReached,
+                            onLoadMore = { vm.loadMore() },
+                            savedListIdsFn = { w -> savedListIds["${w.source}:${w.id}"].orEmpty() },
+                            onToggleInList = { w, list -> vm.toggleInList(list.id, w) },
+                            lockedHiddenCount = lockedHiddenCount,
+                            onUnlockLists = {
+                                (context as? androidx.fragment.app.FragmentActivity)?.let { activity ->
+                                    BiometricHelper.authenticate(
+                                        activity = activity,
+                                        title = "Unlock collections",
+                                        onSuccess = { vm.unlockLockedLists() }
+                                    )
+                                }
+                            },
                         )
                     }
 
@@ -1478,7 +1499,14 @@ private fun WallpaperDetailOverlay(
     onTagSearch: (String) -> Unit,
     onAddTagToSearch: (String) -> Unit,
     onAddTagToTier: (String, TagTier, Boolean) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    loadingMore: Boolean,
+    endReached: Boolean,
+    onLoadMore: () -> Unit,
+    savedListIdsFn: (BrainrotWallpaper) -> Set<String>,
+    onToggleInList: (BrainrotWallpaper, LocalList) -> Unit,
+    lockedHiddenCount: Int,
+    onUnlockLists: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
     var tagActionTag by remember { mutableStateOf<String?>(null) }
@@ -1507,6 +1535,40 @@ private fun WallpaperDetailOverlay(
         showInfoExpanded = false
         onPageChanged(wallpaper)
     }
+
+    // Swiping toward the end of what's loaded fetches the next page, same as scrolling the grid,
+    // so the viewer doesn't dead-end at "65 / 65". Re-evaluated as items arrive, so a page that
+    // lands while the user is already on the last image keeps the chain going.
+    val latestItems by rememberUpdatedState(items)
+    LaunchedEffect(Unit) {
+        snapshotFlow { pagerState.currentPage >= latestItems.size - 5 }
+            .collect { nearEnd -> if (nearEnd) onLoadMore() }
+    }
+    LaunchedEffect(items.size, loadingMore, endReached) {
+        if (!loadingMore && !endReached && pagerState.currentPage >= items.size - 5) onLoadMore()
+    }
+
+    // The pager already composes one page either side; warm the disk cache two ahead as well so
+    // a quick run of swipes lands on images that are ready rather than on loading states.
+    LaunchedEffect(pagerState.currentPage, items) {
+        val loader = coil.Coil.imageLoader(context)
+        listOf(pagerState.currentPage + 2).forEach { i ->
+            val next = items.getOrNull(i) ?: return@forEach
+            if (next.isVideo) return@forEach
+            val url = next.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: next.fullUrl.ifBlank { next.thumbUrl }
+            loader.enqueue(
+                coil.request.ImageRequest.Builder(context)
+                    .data(url)
+                    .diskCacheKey(url)
+                    .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
+                    .build()
+            )
+        }
+    }
+
+    // Unfolded (or any wide window): a rail of collections on the right for one-tap saving.
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val railWidth = if (wide) 184.dp else 0.dp
 
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
@@ -1613,7 +1675,7 @@ private fun WallpaperDetailOverlay(
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.aboveTabletopFold().fillMaxSize(),
+            modifier = Modifier.aboveTabletopFold().fillMaxSize().padding(end = railWidth),
             beyondViewportPageCount = 1,
         ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
@@ -1691,9 +1753,25 @@ private fun WallpaperDetailOverlay(
             }
         } // end HorizontalPager
 
+        if (wide) {
+            ListRail(
+                lists = lists,
+                savedIn = savedListIdsFn(wallpaper),
+                lockedHiddenCount = lockedHiddenCount,
+                onToggle = { list -> onToggleInList(wallpaper, list) },
+                onCreateList = { onAddToList(wallpaper, null) },
+                onUnlock = onUnlockLists,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(railWidth)
+                    .fillMaxHeight()
+            )
+        }
+
         // Bottom info + actions
         Column(
             modifier = Modifier
+                .padding(end = railWidth)
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .background(
@@ -1737,7 +1815,8 @@ private fun WallpaperDetailOverlay(
                 }
                 if (items.size > 1) {
                     Text(
-                        "${pagerState.currentPage + 1} / ${items.size}",
+                        "${pagerState.currentPage + 1} / ${items.size}" +
+                            if (loadingMore && pagerState.currentPage >= items.size - 3) " · loading more…" else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
@@ -1801,7 +1880,7 @@ private fun WallpaperDetailOverlay(
                     FilledIconButton(
                         onClick = {
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            if (lists.isNotEmpty()) {
+                            if (lists.isNotEmpty() || lockedHiddenCount > 0) {
                                 showBookmarkMenu = !showBookmarkMenu
                             } else {
                                 onAddToList(wallpaper, null)
@@ -1827,6 +1906,13 @@ private fun WallpaperDetailOverlay(
                                     onClick = { onAddToList(wallpaper, list); showBookmarkMenu = false }
                                 )
                             }
+                        }
+                        if (lockedHiddenCount > 0) {
+                            DropdownMenuItem(
+                                text = { Text("Unlock $lockedHiddenCount locked", style = MaterialTheme.typography.bodyMedium) },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                onClick = { showBookmarkMenu = false; onUnlockLists() }
+                            )
                         }
                     }
                 }
@@ -2486,6 +2572,86 @@ private fun ReportSheetContent(
             modifier = Modifier.align(Alignment.End)
         ) {
             Text("Cancel")
+        }
+    }
+}
+
+
+/**
+ * Collections as pills down the right edge of the unfolded viewer. Tapping one saves the current
+ * image there (or takes it back out) without leaving it, so it can go into several at once.
+ */
+@Composable
+private fun ListRail(
+    lists: List<LocalList>,
+    savedIn: Set<String>,
+    lockedHiddenCount: Int,
+    onToggle: (LocalList) -> Unit,
+    onCreateList: () -> Unit,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.55f))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            "Save to",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+        lists.forEach { list ->
+            val saved = list.id in savedIn
+            FilterChip(
+                selected = saved,
+                onClick = { onToggle(list) },
+                label = { Text(list.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = {
+                    Icon(
+                        when {
+                            saved -> Icons.Default.Check
+                            list.isLocked -> Icons.Default.LockOpen
+                            else -> Icons.Default.Add
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                shape = RoundedCornerShape(50),
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Color.White.copy(alpha = 0.08f),
+                    labelColor = Color.White,
+                    iconColor = Color.White.copy(alpha = 0.8f),
+                ),
+                modifier = Modifier.fillMaxWidth().height(40.dp)
+            )
+        }
+        if (lists.isEmpty()) {
+            AssistChip(
+                onClick = onCreateList,
+                label = { Text("New collection") },
+                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                shape = RoundedCornerShape(50),
+                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White),
+                modifier = Modifier.fillMaxWidth().height(40.dp)
+            )
+        }
+        if (lockedHiddenCount > 0) {
+            FilledTonalButton(
+                onClick = onUnlock,
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Unlock $lockedHiddenCount", maxLines = 1)
+            }
         }
     }
 }

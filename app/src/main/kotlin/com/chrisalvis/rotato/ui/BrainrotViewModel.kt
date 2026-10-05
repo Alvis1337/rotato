@@ -142,6 +142,51 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         entries.filter { it.listId in visibleIds }.mapTo(HashSet()) { "${it.source}:${it.sourceId}" }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    /** "source:id" → the visible collections that already hold that image, for the list rail. */
+    val savedListIds: StateFlow<Map<String, Set<String>>> = combine(localLists.allWallpapers, lists) { entries, visible ->
+        val visibleIds = visible.mapTo(HashSet()) { it.id }
+        entries.asSequence()
+            .filter { it.listId in visibleIds }
+            .groupBy({ "${it.source}:${it.sourceId}" }, { it.listId })
+            .mapValues { it.value.toSet() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Locked collections currently hidden from Discover's save menus. */
+    val lockedHiddenCount: StateFlow<Int> = combine(
+        localLists.lists,
+        (app as com.chrisalvis.rotato.RotatoApp).unlockedListIds
+    ) { all, unlocked ->
+        all.count { it.isLocked && it.id !in unlocked }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Unlock every locked collection for this session (call after the user authenticates). */
+    fun unlockLockedLists() {
+        viewModelScope.launch {
+            val locked = localLists.lists.first().filter { it.isLocked }.mapTo(HashSet()) { it.id }
+            getApplication<com.chrisalvis.rotato.RotatoApp>().unlockedListIds.update { it + locked }
+        }
+    }
+
+    /**
+     * Rail toggle: adds [wp] to [listId] without leaving the image (so it can go into several
+     * collections), or takes it back out if it's already there.
+     */
+    fun toggleInList(listId: String, wp: BrainrotWallpaper) {
+        val inList = listId in savedListIds.value["${wp.source}:${wp.id}"].orEmpty()
+        if (!inList) {
+            addToList(listId, wp, leaveGrid = false)
+            return
+        }
+        viewModelScope.launch {
+            val ids = localLists.allWallpapers.first()
+                .filter { it.listId == listId && it.source == wp.source && it.sourceId == wp.id }
+                .mapTo(HashSet()) { it.id }
+            localLists.removeWallpapers(ids)
+            val name = lists.value.find { it.id == listId }?.name ?: "list"
+            Toast.makeText(getApplication<Application>(), "Removed from \"$name\"", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private val _selectedListId = MutableStateFlow<String?>(null)
     val selectedListId: StateFlow<String?> = _selectedListId.asStateFlow()
 
@@ -798,9 +843,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addToList(listId: String, wp: BrainrotWallpaper) {
+    fun addToList(listId: String, wp: BrainrotWallpaper, leaveGrid: Boolean = true) {
         _selectedListId.update { listId }
-        removeFromGrid(wp)
+        if (leaveGrid) removeFromGrid(wp)
         viewModelScope.launch {
             val ok = localLists.addWallpaper(listId, wp)
             val ctx = getApplication<Application>().applicationContext

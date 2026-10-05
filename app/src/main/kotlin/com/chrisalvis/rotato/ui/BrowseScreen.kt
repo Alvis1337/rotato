@@ -674,6 +674,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                         onSuccess = { vm.grantSessionAccess() }
                     )
                 },
+                onLockAll = { vm.lockAll() },
                 onPickImages = { list ->
                     pickerTargetListId = list.id
                     photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -1191,6 +1192,7 @@ private fun ListPickerContent(
     onUnlockCollection: (LocalList) -> Unit,
     onRelockForSession: (LocalList) -> Unit,
     onShowHidden: () -> Unit,
+    onLockAll: () -> Unit,
     onPickImages: (LocalList) -> Unit,
     onFetchFromSources: (LocalList) -> Unit,
     onToggleBlurExempt: (LocalList) -> Unit,
@@ -1245,6 +1247,19 @@ private fun ListPickerContent(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // A full-width banner at the top instead of a thin line of text under the grid, so
+            // locked collections are one obvious tap away.
+            val sessionUnlocked = lists.count { it.isLocked && it.id in unlockedListIds }
+            if (lockedHiddenCount > 0 || sessionUnlocked > 0) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "locked_banner") {
+                    LockedCollectionsBanner(
+                        hiddenCount = lockedHiddenCount,
+                        unlockedCount = sessionUnlocked,
+                        onUnlock = onShowHidden,
+                        onLockAll = onLockAll,
+                    )
+                }
+            }
             items(lists, key = { it.id }) { list ->
                 val count = listCounts[list.id] ?: 0
                 val coverUrl = listCovers[list.id]
@@ -1271,26 +1286,46 @@ private fun ListPickerContent(
                     onToggleBlurExempt = { onToggleBlurExempt(list) },
                 )
             }
-            if (lockedHiddenCount > 0) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    TextButton(
-                        onClick = onShowHidden,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Lock,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "$lockedHiddenCount locked collection${if (lockedHiddenCount != 1) "s" else ""} — tap to unlock",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LockedCollectionsBanner(
+    hiddenCount: Int,
+    unlockedCount: Int,
+    onUnlock: () -> Unit,
+    onLockAll: () -> Unit,
+) {
+    Surface(
+        onClick = if (hiddenCount > 0) onUnlock else onLockAll,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Icon(
+                if (hiddenCount > 0) Icons.Default.Lock else Icons.Default.LockOpen,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(28.dp)
+            )
+            Text(
+                if (hiddenCount > 0) "$hiddenCount locked collection${if (hiddenCount != 1) "s" else ""} hidden"
+                else "$unlockedCount locked collection${if (unlockedCount != 1) "s" else ""} unlocked",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            if (hiddenCount > 0) {
+                Button(onClick = onUnlock) { Text("Unlock") }
+            } else {
+                FilledTonalButton(onClick = onLockAll) { Text("Lock") }
             }
         }
     }

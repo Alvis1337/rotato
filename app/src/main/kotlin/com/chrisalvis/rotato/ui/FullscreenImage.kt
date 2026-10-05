@@ -1,10 +1,17 @@
 package com.chrisalvis.rotato.ui
 
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -34,12 +42,17 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.ImageLoadProgress
+import kotlinx.coroutines.delay
 
 /**
  * Full-screen image with honest loading feedback. While the full image downloads, the low-res
- * preview already in memory ([placeholderKey]) is shown blurred under a progress ring with a
- * percentage, so it never passes for the final image; a failure shows a message and Retry
+ * preview already in memory ([placeholderKey]) is shown softly blurred with a small progress pill
+ * at the top, so it never passes for the final image; a failure shows a message and Retry
  * instead of a blank black screen.
+ *
+ * Feedback only appears once a load has taken longer than [INDICATOR_DELAY_MS]: images that are
+ * cached or arrive quickly (the usual case while swiping, since neighbours are preloaded) just
+ * appear, without a blur or spinner flashing in and out. Blur fades in and out rather than snapping.
  *
  * [imageModifier] goes on the image itself (zoom/pan transforms, gestures); the overlays stay put.
  */
@@ -57,6 +70,15 @@ fun FullscreenImage(
     val progressMap by ImageLoadProgress.progress.collectAsStateWithLifecycle()
     val progress = progressMap[url]
     val loading = state is AsyncImagePainter.State.Loading || state is AsyncImagePainter.State.Empty
+    var slow by remember(url, attempt) { mutableStateOf(false) }
+    LaunchedEffect(loading) {
+        if (loading) { delay(INDICATOR_DELAY_MS); slow = true } else slow = false
+    }
+    val blurRadius by animateDpAsState(
+        targetValue = if (loading && slow) 14.dp else 0.dp,
+        animationSpec = tween(durationMillis = 260),
+        label = "placeholderBlur"
+    )
 
     Box(modifier.fillMaxSize()) {
         AsyncImage(
@@ -75,7 +97,7 @@ fun FullscreenImage(
             onState = { state = it },
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (loading && Build.VERSION.SDK_INT >= 31) Modifier.blur(12.dp) else Modifier)
+                .then(if (blurRadius > 0.dp && Build.VERSION.SDK_INT >= 31) Modifier.blur(blurRadius) else Modifier)
                 .then(imageModifier)
         )
 
@@ -92,18 +114,29 @@ fun FullscreenImage(
                 Text("Couldn't load this image", color = Color.White, style = MaterialTheme.typography.bodyMedium)
                 FilledTonalButton(onClick = { attempt++ }) { Text("Retry") }
             }
-            loading -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            else -> Unit
+        }
+
+        AnimatedVisibility(
+            visible = loading && slow && state !is AsyncImagePainter.State.Error,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(220)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50))
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 if (progress != null) {
-                    CircularProgressIndicator(progress = { progress }, color = Color.White, modifier = Modifier.size(40.dp))
+                    CircularProgressIndicator(progress = { progress }, color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                 } else {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(40.dp))
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                 }
                 Text(
                     if (progress != null) "Loading full quality · ${(progress * 100).toInt()}%" else "Loading full quality…",
@@ -114,3 +147,5 @@ fun FullscreenImage(
         }
     }
 }
+
+private const val INDICATOR_DELAY_MS = 350L

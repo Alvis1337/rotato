@@ -824,7 +824,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { applyPendingSchedules(locked) }
     }
 
-    /** Re-lock all collections (clears session access). Called when app is backgrounded. */
+    /** Hide every session-unlocked collection again. RotatoApp also does this after a while in the background. */
     fun lockAll() {
         _unlockedListIds.update { emptySet() }
     }
