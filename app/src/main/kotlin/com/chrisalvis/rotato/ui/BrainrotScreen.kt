@@ -185,6 +185,7 @@ fun BrainrotScreen(
     val lists by vm.lists.collectAsStateWithLifecycle()
     val selectedListId by vm.selectedListId.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
+    val nsfwHidden = LocalNsfwHidden.current
     val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
     val nsfwBlurEnabled by vm.nsfwBlurEnabled.collectAsStateWithLifecycle()
     val brainrotFilters by vm.brainrotFilters.collectAsStateWithLifecycle()
@@ -541,7 +542,7 @@ fun BrainrotScreen(
                                             // to see/reset, not just while the global toggle happens to be on —
                                             // otherwise a stale override becomes invisible (and unfixable) the
                                             // moment NSFW mode is turned off.
-                                            trailingIcon = if (missingCreds || hasCreds || nsfwMode || src.nsfwEnabled != null) {
+                                            trailingIcon = if (missingCreds || hasCreds || (!nsfwHidden && (nsfwMode || src.nsfwEnabled != null))) {
                                                 {
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
@@ -561,7 +562,7 @@ fun BrainrotScreen(
                                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                                             )
                                                         }
-                                                        if (nsfwMode || src.nsfwEnabled != null) {
+                                                        if (!nsfwHidden && (nsfwMode || src.nsfwEnabled != null)) {
                                                             Icon(
                                                                 imageVector = nsfwIcon,
                                                                 contentDescription = nsfwDescription,
@@ -624,7 +625,7 @@ fun BrainrotScreen(
                                     }
                                 }
                                 Text("• Tap source chips to toggle which sources appear", style = MaterialTheme.typography.bodySmall)
-                                Text("• Tap ⚙️ (bottom-right) to set NSFW mode, filters & search tags", style = MaterialTheme.typography.bodySmall)
+                                Text("• Tap ⚙️ (bottom-right) to set ${if (nsfwHidden) "" else "NSFW mode, "}filters & search tags", style = MaterialTheme.typography.bodySmall)
                                 Text("• Tap a card to preview · Long-press to batch-select", style = MaterialTheme.typography.bodySmall)
                                 Text("• Tap the bookmark icon on any image to save it", style = MaterialTheme.typography.bodySmall)
                             }
@@ -2141,7 +2142,7 @@ private fun DiscoverSettingsSheetContent(
             }
         }
 
-        Row(
+        if (!LocalNsfwHidden.current) Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically

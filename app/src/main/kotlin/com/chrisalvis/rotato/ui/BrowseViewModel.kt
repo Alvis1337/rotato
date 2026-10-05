@@ -112,9 +112,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         all.filter { !it.isLocked || unlocked.contains(it.id) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // Count of locked collections hidden from the grid
-    val lockedHiddenCount: StateFlow<Int> = combine(_allLists, _unlockedListIds) { all, unlocked ->
-        all.count { it.isLocked && !unlocked.contains(it.id) }
+    private val nsfwHidden = getApplication<com.chrisalvis.rotato.RotatoApp>().nsfwHidden
+
+    // Count of locked collections hidden from the grid (never mentioned with the content filter on)
+    val lockedHiddenCount: StateFlow<Int> = combine(_allLists, _unlockedListIds, nsfwHidden) { all, unlocked, hidden ->
+        if (hidden) 0 else all.count { it.isLocked && !unlocked.contains(it.id) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val listCounts: StateFlow<Map<String, Int>> = localLists.allWallpapers
@@ -261,7 +263,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             matched.sortedFor(sortOrder)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val wallpapers: StateFlow<List<BrowseWallpaper>> = visibleWallpaperEntries
+    val wallpapers: StateFlow<List<BrowseWallpaper>> = combine(visibleWallpaperEntries, nsfwHidden) { entries, hidden ->
+            if (hidden) entries.filter { !it.isNsfw } else entries
+        }
         .map { entries ->
             // One directory listing for the whole collection, not one per image.
             val poolFiles = poolFilesByStem(app.filesDir)
@@ -827,6 +831,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Grant session-level access to all locked collections without removing their lock. */
     fun grantSessionAccess() {
+        if (nsfwHidden.value) return
         val locked = _allLists.value.filter { it.isLocked }.map { it.id }.toSet()
         _unlockedListIds.update { it + locked }
         viewModelScope.launch { applyPendingSchedules(locked) }

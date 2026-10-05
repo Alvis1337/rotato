@@ -18,7 +18,8 @@ suspend fun buildBackupJson(context: Context): String {
     val pluginRepository = PluginRepository(context)
     val sources = sourcesPrefs.sources.first()
     val prefs = preferences.settings.first()
-    val nsfwMode = preferences.nsfwMode.first()
+    val nsfwMode = preferences.nsfwModeSetting.first()
+    val nsfwHidden = preferences.nsfwHidden.first()
     val minRes = preferences.brainrotFilters.first().minResolution
     val aspectRatio = preferences.brainrotFilters.first().aspectRatio
     val chargingTriggerEnabled = preferences.chargingTriggerEnabled.first()
@@ -103,6 +104,7 @@ suspend fun buildBackupJson(context: Context): String {
             put("shuffleMode", prefs.shuffleMode)
             put("wallpaperTarget", prefs.wallpaperTarget.name)
             put("nsfwMode", nsfwMode)
+            put("nsfwHidden", nsfwHidden)
             put("minResolution", minRes.name)
             put("aspectRatio", aspectRatio.name)
             put("chargingTriggerEnabled", chargingTriggerEnabled)

@@ -30,6 +30,9 @@ class RotatoApp : Application(), ImageLoaderFactory {
     /** Session-level unlocked list IDs — shared across all ViewModels. */
     val unlockedListIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /** Content filter from Settings; while on, locked collections can't be unlocked at all. */
+    val nsfwHidden = MutableStateFlow(false)
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -53,6 +56,12 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 backgroundedAt = 0L
             }
         })
+        appScope.launch {
+            com.chrisalvis.rotato.data.RotatoPreferences(this@RotatoApp).nsfwHidden.collect { hidden ->
+                nsfwHidden.value = hidden
+                if (hidden) unlockedListIds.value = emptySet()
+            }
+        }
         // Key/value backup only uploads after dataChanged(); nothing ever called it, so the
         // "Google Drive backup" setting never actually backed anything up after the first time.
         appScope.launch {

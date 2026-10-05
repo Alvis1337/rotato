@@ -32,6 +32,7 @@ class RotatoPreferences(private val context: Context) {
         const val HISTORY_CAP = 200
         val SETUP_DONE = booleanPreferencesKey("setup_done")
         val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
+        val NSFW_HIDDEN = booleanPreferencesKey("nsfw_features_hidden")
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val PHONE_WIDTH_PARTS = intPreferencesKey("phone_width_parts")
@@ -235,7 +236,8 @@ class RotatoPreferences(private val context: Context) {
 
     val nsfwBlurEnabled: Flow<Boolean> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
-        .map { it[NSFW_BLUR_ENABLED] ?: true }
+        // Blur stays on as a safety net while NSFW features are hidden.
+        .map { (it[NSFW_BLUR_ENABLED] ?: true) || it[NSFW_HIDDEN] == true }
 
     val nsfwHomeOnly: Flow<Boolean> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
@@ -385,9 +387,27 @@ class RotatoPreferences(private val context: Context) {
         context.dataStore.edit { it[DYNAMIC_COLOR] = enabled }
     }
 
-    val nsfwMode: Flow<Boolean> = context.dataStore.data
+    /** The NSFW mode the user picked, ignoring the content filter (for settings and backups). */
+    val nsfwModeSetting: Flow<Boolean> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[NSFW_MODE] ?: false }
+
+    /** Effective NSFW mode: always off while the content filter hides NSFW features. */
+    val nsfwMode: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { (it[NSFW_MODE] ?: false) && it[NSFW_HIDDEN] != true }
+
+    /**
+     * Content filter: hides every NSFW feature (NSFW toggles, locked collections, NSFW images)
+     * until it's turned off again in Settings. NSFW mode and the lock setup are kept as they were.
+     */
+    val nsfwHidden: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[NSFW_HIDDEN] ?: false }
+
+    suspend fun setNsfwHidden(hidden: Boolean) {
+        context.dataStore.edit { it[NSFW_HIDDEN] = hidden }
+    }
 
     suspend fun setNsfwMode(enabled: Boolean) {
         context.dataStore.edit { it[NSFW_MODE] = enabled }

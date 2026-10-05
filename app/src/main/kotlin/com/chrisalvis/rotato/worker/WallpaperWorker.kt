@@ -191,12 +191,23 @@ class WallpaperWorker(
             homeFiles = allImages
             lockFiles = allImages
         }
+        // Content filter on: NSFW images and anything only in a locked collection sit out of rotation.
+        val filterOut: Set<String> = if (prefs.nsfwHidden.first()) {
+            val lockedIds = lists.filter { it.isLocked }.mapTo(HashSet()) { it.id }
+            val openKeys = allWallpapers.filter { it.listId !in lockedIds }.mapTo(HashSet()) { it.source to it.sourceId }
+            val lockedOnly = allWallpapers
+                .filter { it.listId in lockedIds && (it.source to it.sourceId) !in openKeys }
+                .mapNotNull { allImages.findPoolFile(it.source, it.sourceId)?.name }
+            prefs.nsfwFileNames.first() + lockedOnly
+        } else emptySet()
+        val homePool = if (filterOut.isEmpty()) homeFiles else homeFiles.filter { it.name !in filterOut }
+        val lockPool = if (filterOut.isEmpty()) lockFiles else lockFiles.filter { it.name !in filterOut }
 
         var mainQueueCount: Int? = null
         val targetFile = resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
             ?: run {
-                mainQueueCount = homeFiles.size
-                if (homeFiles.isEmpty()) {
+                mainQueueCount = homePool.size
+                if (homePool.isEmpty()) {
                     if (settings.isEnabled) {
                         prefs.addRotationError(RotationError(
                             RotationErrorType.POOL_EMPTY,
@@ -205,13 +216,13 @@ class WallpaperWorker(
                     }
                     return Result.success()
                 }
-                selectMainQueueFile(homeFiles, settings.shuffleMode, settings.currentIndex, history, prefs)
+                selectMainQueueFile(homePool, settings.shuffleMode, settings.currentIndex, history, prefs)
             }
 
         // For per-screen mode, pick a separate lock file (different from home when possible).
         val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
-            val candidates = lockFiles.filter { it.absolutePath != targetFile.absolutePath }
-            candidates.ifEmpty { lockFiles }.randomOrNull() ?: targetFile
+            val candidates = lockPool.filter { it.absolutePath != targetFile.absolutePath }
+            candidates.ifEmpty { lockPool }.randomOrNull() ?: targetFile
         } else targetFile
 
         return try {

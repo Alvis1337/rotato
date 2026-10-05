@@ -1640,6 +1640,7 @@ private fun CollectionCard(
                                 leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
                             )
                         }
+                        if (!LocalNsfwHidden.current) {
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text(if (list.blurExempt) "Restore NSFW blur for this collection" else "Skip NSFW blur for this collection") },
@@ -1669,6 +1670,7 @@ private fun CollectionCard(
                                 leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) }
                             )
                         }
+                        } // content filter
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Move earlier") },
@@ -2665,7 +2667,7 @@ private fun MalCollectionDialog(
                             )
                         }
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!LocalNsfwHidden.current) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("NSFW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(selected = nsfwOverride == null, onClick = { nsfwOverride = null }, label = { Text("Auto") })
@@ -2912,7 +2914,7 @@ private fun FetchFromSourcesDialog(
                         }
                     }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!LocalNsfwHidden.current) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("NSFW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = nsfwOverride == null, onClick = { nsfwOverride = null }, label = { Text("Auto") })

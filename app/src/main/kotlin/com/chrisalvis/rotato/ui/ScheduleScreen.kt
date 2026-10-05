@@ -65,7 +65,8 @@ fun ScheduleScreen(
     if (editEntry != null) {
         ScheduleEditDialog(
             entry = editEntry!!,
-            lists = lists,
+            // Locked collections aren't offered while NSFW features are hidden.
+            lists = if (LocalNsfwHidden.current) lists.filter { !it.isLocked } else lists,
             isEditing = entries.any { it.id == editEntry!!.id },
             onSave = { vm.saveEdit(it) },
             onDismiss = { vm.dismissEdit() },

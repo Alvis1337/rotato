@@ -158,7 +158,13 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onBrowseFeed: () -> Unit = {}
 ) {
-    val images by viewModel.images.collectAsStateWithLifecycle()
+    val allImages by viewModel.images.collectAsStateWithLifecycle()
+    // With the content filter on, NSFW images in the library aren't shown.
+    val nsfwHidden = LocalNsfwHidden.current
+    val nsfwNames by viewModel.nsfwFileNames.collectAsStateWithLifecycle()
+    val images = remember(allImages, nsfwHidden, nsfwNames) {
+        if (nsfwHidden) allImages.filter { it.name !in nsfwNames } else allImages
+    }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val setNowState by viewModel.setNowState.collectAsStateWithLifecycle()

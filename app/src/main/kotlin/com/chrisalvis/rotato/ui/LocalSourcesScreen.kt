@@ -1100,12 +1100,12 @@ private fun SourceCard(
                             Checkbox(checked = puritySketchy, onCheckedChange = { puritySketchy = it })
                             Text("Sketchy", style = MaterialTheme.typography.bodySmall)
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!LocalNsfwHidden.current) Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = purityNsfw, onCheckedChange = { purityNsfw = it })
                             Text("NSFW", style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    Text(
+                    if (!LocalNsfwHidden.current) Text(
                         "NSFW requires a Wallhaven API key. The global NSFW toggle can override this.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

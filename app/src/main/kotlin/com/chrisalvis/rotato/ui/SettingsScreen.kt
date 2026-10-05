@@ -203,8 +203,8 @@ fun SettingsScreen(
                     HorizontalDivider()
                     SettingsCategoryRow(
                         icon = Icons.Default.Shield,
-                        title = "NSFW & Privacy",
-                        subtitle = "Blur toggles, stealth collection",
+                        title = if (LocalNsfwHidden.current) "Content & Privacy" else "NSFW & Privacy",
+                        subtitle = if (LocalNsfwHidden.current) "Content filter, stealth collection" else "Content filter, blur toggles, stealth collection",
                         onClick = onNavigateToNsfwPrivacy,
                     )
                     HorizontalDivider()

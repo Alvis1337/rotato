@@ -217,13 +217,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Locked collections currently hidden from Discover's save menus. */
     val lockedHiddenCount: StateFlow<Int> = combine(
         localLists.lists,
-        (app as com.chrisalvis.rotato.RotatoApp).unlockedListIds
-    ) { all, unlocked ->
-        all.count { it.isLocked && it.id !in unlocked }
+        (app as com.chrisalvis.rotato.RotatoApp).unlockedListIds,
+        app.nsfwHidden
+    ) { all, unlocked, nsfwHidden ->
+        // With the content filter on, locked collections aren't mentioned anywhere.
+        if (nsfwHidden) 0 else all.count { it.isLocked && it.id !in unlocked }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Unlock every locked collection for this session (call after the user authenticates). */
     fun unlockLockedLists() {
+        if (getApplication<com.chrisalvis.rotato.RotatoApp>().nsfwHidden.value) return
         viewModelScope.launch {
             val locked = localLists.lists.first().filter { it.isLocked }.mapTo(HashSet()) { it.id }
             getApplication<com.chrisalvis.rotato.RotatoApp>().unlockedListIds.update { it + locked }
@@ -533,6 +536,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (key in displayedKeys) { if (++totalSkipped >= 200) break; continue }
                 if (blacklist.isNotEmpty() && wp.tags.any { normalizeTag(it) in blacklist }) { totalSkipped++; continue }
                 if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
+                if (!nsfw && wp.isNsfw && getApplication<com.chrisalvis.rotato.RotatoApp>().nsfwHidden.value) { totalSkipped++; continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
                 prefetchGridImage(ctx, wp)

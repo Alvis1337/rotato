@@ -32,6 +32,7 @@ fun NsfwPrivacySettingsScreen(
 ) {
     val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
     val nsfwHomeOnly by viewModel.nsfwHomeOnly.collectAsStateWithLifecycle()
+    val nsfwHidden by viewModel.nsfwHidden.collectAsStateWithLifecycle()
     val stealthCollectionId by viewModel.stealthCollectionId.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
 
@@ -43,7 +44,7 @@ fun NsfwPrivacySettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                title = { Text("NSFW & Privacy", fontWeight = FontWeight.Bold) }
+                title = { Text(if (nsfwHidden) "Content & Privacy" else "NSFW & Privacy", fontWeight = FontWeight.Bold) }
             )
         }
     ) { padding ->
@@ -62,7 +63,26 @@ fun NsfwPrivacySettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    SettingsSection(title = "NSFW") {
+                    SettingsSection(title = "Content filter") {
+                        SettingsToggleRow(
+                            title = "Hide NSFW features",
+                            subtitle = if (nsfwHidden)
+                                "On: NSFW toggles, NSFW images, and locked collections are hidden everywhere. Turn this off to bring them back exactly as they were."
+                            else
+                                "Hides NSFW toggles, NSFW images, and locked collections throughout the app until you turn it off here",
+                            checked = nsfwHidden,
+                            onCheckedChange = { viewModel.setNsfwHidden(it) }
+                        )
+                    }
+                    if (nsfwHidden) {
+                        SettingsSection(title = "Privacy") {
+                            StealthCollectionDropdown(
+                                selectedCollectionId = stealthCollectionId,
+                                lists = collections.filter { !it.isLocked },
+                                onSelect = viewModel::setStealthCollectionId
+                            )
+                        }
+                    } else SettingsSection(title = "NSFW") {
                         SettingsToggleRow(
                             title = "Blur NSFW previews",
                             subtitle = "Blur explicit images/videos in grids until tapped — also acts as a safety net if one slips through with NSFW mode off",

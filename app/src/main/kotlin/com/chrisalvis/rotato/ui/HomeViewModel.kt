@@ -130,6 +130,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val nsfwBlurEnabled: StateFlow<Boolean> = preferences.nsfwBlurEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
+    val nsfwHidden: StateFlow<Boolean> = preferences.nsfwHidden
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setNsfwHidden(hidden: Boolean) {
+        viewModelScope.launch { preferences.setNsfwHidden(hidden) }
+    }
+
     val nsfwHomeOnly: StateFlow<Boolean> = preferences.nsfwHomeOnly
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -789,6 +796,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     runCatching { WallpaperTarget.valueOf(prefsObj.optString("wallpaperTarget", "BOTH")) }
                         .getOrNull()?.let { preferences.setWallpaperTarget(it) }
                     preferences.setNsfwMode(prefsObj.optBoolean("nsfwMode", false))
+                    if (prefsObj.has("nsfwHidden")) preferences.setNsfwHidden(prefsObj.optBoolean("nsfwHidden", false))
                     runCatching { MinResolution.valueOf(prefsObj.optString("minResolution", "ANY")) }
                         .getOrNull()?.let { preferences.setMinResolution(it) }
                     runCatching { AspectRatio.valueOf(prefsObj.optString("aspectRatio", "ANY")) }
