@@ -63,6 +63,11 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 }
                 chain.proceed(newReq)
             })
+            // Discover fills a whole screen of tiles from one or two hosts at once; OkHttp's
+            // default of 5 requests per host left most tiles queued behind slow downloads.
+            .dispatcher(okhttp3.Dispatcher().apply { maxRequestsPerHost = 12 })
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .build()
         return ImageLoader.Builder(this)
             .okHttpClient(client)

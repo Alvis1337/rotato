@@ -422,12 +422,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
-                val url = wp.sampleUrl.ifBlank { wp.fullUrl }
-                if (url.isNotBlank()) {
-                    ctx.imageLoader.enqueue(
-                        ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
-                    )
-                }
+                prefetchGridImage(ctx, wp)
                 newItems += wp
             }
             // If still under target, clear caches so next round fetches fresh pages
@@ -954,12 +949,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
                 freshItems.forEach { wp ->
                     displayedKeys.add("${wp.source}:${wp.id}")
-                    val url = wp.sampleUrl.ifBlank { wp.fullUrl }
-                    if (url.isNotBlank()) {
-                        ctx.imageLoader.enqueue(
-                            ImageRequest.Builder(ctx).data(url).memoryCacheKey(url).diskCacheKey(url).build()
-                        )
-                    }
+                    prefetchGridImage(ctx, wp)
                 }
                 _gridItems.update { freshItems + it }
                 _noResults.update { false }
@@ -1197,5 +1187,24 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 _downloadingIds.update { it - key }
             }
         }
+    }
+
+    /**
+     * Warms the disk cache with the image the grid tile will show. This used to prefetch
+     * sampleUrl (the 4K original for Wallhaven) at full decode size into the memory cache for
+     * every item in a batch, which queued dozens of multi-megabyte downloads ahead of the tiles
+     * actually on screen and evicted their bitmaps.
+     */
+    private fun prefetchGridImage(ctx: android.content.Context, wp: BrainrotWallpaper) {
+        if (wp.isVideo) return
+        val url = wp.gridUrl.takeIf { it.isNotBlank() } ?: return
+        ctx.imageLoader.enqueue(
+            ImageRequest.Builder(ctx)
+                .data(url)
+                .diskCacheKey(url)
+                .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
+                .size(512)
+                .build()
+        )
     }
 }

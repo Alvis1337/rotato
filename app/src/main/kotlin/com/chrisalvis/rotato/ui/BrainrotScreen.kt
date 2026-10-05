@@ -1089,6 +1089,22 @@ fun BrainrotScreen(
 }
 
 @Composable
+private fun LowResOrShimmer(url: String?) {
+    if (url == null) {
+        ShimmerBox(Modifier.fillMaxSize())
+        return
+    }
+    SubcomposeAsyncImage(
+        model = url,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+        loading = { ShimmerBox(Modifier.fillMaxSize()) },
+        error = { ShimmerBox(Modifier.fillMaxSize()) },
+    )
+}
+
+@Composable
 private fun DiscoverThumbnailGridItem(
     wallpaper: BrainrotWallpaper,
     isDownloading: Boolean,
@@ -1262,10 +1278,8 @@ private fun DiscoverGridItem(
 
     // Fall back to fullUrl if sampleUrl fails (e.g. 404 on Danbooru restricted posts)
     var useFullUrl by remember(wallpaper.id) { mutableStateOf(false) }
-    // Sources without a mid-size sample (Wallhaven) report the original as sampleUrl; tiles then
-    // downloaded multi-megabyte 4K originals and often timed out. Use the thumbnail instead.
-    val gridUrl = if (wallpaper.sampleUrl == wallpaper.fullUrl && wallpaper.thumbUrl.isNotBlank() &&
-        !MediaType.isVideoUrl(wallpaper.thumbUrl)) wallpaper.thumbUrl else wallpaper.sampleUrl
+    val gridUrl = wallpaper.gridUrl
+    val lowResUrl = wallpaper.lowResPreviewUrl
     val imageUrl = (if (useFullUrl || gridUrl.isBlank()) wallpaper.fullUrl else gridUrl)
         .ifBlank { null }
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
@@ -1319,11 +1333,13 @@ private fun DiscoverGridItem(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed),
-                loading = { ShimmerBox(Modifier.fillMaxSize()) },
+                // The small preview appears almost at once and the sharper sample replaces it,
+                // instead of a tile sitting on a shimmer until the large image arrives.
+                loading = { LowResOrShimmer(lowResUrl) },
                 error = {
                     if (!useFullUrl && gridUrl.isNotBlank() && wallpaper.fullUrl != gridUrl) {
                         LaunchedEffect(Unit) { useFullUrl = true }
-                        ShimmerBox(Modifier.fillMaxSize())
+                        LowResOrShimmer(lowResUrl)
                     } else {
                         Box(
                             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
@@ -1579,8 +1595,13 @@ private fun WallpaperDetailOverlay(
             beyondViewportPageCount = 1,
         ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
-            val placeholderKey = item.sampleUrl.ifBlank { item.thumbUrl }
+            // Placeholder is whatever the grid tile already has in memory, so the pager never
+            // opens on a black screen.
+            val placeholderKey = item.gridUrl
             val fullImageUrl = item.fullUrl.ifBlank { item.thumbUrl }
+            // The screen-sized sample is plenty here (and far faster than the original); the
+            // double-tap zoom view still loads the full resolution.
+            val pagerImageUrl = item.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: fullImageUrl
 
             // beyondViewportPageCount keeps neighbor pages mounted for smooth swiping — only the
             // page actually on screen should stream video, or we'd silently buffer clips no one is watching.
@@ -1625,9 +1646,9 @@ private fun WallpaperDetailOverlay(
             } else {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(fullImageUrl)
-                        .memoryCacheKey(fullImageUrl)
-                        .diskCacheKey(fullImageUrl)
+                        .data(pagerImageUrl)
+                        .memoryCacheKey(pagerImageUrl)
+                        .diskCacheKey(pagerImageUrl)
                         .placeholderMemoryCacheKey(placeholderKey)
                         .crossfade(false)
                         .build(),

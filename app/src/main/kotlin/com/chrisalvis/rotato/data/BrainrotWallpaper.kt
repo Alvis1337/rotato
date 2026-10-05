@@ -11,4 +11,17 @@ data class BrainrotWallpaper(
     val tags: List<String>,
     val isVideo: Boolean = false,
     val isNsfw: Boolean = false
-)
+) {
+    /**
+     * Image the Discover masonry grid shows. Sources without a mid-size sample (Wallhaven)
+     * report the original as sampleUrl; tiles then downloaded multi-megabyte 4K originals and
+     * often timed out, so those use the thumbnail instead.
+     */
+    val gridUrl: String
+        get() = if (sampleUrl == fullUrl && thumbUrl.isNotBlank() && !MediaType.isVideoUrl(thumbUrl)) thumbUrl
+        else sampleUrl.ifBlank { fullUrl }
+
+    /** Small static preview, when it differs from [gridUrl], to show while that loads. */
+    val lowResPreviewUrl: String?
+        get() = thumbUrl.takeIf { it.isNotBlank() && it != gridUrl && !MediaType.isVideoUrl(it) }
+}
