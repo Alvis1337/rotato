@@ -190,6 +190,3 @@ internal fun InfoPill(
         }
     }
 }
-
-
-private enum class FoldPairState { Idle, PickedHere, ReadyToPair, Busy }

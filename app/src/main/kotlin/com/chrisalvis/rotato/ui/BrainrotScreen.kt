@@ -2672,6 +2672,8 @@ private fun ImageInfoPills(
 
 
 
+private enum class FoldPairState { Idle, PickedHere, ReadyToPair, Busy }
+
 /** The main actions as labelled buttons; used by the dock and by the details sheet. */
 @Composable
 private fun ViewerActions(
