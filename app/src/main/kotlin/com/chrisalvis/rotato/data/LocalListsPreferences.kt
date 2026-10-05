@@ -41,13 +41,17 @@ class LocalListsPreferences(private val context: Context) {
             useAsRotation = useAsRotation,
             malConfig = malConfig,
         )
+        var created = false
         context.dataStore.edit { prefs ->
             val current = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
             if (current.any { it.name.equals(trimmed, ignoreCase = true) }) return@edit
             current.add(list)
             prefs[LISTS_KEY] = serializeLists(current)
+            created = true
         }
-        return list
+        // Callers rely on null for "name already taken"; returning the unsaved list made
+        // them write entries under an id that doesn't exist.
+        return if (created) list else null
     }
 
     suspend fun createListWithId(list: LocalList) {

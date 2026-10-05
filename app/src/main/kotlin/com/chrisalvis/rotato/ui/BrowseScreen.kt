@@ -1229,7 +1229,7 @@ private fun ListPickerContent(
             )
         }
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Adaptive(minSize = 150.dp),
             modifier = modifier.fillMaxSize(),
             contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1262,7 +1262,7 @@ private fun ListPickerContent(
                 )
             }
             if (lockedHiddenCount > 0) {
-                item(span = { GridItemSpan(2) }) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     TextButton(
                         onClick = onShowHidden,
                         modifier = Modifier
@@ -1706,7 +1706,7 @@ private fun WallpaperGridContent(
 
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Fixed(3),
+        columns = GridCells.Adaptive(minSize = 100.dp),
         modifier = modifier.fillMaxSize().then(dragSelectModifier),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -58,18 +58,25 @@ class DislikeWallpaperReceiver : BroadcastReceiver() {
                 prefs.blockUrl(wallpaper.thumbUrl)
                 prefs.addBlockedImageKey(wallpaper.id)
 
-                val imageDir = File(context.filesDir, "rotato_images")
-                val sanitized = sanitizeFilename(wallpaper.id)
-                imageDir.listFiles()?.firstOrNull {
-                    it.isFile && it.nameWithoutExtension == sanitized
-                }?.delete()
-
                 // Remove from any collections that contain this wallpaper
                 val listPrefs = LocalListsPreferences(context)
-                val allWallpapers = listPrefs.allWallpapers.first()
-                allWallpapers
+                val matched = listPrefs.allWallpapers.first()
                     .filter { it.sourceId == wallpaper.id || (wallpaper.fullUrl.isNotBlank() && it.fullUrl == wallpaper.fullUrl) }
-                    .forEach { listPrefs.removeWallpaper(it.id) }
+
+                // Pool files are named after the collection entry's sourceId (or, for direct
+                // Discover downloads, the URL's file stem), not the full URL used as wallpaper.id
+                // for remote sources, so match on all of them or the file keeps rotating.
+                val keys = buildSet {
+                    add(sanitizeFilename(wallpaper.id))
+                    matched.forEach { add(sanitizeFilename(it.sourceId)) }
+                    if (wallpaper.fullUrl.isNotBlank()) {
+                        add(sanitizeFilename(wallpaper.fullUrl.substringAfterLast('/').substringBeforeLast('.')))
+                    }
+                }
+                val imageDir = File(context.filesDir, "rotato_images")
+                imageDir.listFiles()?.filter { it.isFile && it.nameWithoutExtension in keys }?.forEach { it.delete() }
+
+                matched.forEach { listPrefs.removeWallpaper(it.id) }
 
                 postConfirmation(context, "Removed", "Won't show this wallpaper again")
             } finally {

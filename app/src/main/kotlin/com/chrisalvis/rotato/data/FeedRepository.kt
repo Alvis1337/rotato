@@ -38,6 +38,14 @@ class FeedRepository(private val imageDir: File) {
                 pair = downloadBytesWithMime(fallbackUrl, authHeader)
             }
             val (bytes, contentType) = pair ?: return@withContext null.also { Log.e(TAG, "downloadBytes returned null for $fullUrl") }
+            // A 200 HTML page (hotlink block, Cloudflare challenge) would otherwise be saved
+            // as a .jpg and fail every rotation that picks it as IMAGE_CORRUPT.
+            val looksLikeText = contentType?.startsWith("text/") == true ||
+                bytes.firstOrNull { it != ' '.code.toByte() && it != '\n'.code.toByte() && it != '\r'.code.toByte() } == '<'.code.toByte()
+            if (looksLikeText) {
+                Log.e(TAG, "downloadWallpaper got a non-image response for $fullUrl ($contentType)")
+                return@withContext null
+            }
             // Prefer Content-Type header, fall back to URL suffix, then magic bytes.
             val ext = detectExtFromContentType(contentType)
                 ?: fullUrl.substringAfterLast('.').substringBefore('?').take(5).lowercase().takeIf { it.matches("[a-z]+".toRegex()) }
@@ -45,7 +53,14 @@ class FeedRepository(private val imageDir: File) {
                 ?: "jpg"
             imageDir.mkdirs()
             val fileName = "$sanitized.$ext"
-            File(imageDir, fileName).writeBytes(bytes)
+            // Write to a temp name and rename so the worker never picks up a half-written file
+            // (getImages() ignores the .part extension).
+            val tmp = File(imageDir, "$fileName.part")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(File(imageDir, fileName))) {
+                tmp.delete()
+                return@withContext null
+            }
             if (BuildConfig.DEBUG) Log.d(TAG, "downloadWallpaper successful: $fileName")
             fileName
         } catch (e: Exception) {

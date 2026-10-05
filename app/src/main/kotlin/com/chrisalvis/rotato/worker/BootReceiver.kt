@@ -30,6 +30,11 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
+                // Schedules work independently of the interval rotation toggle, so re-arm
+                // their alarms before bailing out on a disabled rotation.
+                val schedEntries = SchedulePreferences(context).entries.first()
+                ScheduleManager.scheduleAll(context, schedEntries)
+
                 val settings = prefs.settings.first()
                 if (!settings.isEnabled) return@launch
 
@@ -62,10 +67,6 @@ class BootReceiver : BroadcastReceiver() {
                     wm.cancelUniqueWork(WallpaperWorker.CHAIN_WORK_NAME)
                     wm.enqueueUniquePeriodicWork(HomeViewModel.WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
                 }
-
-                // Reschedule any active schedule alarms
-                val schedEntries = SchedulePreferences(context).entries.first()
-                ScheduleManager.scheduleAll(context, schedEntries)
             } finally {
                 pendingResult.finish()
             }
