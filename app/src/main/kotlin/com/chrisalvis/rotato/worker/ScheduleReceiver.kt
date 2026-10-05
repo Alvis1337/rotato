@@ -83,7 +83,7 @@ class ScheduleReceiver : BroadcastReceiver() {
                 )
         }
 
-        private suspend fun syncRotationPool(
+        internal suspend fun syncRotationPool(
             context: Context,
             listIds: Set<String>,
             listPrefs: LocalListsPreferences,
@@ -135,7 +135,7 @@ class ScheduleReceiver : BroadcastReceiver() {
             return wallpapers.count { wp -> onDisk.findPoolFile(wp.source, wp.sourceId) != null }
         }
 
-        private suspend fun removeRotationFiles(
+        internal suspend fun removeRotationFiles(
             context: Context,
             listId: String,
             listPrefs: LocalListsPreferences,

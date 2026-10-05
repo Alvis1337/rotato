@@ -33,6 +33,8 @@ class RotatoPreferences(private val context: Context) {
         val SETUP_DONE = booleanPreferencesKey("setup_done")
         val NSFW_MODE = booleanPreferencesKey("nsfw_mode")
         val NSFW_HIDDEN = booleanPreferencesKey("nsfw_features_hidden")
+        val MATCH_TIME_OF_DAY = booleanPreferencesKey("match_time_of_day")
+        val ENHANCE_LOW_RES = booleanPreferencesKey("enhance_low_res")
         val MIN_RESOLUTION = stringPreferencesKey("min_resolution")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val PHONE_WIDTH_PARTS = intPreferencesKey("phone_width_parts")
@@ -642,6 +644,24 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setRotateScreenOn(enabled: Boolean) {
         context.dataStore.edit { it[ROTATE_SCREEN_ON] = enabled }
+    }
+
+    /** Shuffle prefers darker images at night (or in dark mode) and brighter ones by day. */
+    val matchTimeOfDay: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[MATCH_TIME_OF_DAY] ?: false }
+
+    suspend fun setMatchTimeOfDay(enabled: Boolean) {
+        context.dataStore.edit { it[MATCH_TIME_OF_DAY] = enabled }
+    }
+
+    /** Images smaller than the screen are upscaled in steps and sharpened instead of stretched once. */
+    val enhanceLowRes: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[ENHANCE_LOW_RES] ?: true }
+
+    suspend fun setEnhanceLowRes(enabled: Boolean) {
+        context.dataStore.edit { it[ENHANCE_LOW_RES] = enabled }
     }
 
     val chargingTriggerEnabled: Flow<Boolean> = context.dataStore.data

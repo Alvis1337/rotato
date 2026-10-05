@@ -428,8 +428,9 @@ class WallpaperWorker(
     ): File {
         return if (shuffleMode) {
             val wallpaperRatings = prefs.wallpaperRatings.first()
+            val pool = if (prefs.matchTimeOfDay.first()) timeOfDayPool(images) else images
             val weightedImages = buildList {
-                images.forEach { file ->
+                pool.forEach { file ->
                     val weight = when ((wallpaperRatings[file.name] ?: 0).coerceIn(0, 5)) {
                         5 -> 5
                         4 -> 4
@@ -447,6 +448,23 @@ class WallpaperWorker(
             prefs.setCurrentIndex((nextIndex + 1) % images.size)
             images[nextIndex]
         }
+    }
+
+    /**
+     * Night (8pm–7am) or dark mode: the darker images in [images]; daytime: the brighter ones.
+     * Falls back to the whole pool when fewer than two images fit, so rotation never stalls.
+     */
+    private fun timeOfDayPool(images: List<File>): List<File> {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val darkMode = (applicationContext.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val wantDark = darkMode || hour >= 20 || hour < 7
+        val looks = com.chrisalvis.rotato.data.ImageAnalysis.looksFor(applicationContext, images)
+        val matching = images.filter { f ->
+            val b = looks[f.name]?.brightness ?: return@filter false
+            if (wantDark) b <= com.chrisalvis.rotato.data.ImageAnalysis.DARK_THRESHOLD else b > com.chrisalvis.rotato.data.ImageAnalysis.DARK_THRESHOLD
+        }
+        return if (matching.size >= 2) matching else images
     }
 
     private suspend fun maybeAutoFavoritePreviousWallpaper(

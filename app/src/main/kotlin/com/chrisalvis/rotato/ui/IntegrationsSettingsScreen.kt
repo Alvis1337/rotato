@@ -2,6 +2,7 @@ package com.chrisalvis.rotato.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -149,6 +150,51 @@ fun IntegrationsSettingsScreen(
                                 ) { Text("Connect MyAnimeList") }
                             }
                         }
+                    }
+                }
+            }
+            AutomationCard()
+        }
+    }
+}
+
+/** How to drive Rotato from Tasker, MacroDroid, Routines and similar apps. */
+@Composable
+private fun AutomationCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SettingsSection(title = "Automation") {
+                Text(
+                    "Tasker, MacroDroid, Automate and similar apps can send these to Rotato as a broadcast or an activity intent (package com.chrisalvis.rotato). Long-press the app icon for Next wallpaper and Save wallpaper shortcuts, which Routines and home screens can use too. Tap an action to copy it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                listOf(
+                    com.chrisalvis.rotato.worker.AutomationReceiver.ACTION_NEXT to "Next wallpaper",
+                    com.chrisalvis.rotato.worker.AutomationReceiver.ACTION_PREVIOUS to "Previous wallpaper",
+                    com.chrisalvis.rotato.worker.AutomationReceiver.ACTION_SAVE to "Save the current wallpaper to Favorites",
+                    com.chrisalvis.rotato.worker.AutomationReceiver.ACTION_SWITCH_COLLECTION to "Rotate from one collection: add the extra collection=<its name>",
+                ).forEach { (action, what) ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                clipboard.setText(androidx.compose.ui.text.AnnotatedString(action))
+                                android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Text(what, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            action,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }

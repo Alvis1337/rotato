@@ -491,6 +491,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val isFoldable: Boolean = com.chrisalvis.rotato.data.isFoldable(application)
 
+    val matchTimeOfDay: StateFlow<Boolean> = preferences.matchTimeOfDay
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setMatchTimeOfDay(enabled: Boolean) {
+        viewModelScope.launch { preferences.setMatchTimeOfDay(enabled) }
+    }
+
+    val enhanceLowRes: StateFlow<Boolean> = preferences.enhanceLowRes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setEnhanceLowRes(enabled: Boolean) {
+        viewModelScope.launch { preferences.setEnhanceLowRes(enabled) }
+    }
+
     val rotateOnUnfold: StateFlow<Boolean> = preferences.rotateOnUnfold
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 

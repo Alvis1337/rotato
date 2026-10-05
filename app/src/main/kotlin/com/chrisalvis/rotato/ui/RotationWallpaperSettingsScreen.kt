@@ -57,6 +57,8 @@ fun RotationWallpaperSettingsScreen(
     val autoPauseSettings by viewModel.autoPauseSettings.collectAsStateWithLifecycle()
     val chargingTriggerEnabled by viewModel.chargingTriggerEnabled.collectAsStateWithLifecycle()
     val rotateOnUnfold by viewModel.rotateOnUnfold.collectAsStateWithLifecycle()
+    val matchTimeOfDay by viewModel.matchTimeOfDay.collectAsStateWithLifecycle()
+    val enhanceLowRes by viewModel.enhanceLowRes.collectAsStateWithLifecycle()
     val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
     val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
     val autoRefillEnabled by viewModel.autoRefillEnabled.collectAsStateWithLifecycle()
@@ -113,6 +115,13 @@ fun RotationWallpaperSettingsScreen(
                             checked = settings.shuffleMode,
                             onCheckedChange = { viewModel.setShuffleMode(it) }
                         )
+                        SettingsToggleRow(
+                            title = "Match the time of day",
+                            subtitle = if (settings.shuffleMode) "Shuffle picks darker wallpapers at night and in dark mode, brighter ones by day"
+                                       else "Works with Shuffle on: darker wallpapers at night and in dark mode, brighter ones by day",
+                            checked = matchTimeOfDay,
+                            onCheckedChange = { viewModel.setMatchTimeOfDay(it) }
+                        )
                     }
 
                     SettingsSection(title = "Wallpaper Target") {
@@ -145,6 +154,12 @@ fun RotationWallpaperSettingsScreen(
                                 Text(fit.label)
                             }
                         }
+                        SettingsToggleRow(
+                            title = "Enhance low-res images",
+                            subtitle = "Images smaller than your screen are enlarged in gentle steps and sharpened, instead of stretched in one go",
+                            checked = enhanceLowRes,
+                            onCheckedChange = { viewModel.setEnhanceLowRes(it) }
+                        )
                     }
 
                     SettingsSection(title = "Home Screen Effects") {

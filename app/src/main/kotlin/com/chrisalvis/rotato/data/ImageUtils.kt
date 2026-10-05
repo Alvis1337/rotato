@@ -169,7 +169,9 @@ fun fitWallpaperBitmap(src: Bitmap, fit: WallpaperFit, targetW: Int, targetH: In
             val scale = minOf(fitW.toFloat() / src.width, targetH.toFloat() / src.height)
             val scaledW = (src.width * scale).roundToInt().coerceIn(1, targetW)
             val scaledH = (src.height * scale).roundToInt().coerceIn(1, targetH)
-            val scaled = Bitmap.createScaledBitmap(src, scaledW, scaledH, true)
+            var scaled = scaleSmooth(src, scaledW, scaledH)
+            val amount = sharpenAmountFor(scale)
+            if (amount > 0f && scaled !== src) scaled = sharpen(scaled, amount)
             val result = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
             Canvas(result).drawBitmap(scaled, (targetW - scaledW) / 2f, (targetH - scaledH) / 2f, null)
             if (scaled !== src) scaled.recycle()
@@ -180,12 +182,14 @@ fun fitWallpaperBitmap(src: Bitmap, fit: WallpaperFit, targetW: Int, targetH: In
             val scaledW = (src.width * scale).roundToInt().coerceAtLeast(targetW)
             val scaledH = (src.height * scale).roundToInt().coerceAtLeast(targetH)
             val focus = if (fit == WallpaperFit.SMART) findFocusPoint(src) else PointF(0.5f, 0.5f)
-            val scaled = Bitmap.createScaledBitmap(src, scaledW, scaledH, true)
+            val scaled = scaleSmooth(src, scaledW, scaledH)
             val srcX = (focus.x * scaledW - targetW / 2f).roundToInt().coerceIn(0, scaledW - targetW)
             val srcY = (focus.y * scaledH - targetH / 2f).roundToInt().coerceIn(0, scaledH - targetH)
             val cropped = Bitmap.createBitmap(scaled, srcX, srcY, targetW, targetH)
             if (scaled !== src && scaled !== cropped) scaled.recycle()
-            cropped
+            // Sharpen only what's kept, after cropping, so the cost scales with the screen.
+            val amount = sharpenAmountFor(scale)
+            if (amount > 0f && cropped !== src) sharpen(cropped, amount) else cropped
         }
     }
     // createScaledBitmap/createBitmap hand back the source when no change is needed
@@ -400,10 +404,79 @@ private fun focusedCrop(bitmapW: Int, bitmapH: Int, aspect: Float, focus: PointF
  * with a mild pull towards the middle so a noisy border doesn't drag the crop off the subject.
  * Returns the centre when the image gives no clear signal.
  */
+private const val FACE_HEADROOM = 0.08f
+private const val SUBJECT_HEADROOM = 0.04f
+
+/**
+ * Upscale smarter: set from the "Enhance low-res images" setting. When on, images that have to
+ * grow are enlarged in 2x steps and lightly sharpened instead of one big bilinear stretch.
+ */
+@Volatile var enhanceLowResImages: Boolean = true
+
+/** Scales [src] to [w]x[h], stepping up 2x at a time when enlarging a lot (keeps edges cleaner). */
+private fun scaleSmooth(src: Bitmap, w: Int, h: Int): Bitmap {
+    if (!enhanceLowResImages || (w <= src.width * 1.05f && h <= src.height * 1.05f)) {
+        return Bitmap.createScaledBitmap(src, w, h, true)
+    }
+    var cur = src
+    while (cur.width * 2 < w && cur.height * 2 < h) {
+        val next = Bitmap.createScaledBitmap(cur, cur.width * 2, cur.height * 2, true)
+        if (cur !== src) cur.recycle()
+        cur = next
+    }
+    val out = Bitmap.createScaledBitmap(cur, w, h, true)
+    if (cur !== src && cur !== out) cur.recycle()
+    return out
+}
+
+/**
+ * Unsharp mask on [bmp] (returns a new bitmap; [bmp] is recycled). [amount] ~0.3–0.8: how much
+ * edge contrast to add back after enlarging.
+ */
+private fun sharpen(bmp: Bitmap, amount: Float): Bitmap {
+    val w = bmp.width
+    val h = bmp.height
+    if (w < 3 || h < 3) return bmp
+    val px = IntArray(w * h)
+    bmp.getPixels(px, 0, w, 0, 0, w, h)
+    val out = IntArray(px.size)
+    for (y in 0 until h) {
+        val y0 = if (y == 0) 0 else y - 1
+        val y1 = if (y == h - 1) h - 1 else y + 1
+        for (x in 0 until w) {
+            val x0 = if (x == 0) 0 else x - 1
+            val x1 = if (x == w - 1) w - 1 else x + 1
+            val c = px[y * w + x]
+            // Cross-shaped blur: cheap and enough to find the edges.
+            val n1 = px[y0 * w + x]; val n2 = px[y1 * w + x]; val n3 = px[y * w + x0]; val n4 = px[y * w + x1]
+            var rgb = c and -0x1000000
+            var shift = 16
+            while (shift >= 0) {
+                val v = (c shr shift) and 0xFF
+                val blur = (v * 4 + ((n1 shr shift) and 0xFF) + ((n2 shr shift) and 0xFF) + ((n3 shr shift) and 0xFF) + ((n4 shr shift) and 0xFF)) / 8f
+                rgb = rgb or ((v + (v - blur) * amount * 2f).roundToInt().coerceIn(0, 255) shl shift)
+                shift -= 8
+            }
+            out[y * w + x] = rgb
+        }
+    }
+    val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    result.setPixels(out, 0, w, 0, 0, w, h)
+    bmp.recycle()
+    return result
+}
+
+/** How much to sharpen after enlarging by [scale]: nothing near 1x, more for bigger jumps. */
+private fun sharpenAmountFor(scale: Float): Float =
+    if (!enhanceLowResImages || scale < 1.15f) 0f else ((scale - 1f) * 0.5f).coerceIn(0.2f, 0.7f)
+
 fun findFocusPoint(bitmap: Bitmap): PointF {
     if (bitmap.width < 8 || bitmap.height < 8) return PointF(0.5f, 0.5f)
     return try {
-        detectFaceCentre(bitmap) ?: saliencyCentre(bitmap)
+        // Aim a little below the subject so it sits in the upper-middle of the crop: the natural
+        // place for a face, and clear of the lock screen clock that sits over the top of it.
+        detectFaceCentre(bitmap)?.let { PointF(it.x, (it.y + FACE_HEADROOM).coerceAtMost(1f)) }
+            ?: saliencyCentre(bitmap).let { PointF(it.x, (it.y + SUBJECT_HEADROOM).coerceAtMost(1f)) }
     } catch (e: RuntimeException) {
         PointF(0.5f, 0.5f)
     }

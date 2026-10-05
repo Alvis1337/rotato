@@ -2,6 +2,30 @@
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
 
     <shortcut
+        android:shortcutId="shortcut_next_wallpaper"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_next_short"
+        android:shortcutLongLabel="@string/shortcut_next_long">
+        <intent
+            android:action="com.chrisalvis.rotato.action.NEXT"
+            android:targetPackage="com.chrisalvis.rotato"
+            android:targetClass="com.chrisalvis.rotato.worker.AutomationActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_save_wallpaper"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_save_short"
+        android:shortcutLongLabel="@string/shortcut_save_long">
+        <intent
+            android:action="com.chrisalvis.rotato.action.SAVE"
+            android:targetPackage="com.chrisalvis.rotato"
+            android:targetClass="com.chrisalvis.rotato.worker.AutomationActivity" />
+    </shortcut>
+
+    <shortcut
         android:shortcutId="shortcut_discover"
         android:enabled="true"
         android:icon="@mipmap/ic_launcher"

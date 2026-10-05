@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.AssistChip
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -96,6 +98,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -319,6 +322,22 @@ private fun LibraryContent(
     val pairedPaths by viewModel.pairedPaths.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    // Colour filter: each image's colours are worked out once (cached) the first time it's used.
+    var colourFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedColour = colourFilter?.let { n -> com.chrisalvis.rotato.data.ImageColour.entries.find { it.name == n } }
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    var looksLoading by remember { mutableStateOf(false) }
+    val looks by produceState(emptyMap<String, com.chrisalvis.rotato.data.ImageLook>(), images, selectedColour != null) {
+        if (selectedColour == null) return@produceState
+        looksLoading = true
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.chrisalvis.rotato.data.ImageAnalysis.looksFor(appContext, images)
+        }
+        looksLoading = false
+    }
+    val gridImages = remember(images, selectedColour, looks) {
+        if (selectedColour == null) images else images.filter { looks[it.name]?.colours?.contains(selectedColour) == true }
+    }
 
     if (showSaveToListDialog) {
         SaveToCollectionDialog(
@@ -456,18 +475,26 @@ private fun LibraryContent(
                             }
                         }
                     }
+                    if (images.size > 1) {
+                        ColourFilterRow(
+                            selected = selectedColour,
+                            loading = looksLoading,
+                            matchCount = if (selectedColour != null && !looksLoading) gridImages.size else null,
+                            onSelect = { c -> colourFilter = if (c == selectedColour) null else c?.name },
+                        )
+                    }
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 100.dp),
                     state = dragSelectState.gridState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .gridDragSelect(items = images, state = dragSelectState),
+                        .gridDragSelect(items = gridImages, state = dragSelectState),
                     contentPadding = PaddingValues(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    items(images, key = { it.absolutePath }) { file ->
+                    items(gridImages, key = { it.absolutePath }) { file ->
                         val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
                         val thumbnailContent: @Composable () -> Unit = {
                             ImageThumbnail(
@@ -1790,6 +1817,48 @@ private fun RecapRow(title: String, items: List<Pair<Any, String?>>) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** A row of colour swatches; picking one shows only Library images where that colour stands out. */
+@Composable
+private fun ColourFilterRow(
+    selected: com.chrisalvis.rotato.data.ImageColour?,
+    loading: Boolean,
+    matchCount: Int?,
+    onSelect: (com.chrisalvis.rotato.data.ImageColour?) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        com.chrisalvis.rotato.data.ImageColour.entries.forEach { colour ->
+            val isSelected = colour == selected
+            Box(
+                modifier = Modifier
+                    .size(if (isSelected) 30.dp else 26.dp)
+                    .clip(CircleShape)
+                    .background(Color(colour.swatch))
+                    .border(
+                        width = if (isSelected) 3.dp else 1.dp,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        shape = CircleShape
+                    )
+                    .clickable(onClickLabel = colour.label) { onSelect(colour) }
+            )
+        }
+        when {
+            loading -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            selected != null && matchCount != null -> AssistChip(
+                onClick = { onSelect(null) },
+                label = { Text("${selected.label} · $matchCount", style = MaterialTheme.typography.labelMedium) },
+                trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Clear colour filter", modifier = Modifier.size(16.dp)) }
+            )
         }
     }
 }

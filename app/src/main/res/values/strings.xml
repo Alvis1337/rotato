@@ -9,4 +9,8 @@
     <string name="shortcut_collections_long">Open Collections</string>
     <string name="shortcut_settings_short">Settings</string>
     <string name="shortcut_settings_long">Open Settings</string>
+    <string name="shortcut_next_short">Next wallpaper</string>
+    <string name="shortcut_next_long">Change to the next wallpaper</string>
+    <string name="shortcut_save_short">Save wallpaper</string>
+    <string name="shortcut_save_long">Save the current wallpaper to Favorites</string>
 </resources>

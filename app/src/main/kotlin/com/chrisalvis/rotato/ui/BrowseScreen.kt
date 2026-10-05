@@ -506,7 +506,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                             Icon(Icons.Outlined.Wallpaper, contentDescription = "Save rotation as collection")
                         }
                         IconButton(onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "*/*")) }) {
-                            Icon(Icons.Default.SettingsBackupRestore, contentDescription = "Restore backup")
+                            Icon(Icons.Default.SettingsBackupRestore, contentDescription = "Import a shared collection or restore a backup")
                         }
                         Box {
                             IconButton(onClick = { showCreateMenu = true }) {
@@ -691,6 +691,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                 },
                 onFetchFromSources = { fetchFillFor = it },
                 onToggleBlurExempt = { vm.toggleBlurExempt(it) },
+                onShareList = { vm.shareCollection(context, it) },
                 onCreateList = { vm.showCreateDialog() },
                 modifier = if (selectedList != null) Modifier.width(listPaneWidth) else Modifier.weight(1f)
             )
@@ -1209,7 +1210,8 @@ private fun ListPickerContent(
     onFetchFromSources: (LocalList) -> Unit,
     onToggleBlurExempt: (LocalList) -> Unit,
     onCreateList: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onShareList: (LocalList) -> Unit = {},
 ) {
     if (lists.isEmpty() && lockedHiddenCount == 0) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1300,6 +1302,7 @@ private fun ListPickerContent(
                     onMoveEarlier = { onMoveList(list, -1) },
                     onMoveLater = { onMoveList(list, 1) },
                     onMergeInto = { mergeSource = list },
+                    onShare = { onShareList(list) },
                 )
             }
         }
@@ -1397,6 +1400,7 @@ private fun CollectionCard(
     onMoveEarlier: () -> Unit = {},
     onMoveLater: () -> Unit = {},
     onMergeInto: () -> Unit = {},
+    onShare: () -> Unit = {},
     onToggleBlurExempt: () -> Unit,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -1688,6 +1692,11 @@ private fun CollectionCard(
                             text = { Text("Merge into…") },
                             onClick = { onMergeInto(); showMoreMenu = false },
                             leadingIcon = { Icon(Icons.Default.CallMerge, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share collection") },
+                            onClick = { onShare(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                         )
                         DropdownMenuItem(
                             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },

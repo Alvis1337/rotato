@@ -4,4 +4,6 @@
     <external-files-path name="apk_downloads" path="." />
     <!-- Used for sharing the debug log -->
     <files-path name="internal_files" path="." />
+    <!-- Collections shared as files -->
+    <cache-path name="shared_collections" path="shared/" />
 </paths>

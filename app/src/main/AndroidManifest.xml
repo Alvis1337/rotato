@@ -63,6 +63,33 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Automation (Tasker, Routines, launcher shortcuts): see AutomationReceiver -->
+        <receiver
+            android:name=".worker.AutomationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.chrisalvis.rotato.action.NEXT" />
+                <action android:name="com.chrisalvis.rotato.action.PREVIOUS" />
+                <action android:name="com.chrisalvis.rotato.action.SAVE" />
+                <action android:name="com.chrisalvis.rotato.action.SWITCH_COLLECTION" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".worker.AutomationActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="com.chrisalvis.rotato.action.NEXT" />
+                <action android:name="com.chrisalvis.rotato.action.PREVIOUS" />
+                <action android:name="com.chrisalvis.rotato.action.SAVE" />
+                <action android:name="com.chrisalvis.rotato.action.SWITCH_COLLECTION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <receiver
             android:name=".worker.BootReceiver"
             android:exported="false">

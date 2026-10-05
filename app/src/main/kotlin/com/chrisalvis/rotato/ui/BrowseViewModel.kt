@@ -1054,6 +1054,62 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         context.startActivity(chooser)
     }
 
+    /**
+     * Shares [list] as a small file another Rotato can import from Collections (the import
+     * button). It holds the collection's name and its images' links and tags only: no settings,
+     * sources, or keys. Images added from the device aren't included (they have no link).
+     */
+    fun shareCollection(context: Context, list: LocalList) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val entries = localLists.allWallpapers.first().filter { it.listId == list.id && it.source != "device" }
+            if (entries.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Nothing to share: this collection has no linked images", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            val json = JSONObject().apply {
+                put("version", 4)
+                put("kind", "rotato-collection")
+                put("collections", JSONArray().put(JSONObject().put("id", list.id).put("name", list.name)))
+                put("collectionWallpapers", JSONArray().also { arr ->
+                    entries.forEach { e ->
+                        arr.put(JSONObject().apply {
+                            put("listId", list.id)
+                            put("sourceId", e.sourceId)
+                            put("source", e.source)
+                            put("thumbUrl", e.thumbUrl)
+                            put("sampleUrl", e.sampleUrl)
+                            put("fullUrl", e.fullUrl)
+                            put("resolution", e.resolution)
+                            put("pageUrl", e.pageUrl)
+                            put("tags", JSONArray(e.tags))
+                            put("isVideo", e.isVideo)
+                            put("isNsfw", e.isNsfw)
+                        })
+                    }
+                })
+            }
+            val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+            val safeName = list.name.replace(Regex("[^A-Za-z0-9 _-]"), "").trim().ifBlank { "collection" }
+            val file = File(dir, "$safeName.rotato.json")
+            file.writeText(json.toString())
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "${list.name} (Rotato collection)")
+                putExtra(Intent.EXTRA_TEXT, "${list.name}: ${entries.size} wallpapers. Open Rotato › Collections › Import to add it.")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            withContext(Dispatchers.Main) {
+                val chooser = Intent.createChooser(send, "Share \"${list.name}\"")
+                if (context !is android.app.Activity) chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+            }
+        }
+    }
+
     fun restoreFromBackup(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1144,7 +1200,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                             resolution = item.optString("resolution"),
                             pageUrl = item.optString("pageUrl"),
                             tags = tags,
-                            addedAt = item.optLong("addedAt", System.currentTimeMillis())
+                            addedAt = item.optLong("addedAt", System.currentTimeMillis()),
+                            isVideo = item.optBoolean("isVideo", false),
+                            isNsfw = item.optBoolean("isNsfw", false),
                         )
                     )
                     restoredImages++

@@ -62,6 +62,11 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 if (hidden) unlockedListIds.value = emptySet()
             }
         }
+        appScope.launch {
+            com.chrisalvis.rotato.data.RotatoPreferences(this@RotatoApp).enhanceLowRes.collect {
+                com.chrisalvis.rotato.data.enhanceLowResImages = it
+            }
+        }
         // Key/value backup only uploads after dataChanged(); nothing ever called it, so the
         // "Google Drive backup" setting never actually backed anything up after the first time.
         appScope.launch {
