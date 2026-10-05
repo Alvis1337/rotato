@@ -301,6 +301,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             onShare = { wp ->
                 vm.shareWallpapers(context, listOf(wp.toLocalWallpaperEntry(selectedList?.id.orEmpty())))
             },
+            moveTargets = lists.filter { it.id != selectedList?.id && !it.isSmartCollection },
+            onMoveTo = { wp, target -> vm.moveEntryToList(wp.entryId, target.id) },
             onDismiss = { lastViewed ->
                 previewWallpaper = null
                 val idx = wallpapers.indexOfFirst { it.entryId == lastViewed?.entryId }.takeIf { it >= 0 }
@@ -676,6 +678,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                     )
                 },
                 onLockAll = { vm.lockAll() },
+                onMoveList = { list, delta -> vm.moveList(list, delta) },
+                onMergeList = { from, into -> vm.mergeLists(from, into) },
                 onPickImages = { list ->
                     pickerTargetListId = list.id
                     photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -1194,6 +1198,8 @@ private fun ListPickerContent(
     onRelockForSession: (LocalList) -> Unit,
     onShowHidden: () -> Unit,
     onLockAll: () -> Unit,
+    onMoveList: (LocalList, Int) -> Unit,
+    onMergeList: (from: LocalList, into: LocalList) -> Unit,
     onPickImages: (LocalList) -> Unit,
     onFetchFromSources: (LocalList) -> Unit,
     onToggleBlurExempt: (LocalList) -> Unit,
@@ -1228,6 +1234,7 @@ private fun ListPickerContent(
         }
     } else {
         var listToDelete by remember { mutableStateOf<LocalList?>(null) }
+        var mergeSource by remember { mutableStateOf<LocalList?>(null) }
         listToDelete?.let { list ->
             AlertDialog(
                 onDismissRequest = { listToDelete = null },
@@ -1285,8 +1292,37 @@ private fun ListPickerContent(
                     onPickImages = { onPickImages(list) },
                     onFetchFromSources = { onFetchFromSources(list) },
                     onToggleBlurExempt = { onToggleBlurExempt(list) },
+                    onMoveEarlier = { onMoveList(list, -1) },
+                    onMoveLater = { onMoveList(list, 1) },
+                    onMergeInto = { mergeSource = list },
                 )
             }
+        }
+        mergeSource?.let { from ->
+            val targets = lists.filter { it.id != from.id }
+            AlertDialog(
+                onDismissRequest = { mergeSource = null },
+                title = { Text("Merge \"${from.name}\" into…") },
+                text = {
+                    if (targets.isEmpty()) Text("There's no other collection to merge into.")
+                    else Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Text(
+                            "Its images move to the collection you pick (duplicates are skipped) and \"${from.name}\" is removed.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        targets.forEach { into ->
+                            TextButton(
+                                onClick = { onMergeList(from, into); mergeSource = null },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(into.name, modifier = Modifier.fillMaxWidth()) }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { mergeSource = null }) { Text("Cancel") } }
+            )
         }
     }
 }
@@ -1353,6 +1389,9 @@ private fun CollectionCard(
     onRelockForSession: () -> Unit,
     onPickImages: () -> Unit,
     onFetchFromSources: () -> Unit,
+    onMoveEarlier: () -> Unit = {},
+    onMoveLater: () -> Unit = {},
+    onMergeInto: () -> Unit = {},
     onToggleBlurExempt: () -> Unit,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -1627,6 +1666,22 @@ private fun CollectionCard(
                                 leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) }
                             )
                         }
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Move earlier") },
+                            onClick = { onMoveEarlier(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.ArrowUpward, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Move later") },
+                            onClick = { onMoveLater(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.ArrowDownward, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Merge into…") },
+                            onClick = { onMergeInto(); showMoreMenu = false },
+                            leadingIcon = { Icon(Icons.Default.CallMerge, contentDescription = null) }
+                        )
                         DropdownMenuItem(
                             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                             onClick = { onDelete(); showMoreMenu = false },
@@ -2013,6 +2068,8 @@ private fun WallpaperUrlPreviewDialog(
     onSetAsCover: (BrowseWallpaper) -> Unit,
     onCopyUrl: (BrowseWallpaper) -> Unit,
     onShare: (BrowseWallpaper) -> Unit,
+    moveTargets: List<LocalList> = emptyList(),
+    onMoveTo: (BrowseWallpaper, LocalList) -> Unit = { _, _ -> },
     onDismiss: (currentWallpaper: BrowseWallpaper?) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -2385,6 +2442,16 @@ private fun WallpaperUrlPreviewDialog(
                                     leadingIcon = { Icon(Icons.Default.Share, null) },
                                     onClick = { onShare(wp); showMoreMenu = false }
                                 )
+                                if (wp.entryId.isNotBlank() && moveTargets.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    moveTargets.forEach { target ->
+                                        DropdownMenuItem(
+                                            text = { Text("Move to ${target.name}") },
+                                            leadingIcon = { Icon(Icons.Default.DriveFileMove, null) },
+                                            onClick = { onMoveTo(wp, target); showMoreMenu = false }
+                                        )
+                                    }
+                                }
                             }
                         }
 

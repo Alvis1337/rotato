@@ -1433,22 +1433,30 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         if (targetListId == currentListId) { exitSelectionMode(); return }
         val selectedIds = _selected.value
         viewModelScope.launch {
-            val targetUrls = localLists.wallpapersForList(targetListId).first()
-                .map { it.fullUrl }
-                .toMutableSet()
-            val sourceEntries = localLists.allWallpapers.first()
-                .filter { it.listId == currentListId && it.id in selectedIds }
-            var duplicateFound = false
-            sourceEntries.forEach { entry ->
-                if (!targetUrls.add(entry.fullUrl)) {
-                    duplicateFound = true
-                    return@forEach
-                }
-                localLists.removeWallpaper(entry.id)
-                localLists.addWallpaperEntry(entry.copy(listId = targetListId))
-            }
-            if (duplicateFound) _duplicateWarning.emit("Already in collection")
+            // One write; images already in the target are dropped from here instead of duplicated.
+            val moved = localLists.moveEntries(selectedIds, targetListId)
+            if (moved < selectedIds.size) _duplicateWarning.emit("Some were already in that collection")
             exitSelectionMode()
+        }
+    }
+
+    fun moveEntryToList(entryId: String, targetListId: String) {
+        viewModelScope.launch {
+            val moved = localLists.moveEntries(setOf(entryId), targetListId)
+            val name = _allLists.value.find { it.id == targetListId }?.name ?: "collection"
+            Toast.makeText(app, if (moved > 0) "Moved to \"$name\"" else "Already in \"$name\"", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun moveList(list: LocalList, delta: Int) {
+        viewModelScope.launch { localLists.moveList(list.id, delta) }
+    }
+
+    fun mergeLists(from: LocalList, into: LocalList) {
+        viewModelScope.launch {
+            val moved = localLists.mergeLists(from.id, into.id)
+            if (_selectedListId.value == from.id) _selectedListId.update { into.id }
+            Toast.makeText(app, "Merged $moved image${if (moved == 1) "" else "s"} into \"${into.name}\"", Toast.LENGTH_SHORT).show()
         }
     }
 

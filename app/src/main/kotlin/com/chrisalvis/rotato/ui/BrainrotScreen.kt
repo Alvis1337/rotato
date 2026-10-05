@@ -172,6 +172,7 @@ fun BrainrotScreen(
     val savedListIds by vm.savedListIds.collectAsStateWithLifecycle()
     val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val foldPairOuter by vm.foldPairOuter.collectAsStateWithLifecycle()
+    val forYouEnabled by vm.forYouEnabled.collectAsStateWithLifecycle()
     val foldPairBusy by vm.foldPairBusy.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
@@ -414,6 +415,9 @@ fun BrainrotScreen(
                 onSetAspectRatio = { vm.setAspectRatio(it) },
                 isFoldable = vm.isFoldable,
                 onSetFoldFriendly = { vm.setFoldFriendly(it) },
+                forYouEnabled = forYouEnabled,
+                onSetForYou = { vm.setForYouEnabled(it) },
+                onResetLearned = { vm.resetLearnedTaste() },
                 onSetUseMalFilter = { vm.setUseMalFilter(it) },
                 onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
                 onToggleProfile = { vm.toggleDiscoverProfile(it) },
@@ -2237,6 +2241,9 @@ private fun DiscoverSettingsSheetContent(
     onSetAspectRatio: (AspectRatio) -> Unit,
     isFoldable: Boolean = false,
     onSetFoldFriendly: (Boolean) -> Unit = {},
+    forYouEnabled: Boolean = true,
+    onSetForYou: (Boolean) -> Unit = {},
+    onResetLearned: () -> Unit = {},
     onSetUseMalFilter: (Boolean) -> Unit,
     onSetInterestAlign: (Boolean) -> Unit,
     onToggleProfile: (String) -> Unit,
@@ -2339,6 +2346,17 @@ private fun DiscoverSettingsSheetContent(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
             )
+        }
+
+        SettingsToggleRow(
+            title = "For you",
+            subtitle = "Order the feed by what you save, set and skip, favouring sharp images" +
+                if (isFoldable) " that fill both screens" else "",
+            checked = forYouEnabled,
+            onCheckedChange = onSetForYou,
+        )
+        if (forYouEnabled) {
+            TextButton(onClick = onResetLearned) { Text("Forget what Discover has learned") }
         }
 
         if (isFoldable) {

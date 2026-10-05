@@ -100,6 +100,9 @@ fun AboutDataSettingsScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri -> uri?.let { viewModel.exportSettings(it) } }
+    val autoBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { com.chrisalvis.rotato.worker.AutoBackupWorker.enable(context, it) } }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { viewModel.importSettings(it) } }
@@ -208,7 +211,7 @@ fun AboutDataSettingsScreen(
                         )
                         SettingsToggleRow(
                             title = "Google Drive backup",
-                            subtitle = "Automatically back up settings to your Google account",
+                            subtitle = "Android's own backup to your Google account (settings and collections, restored on reinstall)",
                             checked = googleDriveBackupEnabled,
                             onCheckedChange = { viewModel.setGoogleDriveBackupEnabled(it) }
                         )
@@ -237,6 +240,10 @@ fun AboutDataSettingsScreen(
                                 Text("Import")
                             }
                         }
+                    }
+
+                    SettingsSection(title = "Automatic backup") {
+                        AutoBackupRow(onChooseFile = { autoBackupLauncher.launch("rotato-auto-backup.json") })
                     }
 
                     SettingsSection(title = "Danger Zone") {
@@ -456,6 +463,64 @@ private fun DebugLogSheet(onDismiss: () -> Unit) {
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+
+/**
+ * Daily backup to a file the user picks once (Google Drive works through the system picker).
+ * Shows when it last ran, any problem, and lets the user run it now or stop it.
+ */
+@androidx.compose.runtime.Composable
+private fun AutoBackupRow(onChooseFile: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val store = androidx.compose.runtime.remember { com.chrisalvis.rotato.worker.AutoBackupWorker.store(context) }
+    var tick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.runtime.DisposableEffect(store) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> tick++ }
+        store.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { store.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val (uri, lastMs, error) = androidx.compose.runtime.remember(tick) {
+        Triple(
+            com.chrisalvis.rotato.worker.AutoBackupWorker.backupUri(context),
+            store.getLong(com.chrisalvis.rotato.worker.AutoBackupWorker.KEY_LAST_MS, 0L),
+            store.getString(com.chrisalvis.rotato.worker.AutoBackupWorker.KEY_ERROR, null),
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            if (uri == null) "Keep a backup file up to date every day. Pick a spot in Google Drive (or anywhere) once; restore it any time with Import."
+            else "Backing up daily to ${uri.lastPathSegment?.substringAfterLast('/') ?: "your file"}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (uri != null) {
+            Text(
+                when {
+                    error != null -> error
+                    lastMs > 0 -> "Last backup: " + android.text.format.DateUtils.getRelativeTimeSpanString(lastMs)
+                    else -> "First backup running…"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            if (uri == null || error != null) {
+                OutlinedButton(onClick = onChooseFile, modifier = Modifier.weight(1f)) {
+                    Text(if (uri == null) "Choose backup file" else "Choose file again")
+                }
+            }
+            if (uri != null) {
+                OutlinedButton(
+                    onClick = { com.chrisalvis.rotato.worker.AutoBackupWorker.runNow(context) },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Back up now") }
+                TextButton(onClick = { com.chrisalvis.rotato.worker.AutoBackupWorker.disable(context); tick++ }) { Text("Stop") }
             }
         }
     }

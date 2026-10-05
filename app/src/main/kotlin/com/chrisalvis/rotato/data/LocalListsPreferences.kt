@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,6 +70,56 @@ class LocalListsPreferences(private val context: Context) {
             prefs[LISTS_KEY] = serializeLists(parseLists(prefs[LISTS_KEY] ?: "[]").filter { it.id != id })
             prefs[WALLPAPERS_KEY] = serializeWallpapers(parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.listId != id })
         }
+    }
+
+    /** Moves a collection [delta] places earlier (negative) or later (positive) in the grid. */
+    suspend fun moveList(id: String, delta: Int) {
+        context.dataStore.edit { prefs ->
+            val lists = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
+            val from = lists.indexOfFirst { it.id == id }
+            if (from == -1) return@edit
+            val to = (from + delta).coerceIn(0, lists.lastIndex)
+            if (to == from) return@edit
+            lists.add(to, lists.removeAt(from))
+            prefs[LISTS_KEY] = serializeLists(lists)
+        }
+    }
+
+    /**
+     * Moves entries to [targetListId] in one write. Entries already in the target (same source
+     * id or URL) are dropped instead of duplicated. Returns how many were moved.
+     */
+    suspend fun moveEntries(entryIds: Set<String>, targetListId: String): Int {
+        var moved = 0
+        context.dataStore.edit { prefs ->
+            val all = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
+            val inTarget = all.filter { it.listId == targetListId }
+            val ids = inTarget.mapTo(HashSet()) { it.sourceId }
+            val urls = inTarget.mapNotNullTo(HashSet()) { it.fullUrl.ifBlank { null } }
+            val updated = all.mapNotNull { e ->
+                when {
+                    e.id !in entryIds || e.listId == targetListId -> e
+                    e.sourceId in ids || (e.fullUrl.isNotBlank() && e.fullUrl in urls) -> null
+                    else -> {
+                        ids += e.sourceId; if (e.fullUrl.isNotBlank()) urls += e.fullUrl
+                        moved++
+                        e.copy(listId = targetListId)
+                    }
+                }
+            }
+            prefs[WALLPAPERS_KEY] = serializeWallpapers(updated)
+        }
+        return moved
+    }
+
+    /** Moves everything from [fromId] into [intoId] (skipping duplicates) and deletes [fromId]. */
+    suspend fun mergeLists(fromId: String, intoId: String): Int {
+        if (fromId == intoId) return 0
+        val ids = parseWallpapers(context.dataStore.data.first()[WALLPAPERS_KEY] ?: "[]")
+            .filter { it.listId == fromId }.mapTo(HashSet()) { it.id }
+        val moved = moveEntries(ids, intoId)
+        deleteList(fromId)
+        return moved
     }
 
     /** Returns true if the rename was applied, false if name is blank or already taken by another list. */

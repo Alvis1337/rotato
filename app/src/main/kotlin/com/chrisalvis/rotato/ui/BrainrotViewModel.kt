@@ -90,6 +90,27 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val localSources = LocalSourcesPreferences(app)
     private val malPrefs = MalPreferences(app)
     private val tastePrefs = TastePreferences(app)
+    private val learnedTaste = com.chrisalvis.rotato.data.LearnedTaste(app)
+    private val foldCanvasForRanking: com.chrisalvis.rotato.data.WallpaperCanvas? =
+        if (com.chrisalvis.rotato.data.isFoldable(app)) com.chrisalvis.rotato.data.wallpaperTargetSize(app) else null
+
+    val forYouEnabled: StateFlow<Boolean> = learnedTaste.forYouEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setForYouEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            learnedTaste.setForYouEnabled(enabled)
+            loadMore(reset = true)
+        }
+    }
+
+    fun resetLearnedTaste() {
+        viewModelScope.launch { learnedTaste.reset() }
+    }
+
+    private fun learn(wp: BrainrotWallpaper, signal: com.chrisalvis.rotato.data.LearnedTaste.Signal) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { learnedTaste.record(wp.tags, signal) } }
+    }
     private val malRepo = MalRepository(app)
     private val feedRepo = FeedRepository(File(app.filesDir, "rotato_images").also { it.mkdirs() })
     private val pluginRepository = PluginRepository(app)
@@ -563,6 +584,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         rest + demoted
                     }
                     else -> newItems
+                }.let { ordered ->
+                    // "For you": rank each batch by learned taste and how well it'll work as a
+                    // wallpaper here, with a little jitter so the feed doesn't feel sorted.
+                    if (!learnedTaste.forYouEnabled.first() || explicitQuery.isNotBlank()) ordered
+                    else {
+                        val weights = learnedTaste.weights.first()
+                        val rank = ordered.withIndex().associate { (i, wp) -> wp to -i * 0.02f }
+                        ordered.sortedByDescending { wp ->
+                            com.chrisalvis.rotato.data.LearnedTaste.score(wp, weights, foldCanvasForRanking) +
+                                (rank[wp] ?: 0f) + kotlin.random.Random.nextFloat() * 0.8f
+                        }
+                    }
                 }
                 _gridItems.update { it + orderedItems }  // single batch update → one recomposition
                 _hasNewBatch.update { true }
@@ -790,6 +823,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun skip(wp: BrainrotWallpaper) {
+        learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SKIPPED)
         if (undoStack.size >= 3) undoStack.removeFirst()
         undoStack.addLast(wp)
         _skipEvent.tryEmit(Unit)
@@ -805,6 +839,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun blockImage(wp: BrainrotWallpaper) {
+        learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.BLOCKED)
         val key = "${wp.source}:${wp.id}"
         persistentBlockedKeys.add(key)
         displayedKeys.add(key)
@@ -829,6 +864,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setWallpaperDirectly(wp: BrainrotWallpaper) {
+        learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SET_WALLPAPER)
         if (wp.isVideo) {
             Toast.makeText(getApplication(), "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
             return
@@ -886,6 +922,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addToList(listId: String, wp: BrainrotWallpaper, leaveGrid: Boolean = true) {
+        learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SAVED)
         _selectedListId.update { listId }
         if (leaveGrid) removeFromGrid(wp)
         viewModelScope.launch {
@@ -1265,6 +1302,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun downloadToRotation(wp: BrainrotWallpaper) {
+        learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.DOWNLOADED)
         if (wp.isVideo) {
             Toast.makeText(getApplication(), "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
             return
@@ -1292,6 +1330,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveToGallery(wp: BrainrotWallpaper) {
+        learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.DOWNLOADED)
         val key = "gallery:${wp.id}"
         if (_downloadingIds.value.contains(key)) return
         viewModelScope.launch {
