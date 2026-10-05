@@ -2043,7 +2043,6 @@ private fun WallpaperDetailOverlay(
                 wallpaper = wallpaper,
                 foldCanvas = foldCanvas,
                 onTagSearch = { tag -> showInfoExpanded = false; onTagSearch(tag) },
-                onMoreLikeThis = { query -> showInfoExpanded = false; onTagSearch(query) },
                 onTagActions = { tag -> showInfoExpanded = false; tagActionTag = tag },
                 onDismiss = { showInfoExpanded = false },
             )
@@ -2782,7 +2781,7 @@ private fun InfoPill(
 
 /**
  * Everything about the current image, opened by swiping up (or tapping the info pills): its
- * facts, a link to the post, every tag, and a "more like this" search built from its top tags.
+ * facts, a link to the post, and every tag.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -2790,7 +2789,6 @@ private fun ImageDetailsSheet(
     wallpaper: BrainrotWallpaper,
     foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
     onTagSearch: (String) -> Unit,
-    onMoreLikeThis: (String) -> Unit,
     onTagActions: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2818,14 +2816,6 @@ private fun ImageDetailsSheet(
                         Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Open post")
-                    }
-                }
-                val related = wallpaper.tags.take(2).joinToString(" ")
-                if (related.isNotBlank()) {
-                    FilledTonalButton(onClick = { onMoreLikeThis(related) }) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("More like this")
                     }
                 }
             }
