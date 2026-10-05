@@ -310,6 +310,7 @@ private fun LibraryContent(
     val lastSkipReason by viewModel.lastSkipReason.collectAsStateWithLifecycle()
     val setNowErrorMessage by viewModel.setNowErrorMessage.collectAsStateWithLifecycle()
     val hasPreviousWallpaper by viewModel.hasPreviousWallpaper.collectAsStateWithLifecycle()
+    val pairedPaths by viewModel.pairedPaths.collectAsStateWithLifecycle()
     var showSaveToListDialog by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
