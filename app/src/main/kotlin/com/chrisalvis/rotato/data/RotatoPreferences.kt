@@ -97,7 +97,7 @@ class RotatoPreferences(private val context: Context) {
             } ?: WallpaperTarget.BOTH,
             wallpaperFit = prefs[WALLPAPER_FIT]?.let {
                 runCatching { WallpaperFit.valueOf(it) }.getOrNull()
-            } ?: WallpaperFit.FILL,
+            } ?: WallpaperFit.SMART,
             videoPreviewMode = prefs[VIDEO_PREVIEW_MODE]?.let {
                 runCatching { VideoPreviewMode.valueOf(it) }.getOrNull()
             } ?: VideoPreviewMode.AUTOPLAY,

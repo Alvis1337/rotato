@@ -70,7 +70,7 @@ class TastePreferences(private val context: Context) {
             val json = prefs[INTEREST_PROFILES_KEY] ?: return@map emptyList()
             runCatching {
                 val arr = JSONArray(json)
-                (0 until arr.length()).map { InterestProfile.fromJson(arr.getJSONObject(it)) }
+                arr.mapObjectsSafely { InterestProfile.fromJson(it) }
             }.getOrDefault(emptyList())
         }
 

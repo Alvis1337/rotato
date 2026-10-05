@@ -67,8 +67,7 @@ class SchedulePreferences(private val context: Context) {
 
     private fun parseEntries(json: String): List<ScheduleEntry> = try {
         val arr = JSONArray(json)
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
+        arr.mapObjectsSafely { o ->
             val daysArr = o.getJSONArray("days")
             val listIds = o.optJSONArray("listIds")
                 ?.let { ids -> (0 until ids.length()).map { ids.optString(it) }.filter { it.isNotBlank() }.toSet() }

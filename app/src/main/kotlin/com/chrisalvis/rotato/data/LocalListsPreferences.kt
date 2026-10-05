@@ -230,8 +230,7 @@ class LocalListsPreferences(private val context: Context) {
 
     private fun parseLists(json: String): List<LocalList> = try {
         val arr = JSONArray(json)
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
+        arr.mapObjectsSafely { o ->
             val smartRuleObj = o.optJSONObject("smartRule")
             val smartRule = if (smartRuleObj != null) SmartRule(
                 requireAll = smartRuleObj.optJSONArray("requireAll")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
@@ -321,8 +320,7 @@ class LocalListsPreferences(private val context: Context) {
 
     private fun parseWallpapers(json: String): List<LocalWallpaperEntry> = try {
         val arr = JSONArray(json)
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
+        arr.mapObjectsSafely { o ->
             val tagsArr = o.optJSONArray("tags")
             val listId = o.getString("listId")
             val sourceId = o.getString("sourceId")

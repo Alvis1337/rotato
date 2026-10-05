@@ -29,8 +29,7 @@ fun List<WallpaperHistoryItem>.toJson(): String = JSONArray().also { arr ->
 
 fun historyFromJson(json: String): List<WallpaperHistoryItem> = try {
     val arr = JSONArray(json)
-    (0 until arr.length()).map { i ->
-        val o = arr.getJSONObject(i)
+    arr.mapObjectsSafely { o ->
         val tagsArr = o.optJSONArray("tags")
         val tags = if (tagsArr != null) (0 until tagsArr.length()).map { tagsArr.getString(it) } else emptyList()
         WallpaperHistoryItem(

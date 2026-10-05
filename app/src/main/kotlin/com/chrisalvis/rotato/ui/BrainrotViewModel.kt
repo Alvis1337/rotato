@@ -780,7 +780,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 // The source bitmap belongs to Coil's memory cache, so only the copy is recycled.
                 val screenBitmap = fitWallpaperBitmap(bitmap, settings.wallpaperFit, target)
                 try {
-                    setWallpaperBitmap(app, wm, screenBitmap, flags)
+                    setWallpaperBitmap(app, wm, screenBitmap, flags, settings.wallpaperFit)
                 } finally {
                     screenBitmap.recycle()
                 }

@@ -7,7 +7,8 @@ enum class WallpaperTarget(val label: String) {
 }
 
 enum class WallpaperFit(val label: String) {
-    FILL("Fill (crop to fit)"),
+    SMART("Smart fill (crop around the subject)"),
+    FILL("Fill (centre crop)"),
     FIT("Fit (letterbox)"),
     STRETCH("Stretch"),
 }
@@ -24,7 +25,7 @@ data class RotatoSettings(
     val shuffleMode: Boolean = true,
     val currentIndex: Int = 0,
     val wallpaperTarget: WallpaperTarget = WallpaperTarget.BOTH,
-    val wallpaperFit: WallpaperFit = WallpaperFit.FILL,
+    val wallpaperFit: WallpaperFit = WallpaperFit.SMART,
     val videoPreviewMode: VideoPreviewMode = VideoPreviewMode.AUTOPLAY,
 )
 

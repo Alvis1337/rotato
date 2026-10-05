@@ -546,7 +546,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val screenBitmap = com.chrisalvis.rotato.data.fitWallpaperBitmap(bitmap, settingsVal.wallpaperFit, target)
                 bitmap.recycle()
                 try {
-                    setWallpaperBitmap(app, wallpaperManager, screenBitmap, flags)
+                    setWallpaperBitmap(app, wallpaperManager, screenBitmap, flags, settingsVal.wallpaperFit)
                 } finally {
                     screenBitmap.recycle()
                 }

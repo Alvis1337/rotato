@@ -235,25 +235,25 @@ class WallpaperWorker(
 
             try {
                 when (effectiveTarget) {
-                    WallpaperTarget.HOME_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM)
-                    WallpaperTarget.LOCK_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK)
+                    WallpaperTarget.HOME_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM, settings.wallpaperFit)
+                    WallpaperTarget.LOCK_ONLY -> setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit)
                     WallpaperTarget.BOTH -> {
                         if (hasPerScreen && lockTargetFile != targetFile) {
-                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM)
+                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM, settings.wallpaperFit)
                             val lockBitmap = loadScaledBitmap(applicationContext, lockTargetFile.absolutePath)
                             if (lockBitmap != null) {
                                 val lockScreenBitmap = scaleBitmap(lockBitmap)
                                 lockBitmap.recycle()
-                                try { setWallpaperBitmap(applicationContext, wallpaperManager, lockScreenBitmap, WallpaperManager.FLAG_LOCK) }
+                                try { setWallpaperBitmap(applicationContext, wallpaperManager, lockScreenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit) }
                                 finally { lockScreenBitmap.recycle() }
                             } else {
                                 // Lock image unreadable — fall back to home screen image and record a warning
                                 val errorType = if (lockTargetFile.exists()) RotationErrorType.IMAGE_CORRUPT else RotationErrorType.IMAGE_MISSING
                                 prefs.addRotationError(RotationError(errorType, "Lock screen image unavailable: ${lockTargetFile.name}"))
-                                setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK)
+                                setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_LOCK, settings.wallpaperFit)
                             }
                         } else {
-                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                            setWallpaperBitmap(applicationContext, wallpaperManager, screenBitmap, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK, settings.wallpaperFit)
                         }
                     }
                 }
