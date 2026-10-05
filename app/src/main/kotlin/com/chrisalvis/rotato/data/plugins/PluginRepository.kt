@@ -103,6 +103,21 @@ class PluginRepository(private val context: Context) {
         }
     }
 
+    /** Built-in plugins shipped in assets that aren't currently installed (e.g. removed by the user). */
+    val missingBundledManifests: Flow<List<PluginManifest>> get() = installedManifests.map { installed ->
+        val have = installed.mapTo(HashSet()) { it.id }
+        bundledCache.filter { it.id !in have }
+    }
+
+    private val bundledCache: List<PluginManifest> by lazy { loadBundledManifests() }
+
+    /** Reinstalls a built-in plugin from assets, with no network needed. */
+    suspend fun installBundled(id: String): PluginManifest? = withContext(Dispatchers.IO) {
+        val manifest = bundledCache.firstOrNull { it.id == id } ?: return@withContext null
+        saveManifest(manifest)
+        manifest
+    }
+
     /** Removes an installed plugin by [id]. No-op if not installed. */
     suspend fun uninstall(id: String) {
         context.dataStore.edit { prefs ->

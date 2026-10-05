@@ -44,6 +44,7 @@ import com.chrisalvis.rotato.data.plugins.FieldType
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginManifest
+import kotlinx.coroutines.flow.flowOn
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -106,6 +107,18 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
             pluginRepository.installedManifests.collect { installed ->
                 prefs.ensureRowsFor(installed.map { it.id })
             }
+        }
+    }
+
+    val missingBuiltIns: StateFlow<List<PluginManifest>> = pluginRepository.missingBundledManifests
+        .flowOn(kotlinx.coroutines.Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Puts a removed built-in source back, switched on. */
+    fun reinstallBuiltIn(id: String) {
+        viewModelScope.launch {
+            val manifest = pluginRepository.installBundled(id) ?: return@launch
+            prefs.setPluginEnabled(manifest.id, true)
         }
     }
 
@@ -252,6 +265,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
     val testingSource by vm.testingSource.collectAsStateWithLifecycle()
     val manifests by vm.manifests.collectAsStateWithLifecycle()
     val installedManifests by vm.installedManifests.collectAsStateWithLifecycle()
+    val missingBuiltIns by vm.missingBuiltIns.collectAsStateWithLifecycle()
     val showMigrationNotice by vm.showMigrationNotice.collectAsStateWithLifecycle()
 
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
@@ -554,6 +568,38 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
                                     Text("Uninstall")
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            if (missingBuiltIns.isNotEmpty()) {
+                item {
+                    Text(
+                        "REMOVED BUILT-IN SOURCES",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(missingBuiltIns, key = { "builtin:${it.id}" }) { manifest ->
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(manifest.name, fontWeight = FontWeight.Medium)
+                                if (manifest.description.isNotBlank()) {
+                                    Text(
+                                        manifest.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2
+                                    )
+                                }
+                            }
+                            FilledTonalButton(onClick = { vm.reinstallBuiltIn(manifest.id) }) { Text("Add back") }
                         }
                     }
                 }

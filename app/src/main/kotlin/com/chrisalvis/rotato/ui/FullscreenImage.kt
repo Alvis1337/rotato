@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -190,6 +191,7 @@ class ZoomState {
         val applied = newScale / scale
         val rel = focus - Offset(size.width / 2f, size.height / 2f)
         val raw = rel - (rel - offset) * applied + pan
+        if (raw.x.isNaN() || raw.y.isNaN() || newScale.isNaN()) return
         // Keep the image covering the page while panning.
         val maxX = size.width * (newScale - 1f) / 2f
         val maxY = size.height * (newScale - 1f) / 2f
@@ -250,8 +252,12 @@ fun Modifier.zoomGestures(
             awaitFirstDown(requireUnconsumed = false)
             do {
                 val event = awaitPointerEvent()
-                if (event.changes.count { it.pressed } >= 2 || state.zoomed) {
-                    state.zoomAround(event.calculateCentroid(), event.calculateZoom(), event.calculatePan())
+                val fingers = event.changes.count { it.pressed }
+                // The lift-off event has no pressed pointers, so its centroid is Unspecified (NaN);
+                // feeding that in turned the offset into NaN and the zoomed image vanished.
+                val centroid = event.calculateCentroid()
+                if (fingers > 0 && centroid.isSpecified && (fingers >= 2 || state.zoomed)) {
+                    state.zoomAround(centroid, event.calculateZoom(), event.calculatePan())
                     event.changes.forEach { if (it.positionChanged()) it.consume() }
                 }
             } while (event.changes.any { it.pressed })
