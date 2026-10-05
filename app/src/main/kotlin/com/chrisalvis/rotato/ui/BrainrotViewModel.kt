@@ -822,13 +822,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (idx > 0) _selectedItem.update { items[idx - 1] }
     }
 
-    fun skip(wp: BrainrotWallpaper) {
+    /** [closeViewer] false keeps the viewer open, which then lands on the next image. */
+    fun skip(wp: BrainrotWallpaper, closeViewer: Boolean = true) {
         learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SKIPPED)
         if (undoStack.size >= 3) undoStack.removeFirst()
         undoStack.addLast(wp)
         _skipEvent.tryEmit(Unit)
         removeFromGrid(wp)
-        _selectedItem.update { null }
+        if (closeViewer) _selectedItem.update { null }
     }
 
     /** Block a URL permanently and remove the wallpaper from the current grid. */

@@ -6,6 +6,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateCentroid
@@ -56,6 +58,7 @@ import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1074,7 +1077,7 @@ fun BrainrotScreen(
                             lists = lists,
                             isDownloadingFn = { downloadingIds.contains(it.id) },
                             isSavingToGalleryFn = { downloadingIds.contains("gallery:${it.id}") },
-                            onSkip = { w -> vm.skip(w) },
+                            onSkip = { w -> vm.skip(w, closeViewer = false) },
                             onAddToList = { w, list -> onAddToList(w, list) },
                             onDownloadToRotation = { w -> vm.downloadToRotation(w) },
                             onSaveToGallery = { w -> vm.saveToGallery(w) },
@@ -1544,6 +1547,7 @@ private fun WallpaperDetailOverlay(
     var chromeVisible by remember { mutableStateOf(true) }
     val zoomed = zoom.zoomed
     var showInfoExpanded by remember { mutableStateOf(false) }
+    var dockHinted by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
@@ -1811,7 +1815,64 @@ private fun WallpaperDetailOverlay(
             )
         }
 
-        // Info about the image as pills along the top
+        val isDownloading = isDownloadingFn(wallpaper)
+        val isSavingToGallery = isSavingToGalleryFn(wallpaper)
+        val savedIn = savedListIdsFn(wallpaper)
+        val shareWallpaper = {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, wallpaper.pageUrl.takeIf { it.startsWith("http") } ?: wallpaper.fullUrl)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share"))
+        }
+        val foldPairState = if (canFoldPair && !wallpaper.isVideo) {
+            val outer = foldPairOuter
+            when {
+                foldPairBusy -> FoldPairState.Busy
+                outer == null -> FoldPairState.Idle
+                outer.id == wallpaper.id && outer.source == wallpaper.source -> FoldPairState.PickedHere
+                else -> FoldPairState.ReadyToPair
+            }
+        } else null
+        val onFoldPair = {
+            when (foldPairState) {
+                FoldPairState.Idle -> {
+                    onPickFoldOuter(wallpaper)
+                    Toast.makeText(context, "Cover screen picked. Swipe to an image for the big screen.", Toast.LENGTH_LONG).show()
+                }
+                FoldPairState.PickedHere -> onPickFoldOuter(null)
+                FoldPairState.ReadyToPair -> showFoldPreview = true
+                else -> Unit
+            }
+        }
+        // One set of actions, shown in the dock and again at the top of the details sheet, so
+        // the expanded view reads as the dock grown taller rather than a different screen.
+        val actions: @Composable (Modifier) -> Unit = { mod ->
+            ViewerActions(
+                wallpaper = wallpaper,
+                saved = savedIn.isNotEmpty(),
+                isDownloading = isDownloading,
+                foldPairState = foldPairState,
+                lists = lists,
+                savedIn = savedIn,
+                lockedHiddenCount = lockedHiddenCount,
+                onToggleInList = { list -> onToggleInList(wallpaper, list) },
+                onCreateList = { onAddToList(wallpaper, null) },
+                onUnlockLists = onUnlockLists,
+                onSetWallpaper = { onSetWallpaper(wallpaper) },
+                onLibrary = { onDownloadToRotation(wallpaper) },
+                onFoldPair = onFoldPair,
+                onShare = shareWallpaper,
+                onSkip = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onSkip(wallpaper)
+                },
+                modifier = mod,
+            )
+        }
+
+        // Facts about the image float as glass pills over the image itself; no scrim, so the
+        // picture runs edge to edge. Tapping them opens the details.
         AnimatedVisibility(
             visible = chromeVisible && !zoomed,
             enter = fadeIn(tween(180)),
@@ -1826,206 +1887,52 @@ private fun WallpaperDetailOverlay(
                     (if (loadingMore && pagerState.currentPage >= items.size - 3) " · loading more…" else "") else null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.55f), 1f to Color.Transparent))
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             )
         }
 
-        // Bottom info + actions (a single tap on the image hides and shows them)
+        // The dock: a floating glass card holding the image's name and the main actions, with a
+        // handle that says it can be pulled up. Pulling it (or swiping up anywhere) opens the
+        // same card at full height with everything else.
         AnimatedVisibility(
             visible = chromeVisible && !zoomed,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(180)),
+            enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { it / 3 },
+            exit = fadeOut(tween(180)) + slideOutVertically(tween(180)) { it / 3 },
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.3f to Color.Black.copy(alpha = 0.5f),
-                        1f to Color.Black.copy(alpha = 0.92f)
-                    )
-                )
-                // navigationBarsPadding must come before the measurement below, or the reported
-                // height double-counts the nav-bar inset once here and again in VideoPlayerView's
-                // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
-                .navigationBarsPadding()
-                .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp, top = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Tag chips — the first chip stands in for the old separate title line, so it's
-            // styled distinctly instead of duplicating the same text twice on screen.
-            if (wallpaper.tags.isNotEmpty()) {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(horizontal = 2.dp)
-                ) {
-                    itemsIndexed(wallpaper.tags, key = { _, tag -> tag }) { index, tag ->
-                        val isLead = index == 0
-                        SuggestionChip(
-                            onClick = { tagActionTag = tag },
-                            label = {
-                                Text(
-                                    tag.replace('_', ' '),
-                                    style = if (isLead) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelSmall,
-                                    fontWeight = if (isLead) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = if (isLead) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                labelColor = if (isLead) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            border = SuggestionChipDefaults.suggestionChipBorder(
-                                enabled = true,
-                                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = if (isLead) 0.6f else 0.35f),
-                                disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                            )
-                        )
-                    }
-                }
-                tagActionTag?.let { tag ->
-                    TagActionSheet(
-                        tag = tag,
-                        nsfwMode = nsfwMode,
-                        onSearch = { onTagSearch(tag); tagActionTag = null },
-                        onAddToSearch = { onAddTagToSearch(tag); tagActionTag = null },
-                        onAddToTier = { tier, isNsfw -> onAddTagToTier(tag, tier, isNsfw); tagActionTag = null },
-                        onDismiss = { tagActionTag = null },
-                    )
-                }
-            }
-
-            val isDownloading = isDownloadingFn(wallpaper)
-            val isSavingToGallery = isSavingToGalleryFn(wallpaper)
-
-            // Save is the one thing worth a dedicated button; skip, download, gallery, share,
-            // block, set-as-wallpaper, and report are all secondary and live in the overflow menu.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // navigationBarsPadding must come before the measurement below, or the reported
+                    // height double-counts the nav-bar inset once here and again in VideoPlayerView's
+                    // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
+                    .navigationBarsPadding()
+                    .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                contentAlignment = Alignment.BottomCenter
             ) {
-                var showBookmarkMenu by remember { mutableStateOf(false) }
-                Box {
-                    FilledIconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            if (lists.isNotEmpty() || lockedHiddenCount > 0) {
-                                showBookmarkMenu = !showBookmarkMenu
-                            } else {
-                                onAddToList(wallpaper, null)
-                            }
-                        },
-                        modifier = Modifier.size(52.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Icon(Icons.Default.Bookmark, contentDescription = "Save to list", modifier = Modifier.size(26.dp))
-                    }
-
-                    DropdownMenu(
-                        expanded = showBookmarkMenu,
-                        onDismissRequest = { showBookmarkMenu = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        if (lists.isEmpty()) {
-                            Text("  No lists yet  ", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            lists.forEach { list ->
-                                DropdownMenuItem(
-                                    text = { Text(list.name, style = MaterialTheme.typography.bodyMedium) },
-                                    onClick = { onAddToList(wallpaper, list); showBookmarkMenu = false }
-                                )
-                            }
-                        }
-                        if (lockedHiddenCount > 0) {
-                            DropdownMenuItem(
-                                text = { Text("Unlock $lockedHiddenCount locked", style = MaterialTheme.typography.bodyMedium) },
-                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                                onClick = { showBookmarkMenu = false; onUnlockLists() }
-                            )
-                        }
-                    }
-                }
-
-                // Fold pair straight from the viewer: pick this image for the cover screen, swipe to
-                // another and pair it for the big screen (with a preview before anything is set).
-                if (canFoldPair && !wallpaper.isVideo) {
-                    val outer = foldPairOuter
-                    val pickedHere = outer != null && outer.id == wallpaper.id && outer.source == wallpaper.source
-                    FilledTonalButton(
-                        onClick = {
-                            when {
-                                outer == null -> {
-                                    onPickFoldOuter(wallpaper)
-                                    Toast.makeText(context, "Cover screen picked. Swipe to an image for the big screen.", Toast.LENGTH_LONG).show()
-                                }
-                                pickedHere -> onPickFoldOuter(null)
-                                else -> showFoldPreview = true
-                            }
-                        },
-                        enabled = !foldPairBusy,
-                        modifier = Modifier.height(44.dp)
-                    ) {
-                        Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            when {
-                                foldPairBusy -> "Pairing…"
-                                outer == null -> "Fold pair"
-                                pickedHere -> "Cover ✓"
-                                else -> "Pair as inner"
-                            },
-                            maxLines = 1
-                        )
-                    }
-                }
-
-                Spacer(Modifier.weight(1f))
-
-                var showMore by remember { mutableStateOf(false) }
-                OutlinedIconButton(
-                    onClick = { showMore = true },
-                    modifier = Modifier.size(44.dp),
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
-                ) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
-                }
-
-                if (showMore) {
-                    MoreActionsSheet(
-                        isVideo = wallpaper.isVideo,
-                        isDownloading = isDownloading,
-                        isSavingToGallery = isSavingToGallery,
-                        onSkip = { onSkip(wallpaper); onDismiss() },
-                        onDownloadToRotation = { onDownloadToRotation(wallpaper) },
-                        onSaveToGallery = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            onSaveToGallery(wallpaper)
-                        },
-                        onShare = {
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, wallpaper.pageUrl.takeIf { it.startsWith("http") } ?: wallpaper.fullUrl)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share"))
-                        },
-                        onSetWallpaper = { onSetWallpaper(wallpaper) },
-                        onReport = { onReport(wallpaper) },
-                        onBlock = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            onBlock(wallpaper)
-                        },
-                        onDismiss = { showMore = false }
-                    )
-                }
+                ViewerDock(
+                    wallpaper = wallpaper,
+                    onExpand = { showInfoExpanded = true },
+                    actions = actions,
+                    hint = !dockHinted,
+                    onHinted = { dockHinted = true },
+                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
+                )
             }
         }
-        } // end bottom panel visibility
+
+        tagActionTag?.let { tag ->
+            TagActionSheet(
+                tag = tag,
+                nsfwMode = nsfwMode,
+                onSearch = { onTagSearch(tag); tagActionTag = null },
+                onAddToSearch = { onAddTagToSearch(tag); tagActionTag = null },
+                onAddToTier = { tier, isNsfw -> onAddTagToTier(tag, tier, isNsfw); tagActionTag = null },
+                onDismiss = { tagActionTag = null },
+            )
+        }
 
         val pairOuter = foldPairOuter
         if (showFoldPreview && pairOuter != null) {
@@ -2042,8 +1949,26 @@ private fun WallpaperDetailOverlay(
             ImageDetailsSheet(
                 wallpaper = wallpaper,
                 foldCanvas = foldCanvas,
+                actions = actions,
+                lists = lists,
+                savedIn = savedIn,
+                lockedHiddenCount = lockedHiddenCount,
+                onToggleInList = { list -> onToggleInList(wallpaper, list) },
+                onCreateList = { onAddToList(wallpaper, null) },
+                onUnlockLists = onUnlockLists,
+                isSavingToGallery = isSavingToGallery,
+                onSaveToGallery = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onSaveToGallery(wallpaper)
+                },
+                onReport = { showInfoExpanded = false; onReport(wallpaper) },
+                onBlock = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    showInfoExpanded = false
+                    onBlock(wallpaper)
+                },
                 onTagSearch = { tag -> showInfoExpanded = false; onTagSearch(tag) },
-                onTagActions = { tag -> showInfoExpanded = false; tagActionTag = tag },
+                onTagActions = { tag -> tagActionTag = tag },
                 onDismiss = { showInfoExpanded = false },
             )
         }
@@ -2070,74 +1995,6 @@ private fun ShimmerBox(modifier: Modifier = Modifier) {
             end = Offset(offset * 1000f + 500f, 0f)
         )
     ))
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MoreActionsSheet(
-    isVideo: Boolean,
-    isDownloading: Boolean,
-    isSavingToGallery: Boolean,
-    onSkip: () -> Unit,
-    onDownloadToRotation: () -> Unit,
-    onSaveToGallery: () -> Unit,
-    onShare: () -> Unit,
-    onSetWallpaper: () -> Unit,
-    onReport: () -> Unit,
-    onBlock: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    @Composable
-    fun Action(
-        text: String,
-        icon: androidx.compose.ui.graphics.vector.ImageVector,
-        enabled: Boolean = true,
-        destructive: Boolean = false,
-        onClick: () -> Unit,
-    ) {
-        val tint = when {
-            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-            destructive -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.onSurface
-        }
-        ListItem(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = enabled) { onClick(); onDismiss() },
-            headlineContent = { Text(text, color = tint) },
-            leadingContent = { Icon(icon, contentDescription = null, tint = tint) },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(modifier = Modifier.navigationBarsPadding()) {
-            Action(text = "Skip", icon = Icons.Default.SkipNext, onClick = onSkip)
-            if (!isVideo) {
-                Action(
-                    text = if (isDownloading) "Adding to Library…" else "Add to Library",
-                    icon = Icons.Default.Download,
-                    enabled = !isDownloading,
-                    onClick = onDownloadToRotation
-                )
-            }
-            Action(
-                text = if (isSavingToGallery) "Saving…" else "Save to gallery",
-                icon = Icons.Default.SaveAlt,
-                enabled = !isSavingToGallery,
-                onClick = onSaveToGallery
-            )
-            Action(text = "Share", icon = Icons.Default.Share, onClick = onShare)
-            if (!isVideo) {
-                Action(text = "Set as wallpaper", icon = Icons.Outlined.Wallpaper, onClick = onSetWallpaper)
-            }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            Action(text = "Report", icon = Icons.Default.Flag, destructive = true, onClick = onReport)
-            Action(text = "Never show again", icon = Icons.Default.Block, destructive = true, onClick = onBlock)
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -2779,15 +2636,292 @@ private fun InfoPill(
 }
 
 
+private enum class FoldPairState { Idle, PickedHere, ReadyToPair, Busy }
+
 /**
- * Everything about the current image, opened by swiping up (or tapping the info pills): its
- * facts, a link to the post, and every tag.
+ * The viewer's bottom dock: a floating glass card with a pull handle, the image's name and a
+ * peek at its tags, and the main actions. Tapping or pulling up the top part opens the details
+ * sheet, which repeats the same actions so the two read as one surface at two heights.
+ */
+@Composable
+private fun ViewerDock(
+    wallpaper: BrainrotWallpaper,
+    onExpand: () -> Unit,
+    actions: @Composable (Modifier) -> Unit,
+    hint: Boolean,
+    onHinted: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // The first time the dock shows, the handle nudges upward twice so pulling it is discoverable.
+    val nudge = remember { Animatable(0f) }
+    LaunchedEffect(hint) {
+        if (!hint) return@LaunchedEffect
+        kotlinx.coroutines.delay(600)
+        repeat(2) {
+            nudge.animateTo(-7f, tween(200, easing = FastOutLinearInEasing))
+            nudge.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+        }
+        onHinted()
+    }
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = Color.Black.copy(alpha = 0.62f),
+        contentColor = Color.White,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.padding(bottom = 10.dp)) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Show details", onClick = onExpand)
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 8.dp, bottom = 6.dp)
+            ) {
+                Box(
+                    Modifier
+                        .graphicsLayer { translationY = nudge.value }
+                        .size(width = 36.dp, height = 4.dp)
+                        .background(Color.White.copy(alpha = 0.45f), RoundedCornerShape(50))
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val rest = wallpaper.tags.drop(1)
+                        if (rest.isNotEmpty()) {
+                            Text(
+                                rest.take(3).joinToString(" · ") { it.replace('_', ' ') } +
+                                    if (rest.size > 3) " · +${rest.size - 3}" else "",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.65f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Default.KeyboardArrowUp,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.graphicsLayer { translationY = nudge.value }
+                    )
+                }
+            }
+            actions(Modifier.fillMaxWidth().padding(horizontal = 6.dp))
+        }
+    }
+}
+
+/** The main actions as labelled buttons; used by the dock and by the details sheet. */
+@Composable
+private fun ViewerActions(
+    wallpaper: BrainrotWallpaper,
+    saved: Boolean,
+    isDownloading: Boolean,
+    foldPairState: FoldPairState?,
+    lists: List<LocalList>,
+    savedIn: Set<String>,
+    lockedHiddenCount: Int,
+    onToggleInList: (LocalList) -> Unit,
+    onCreateList: () -> Unit,
+    onUnlockLists: () -> Unit,
+    onSetWallpaper: () -> Unit,
+    onLibrary: () -> Unit,
+    onFoldPair: () -> Unit,
+    onShare: () -> Unit,
+    onSkip: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.SpaceEvenly) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+            var menu by remember { mutableStateOf(false) }
+            DockAction(
+                icon = if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                label = if (saved) "Saved" else "Save",
+                highlighted = true,
+                onClick = { if (lists.isEmpty() && lockedHiddenCount == 0) onCreateList() else menu = true }
+            )
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                lists.forEach { list ->
+                    val inList = list.id in savedIn
+                    DropdownMenuItem(
+                        text = { Text(list.name) },
+                        leadingIcon = {
+                            Icon(if (inList) Icons.Default.Check else Icons.Default.Add, contentDescription = null)
+                        },
+                        onClick = { onToggleInList(list) }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("New collection…") },
+                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
+                    onClick = { menu = false; onCreateList() }
+                )
+                if (lockedHiddenCount > 0) {
+                    DropdownMenuItem(
+                        text = { Text("Unlock $lockedHiddenCount locked") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        onClick = { menu = false; onUnlockLists() }
+                    )
+                }
+            }
+        }
+        if (!wallpaper.isVideo) {
+            DockAction(Icons.Outlined.Wallpaper, "Set", onClick = onSetWallpaper, modifier = Modifier.weight(1f))
+            DockAction(
+                Icons.Default.Download,
+                if (isDownloading) "Adding…" else "Library",
+                enabled = !isDownloading,
+                onClick = onLibrary,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (foldPairState != null) {
+            DockAction(
+                Icons.Default.Smartphone,
+                when (foldPairState) {
+                    FoldPairState.Busy -> "Pairing…"
+                    FoldPairState.Idle -> "Fold pair"
+                    FoldPairState.PickedHere -> "Cover ✓"
+                    FoldPairState.ReadyToPair -> "Pair"
+                },
+                highlighted = foldPairState == FoldPairState.PickedHere || foldPairState == FoldPairState.ReadyToPair,
+                enabled = foldPairState != FoldPairState.Busy,
+                onClick = onFoldPair,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        DockAction(Icons.Default.Share, "Share", onClick = onShare, modifier = Modifier.weight(1f))
+        DockAction(Icons.Default.SkipNext, "Skip", onClick = onSkip, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun DockAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val content = LocalContentColor.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 6.dp)
+            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .background(
+                    if (highlighted) MaterialTheme.colorScheme.primary else content.copy(alpha = 0.12f),
+                    CircleShape
+                )
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (highlighted) MaterialTheme.colorScheme.onPrimary else content,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = content.copy(alpha = 0.85f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** Collections as toggle pills, the same idea as the unfolded rail, for the details sheet. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CollectionPills(
+    lists: List<LocalList>,
+    savedIn: Set<String>,
+    lockedHiddenCount: Int,
+    onToggle: (LocalList) -> Unit,
+    onCreateList: () -> Unit,
+    onUnlock: () -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        lists.forEach { list ->
+            val saved = list.id in savedIn
+            FilterChip(
+                selected = saved,
+                onClick = { onToggle(list) },
+                label = { Text(list.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = {
+                    Icon(
+                        when {
+                            saved -> Icons.Default.Check
+                            list.isLocked -> Icons.Default.LockOpen
+                            else -> Icons.Default.Add
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                shape = RoundedCornerShape(50)
+            )
+        }
+        AssistChip(
+            onClick = onCreateList,
+            label = { Text("New") },
+            leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            shape = RoundedCornerShape(50)
+        )
+        if (lockedHiddenCount > 0) {
+            AssistChip(
+                onClick = onUnlock,
+                label = { Text("Unlock $lockedHiddenCount") },
+                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                shape = RoundedCornerShape(50)
+            )
+        }
+    }
+}
+
+/**
+ * The dock at full height: the image's facts, the same actions, every collection, the post, all
+ * tags, and the rarer actions (gallery, report, never show again). Opened by pulling up the dock,
+ * swiping up on the image, or tapping the info pills.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ImageDetailsSheet(
     wallpaper: BrainrotWallpaper,
     foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
+    actions: @Composable (Modifier) -> Unit,
+    lists: List<LocalList>,
+    savedIn: Set<String>,
+    lockedHiddenCount: Int,
+    onToggleInList: (LocalList) -> Unit,
+    onCreateList: () -> Unit,
+    onUnlockLists: () -> Unit,
+    isSavingToGallery: Boolean,
+    onSaveToGallery: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
     onTagSearch: (String) -> Unit,
     onTagActions: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -2802,10 +2936,31 @@ private fun ImageDetailsSheet(
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("About this image", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            ImageInfoPills(onClick = {}, wallpaper = wallpaper, foldCanvas = foldCanvas, position = null)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                ImageInfoPills(onClick = {}, wallpaper = wallpaper, foldCanvas = foldCanvas, position = null)
+            }
+
+            actions(Modifier.fillMaxWidth())
+
+            SheetSection("Collections") {
+                CollectionPills(
+                    lists = lists,
+                    savedIn = savedIn,
+                    lockedHiddenCount = lockedHiddenCount,
+                    onToggle = onToggleInList,
+                    onCreateList = onCreateList,
+                    onUnlock = onUnlockLists,
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
@@ -2818,37 +2973,64 @@ private fun ImageDetailsSheet(
                         Text("Open post")
                     }
                 }
+                FilledTonalButton(onClick = onSaveToGallery, enabled = !isSavingToGallery) {
+                    Icon(Icons.Default.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isSavingToGallery) "Saving…" else "Save to gallery")
+                }
             }
 
             if (wallpaper.tags.isNotEmpty()) {
-                Text(
-                    "Tags · tap to search, hold for options",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    wallpaper.tags.forEach { tag ->
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.combinedClickable(
-                                onClick = { onTagSearch(tag) },
-                                onLongClick = { onTagActions(tag) }
-                            )
-                        ) {
-                            Text(
-                                tag.replace('_', ' '),
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
+                SheetSection("Tags · tap to search, hold for options") {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        wallpaper.tags.forEach { tag ->
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .combinedClickable(
+                                        onClick = { onTagSearch(tag) },
+                                        onLongClick = { onTagActions(tag) }
+                                    )
+                            ) {
+                                Text(
+                                    tag.replace('_', ' '),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
+
+            HorizontalDivider()
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                val danger = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onReport, colors = danger) {
+                    Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Report")
+                }
+                TextButton(onClick = onBlock, colors = danger) {
+                    Icon(Icons.Default.Block, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Never show again")
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun SheetSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        content()
     }
 }
 
