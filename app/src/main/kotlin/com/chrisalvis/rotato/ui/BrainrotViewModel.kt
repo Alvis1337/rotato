@@ -831,6 +831,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SKIPPED)
         if (undoStack.size >= 3) undoStack.removeFirst()
         undoStack.addLast(wp)
+        undoIndex["${wp.source}:${wp.id}"] = _gridItems.value.indexOfFirst { it.source == wp.source && it.id == wp.id }
         _skipEvent.tryEmit(Unit)
         removeFromGrid(wp)
         if (closeViewer) _selectedItem.update { null }
@@ -862,10 +863,17 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefs.addBlockedImageKey(key) }
     }
 
-    fun undo() {
-        val wp = undoStack.removeLastOrNull() ?: return
-        displayedKeys.remove("${wp.source}:${wp.id}")
-        _gridItems.update { listOf(wp) + it }
+    // Where each skipped image sat, so undo puts it back in place (the viewer stays on it).
+    private val undoIndex = HashMap<String, Int>()
+
+    /** Puts the last skipped image back where it was; returns it. */
+    fun undo(): BrainrotWallpaper? {
+        val wp = undoStack.removeLastOrNull() ?: return null
+        val key = "${wp.source}:${wp.id}"
+        displayedKeys.remove(key)
+        val at = undoIndex.remove(key) ?: 0
+        _gridItems.update { items -> items.toMutableList().apply { add(at.coerceIn(0, size), wp) } }
+        return wp
     }
 
     fun setWallpaperDirectly(wp: BrainrotWallpaper) {

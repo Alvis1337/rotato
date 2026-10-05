@@ -50,6 +50,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
@@ -2093,7 +2095,8 @@ private fun WallpaperUrlPreviewDialog(
     var chromeVisible by remember { mutableStateOf(true) }
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
-    var showMoreMenu by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(false) }
+    var dockHinted by remember { mutableStateOf(false) }
     // Measured height of the bottom info/action panel below — the video's seek bar reads this
     // so it renders above the panel instead of sitting underneath its (touchable) rows.
     var bottomPanelHeight by remember { mutableStateOf(0.dp) }
@@ -2144,6 +2147,12 @@ private fun WallpaperUrlPreviewDialog(
                                 totalDx += delta.x
                                 val absX = kotlin.math.abs(totalDx)
                                 val absY = kotlin.math.abs(totalDy)
+                                // Upward swipe opens the details sheet
+                                if (-totalDy > viewConfiguration.touchSlop * 2 && absY > absX) {
+                                    change.consume()
+                                    showDetails = true
+                                    break@detect
+                                }
                                 if (absY > viewConfiguration.touchSlop && absY > absX && totalDy > 0) {
                                     change.consume()
                                     dragActive = true
@@ -2261,225 +2270,227 @@ private fun WallpaperUrlPreviewDialog(
                 }
             }
 
-            // Close button
-            IconButton(
-                onClick = { onDismiss(currentWallpaper) },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-            }
-
-            // Bottom info + action panel (a single tap on the image hides and shows it)
-            if (chromeVisible && !zoomed) currentWallpaper?.let { wp ->
+            // Same language as Discover: glass pills over the image at the top, a dock at the
+            // bottom that pulls up into a sheet with everything else. One tap hides it all.
+            currentWallpaper?.let { wp ->
                 val inRotation = isInRotation(wp)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.25f to Color.Black.copy(alpha = 0.55f),
-                                1f to Color.Black.copy(alpha = 0.92f)
-                            )
-                        )
-                        // navigationBarsPadding must come before the measurement below, or the reported
-                        // height double-counts the nav-bar inset once here and again in VideoPlayerView's
-                        // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
-                        .navigationBarsPadding()
-                        .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 20.dp, top = 52.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Source badge + resolution + page counter
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (wp.source.isNotBlank()) {
-                            Surface(
-                                shape = MaterialTheme.shapes.small,
-                                color = Color.White.copy(alpha = 0.18f)
-                            ) {
-                                Text(
-                                    wp.source.replaceFirstChar { it.uppercase() },
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                        if (wp.resolution.isNotBlank()) {
-                            Text(
-                                wp.resolution,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.55f)
-                            )
-                        }
-                        if (wallpapers.size > 1) {
-                            Text(
-                                "${pagerState.currentPage + 1} / ${wallpapers.size}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.55f)
-                            )
-                        }
-                    }
-
-                    // Title from tags
-                    val titleText = wp.tags.take(3)
-                        .joinToString("  ·  ") { t ->
-                            t.replace('_', ' ')
-                                .split(" ")
-                                .joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } }
-                        }
-                        .ifBlank { wp.animeTitle }
-                    if (titleText.isNotBlank()) {
-                        Text(
-                            titleText,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    // Tag chips
-                    if (wp.tags.isNotEmpty()) {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            contentPadding = PaddingValues(horizontal = 2.dp)
-                        ) {
-                            lazyItems(wp.tags) { tag ->
-                                SuggestionChip(
-                                    onClick = {},
-                                    label = {
-                                        Text(
-                                            tag.replace('_', ' '),
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = Color.White.copy(alpha = 0.12f),
-                                        labelColor = Color.White
-                                    ),
-                                    border = SuggestionChipDefaults.suggestionChipBorder(
-                                        enabled = true,
-                                        borderColor = Color.White.copy(alpha = 0.25f),
-                                        disabledBorderColor = Color.White.copy(alpha = 0.1f)
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    // Action row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Primary: Add/Remove Library (videos can't be set as a wallpaper — view only)
-                        FilledIconButton(
+                val actions: @Composable (Modifier) -> Unit = { mod ->
+                    Row(mod, horizontalArrangement = Arrangement.SpaceEvenly) {
+                        DockAction(
+                            if (inRotation) Icons.Default.Check else Icons.Outlined.Wallpaper,
+                            if (inRotation) "In Library" else "Library",
+                            highlighted = inRotation,
+                            enabled = !wp.isVideo,
                             onClick = { onToggleRotation(wp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        DockAction(
+                            Icons.Default.FolderOpen, "Cover",
                             enabled = !wp.isVideo,
-                            modifier = Modifier.size(56.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = if (inRotation) MaterialTheme.colorScheme.primary
-                                else Color.White.copy(alpha = 0.15f)
-                            )
-                        ) {
-                            Icon(
-                                if (inRotation) Icons.Outlined.Wallpaper else Icons.Default.Wallpaper,
-                                contentDescription = if (wp.isVideo) "Videos can't be set as wallpaper"
-                                    else if (inRotation) "Remove from Library" else "Add to Library",
-                                modifier = Modifier.size(26.dp),
-                                tint = Color.White
-                            )
-                        }
-
-                        OutlinedIconButton(
-                            onClick = { onSaveToGallery(wp) },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = "Save to gallery",
-                                tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-
-                        OutlinedIconButton(
                             onClick = { onSetAsCover(wp) },
-                            enabled = !wp.isVideo,
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = "Set as cover",
-                                tint = Color.White, modifier = Modifier.size(18.dp))
+                            modifier = Modifier.weight(1f)
+                        )
+                        DockAction(Icons.Default.Share, "Share", onClick = { onShare(wp) }, modifier = Modifier.weight(1f))
+                        if (wp.entryId.isNotBlank() && moveTargets.isNotEmpty()) {
+                            DockAction(Icons.Default.DriveFileMove, "Move", onClick = { showDetails = true }, modifier = Modifier.weight(1f))
                         }
-
-                        // More overflow (copy URL, share)
-                        Box {
-                            OutlinedIconButton(
-                                onClick = { showMoreMenu = true },
-                                modifier = Modifier.size(44.dp),
-                                border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                            ) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More",
-                                    tint = Color.White, modifier = Modifier.size(18.dp))
-                            }
-                            DropdownMenu(
-                                expanded = showMoreMenu,
-                                onDismissRequest = { showMoreMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Copy URL") },
-                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
-                                    onClick = { onCopyUrl(wp); showMoreMenu = false }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Share") },
-                                    leadingIcon = { Icon(Icons.Default.Share, null) },
-                                    onClick = { onShare(wp); showMoreMenu = false }
-                                )
-                                if (wp.entryId.isNotBlank() && moveTargets.isNotEmpty()) {
-                                    HorizontalDivider()
-                                    moveTargets.forEach { target ->
-                                        DropdownMenuItem(
-                                            text = { Text("Move to ${target.name}") },
-                                            leadingIcon = { Icon(Icons.Default.DriveFileMove, null) },
-                                            onClick = { onMoveTo(wp, target); showMoreMenu = false }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.weight(1f))
-
-                        // Destructive: Remove from collection
                         if (wp.entryId.isNotBlank()) {
-                            OutlinedIconButton(
+                            DockAction(
+                                Icons.Default.Delete, "Remove",
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onRemoveFromCollection(wp)
                                 },
-                                modifier = Modifier.size(44.dp),
-                                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Remove from collection",
-                                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                            }
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = chromeVisible && !zoomed,
+                    enter = androidx.compose.animation.fadeIn(tween(180)),
+                    exit = androidx.compose.animation.fadeOut(tween(180)),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { showDetails = true }
+                                ),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) { CollectionInfoPills(wp, if (wallpapers.size > 1) "${pagerState.currentPage + 1} / ${wallpapers.size}" else null) }
+                        IconButton(
+                            onClick = { onDismiss(currentWallpaper) },
+                            modifier = Modifier.size(36.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = chromeVisible && !zoomed,
+                    enter = androidx.compose.animation.fadeIn(tween(180)) + androidx.compose.animation.slideInVertically(tween(220)) { it / 3 },
+                    exit = androidx.compose.animation.fadeOut(tween(180)) + androidx.compose.animation.slideOutVertically(tween(180)) { it / 3 },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // navigationBarsPadding must come before the measurement below, or the reported
+                            // height double-counts the nav-bar inset once here and again in VideoPlayerView's
+                            // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
+                            .navigationBarsPadding()
+                            .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        ViewerDock(
+                            title = wp.tags.firstOrNull()?.replace('_', ' ') ?: wp.animeTitle.ifBlank { wp.source.replaceFirstChar { it.uppercase() } },
+                            subtitle = wp.tags.drop(1).let { rest ->
+                                if (rest.isEmpty()) wp.animeTitle.takeIf { wp.tags.isNotEmpty() && it.isNotBlank() }
+                                else rest.take(3).joinToString(" · ") { it.replace('_', ' ') } + if (rest.size > 3) " · +${rest.size - 3}" else ""
+                            },
+                            onExpand = { showDetails = true },
+                            actions = actions,
+                            hint = !dockHinted,
+                            onHinted = { dockHinted = true },
+                            modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
+                        )
+                    }
+                }
+
+                if (showDetails) {
+                    CollectionImageSheet(
+                        wallpaper = wp,
+                        actions = actions,
+                        moveTargets = if (wp.entryId.isNotBlank()) moveTargets else emptyList(),
+                        onMoveTo = { target -> showDetails = false; onMoveTo(wp, target) },
+                        onCopyUrl = { onCopyUrl(wp) },
+                        onSaveToGallery = { onSaveToGallery(wp) },
+                        onDismiss = { showDetails = false },
+                    )
+                }
+            }
+
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CollectionInfoPills(wp: BrowseWallpaper, position: String?) {
+    if (wp.source.isNotBlank()) InfoPill(wp.source.replaceFirstChar { it.uppercase() }, bold = true)
+    if (wp.resolution.isNotBlank()) InfoPill(wp.resolution.replace("x", " × "))
+    if (wp.isVideo) InfoPill("Video", icon = Icons.Default.PlayArrow)
+    if (wp.isNsfw && !LocalNsfwHidden.current) InfoPill("NSFW", container = MaterialTheme.colorScheme.error.copy(alpha = 0.85f))
+    if (position != null) InfoPill(position)
+}
+
+/** The Collections viewer's dock at full height: facts, the same actions, moving, and tags. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CollectionImageSheet(
+    wallpaper: BrowseWallpaper,
+    actions: @Composable (Modifier) -> Unit,
+    moveTargets: List<LocalList>,
+    onMoveTo: (LocalList) -> Unit,
+    onCopyUrl: () -> Unit,
+    onSaveToGallery: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: wallpaper.animeTitle.ifBlank { "This image" },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CollectionInfoPills(wallpaper, null)
+                }
+            }
+
+            actions(Modifier.fillMaxWidth())
+
+            if (moveTargets.isNotEmpty()) {
+                SheetSection("Move to") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        moveTargets.forEach { target ->
+                            AssistChip(
+                                onClick = { onMoveTo(target) },
+                                label = { Text(target.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                shape = RoundedCornerShape(50)
+                            )
                         }
                     }
                 }
             }
 
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
+                if (page != null) {
+                    FilledTonalButton(onClick = {
+                        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(page))) }
+                    }) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Open post")
+                    }
+                }
+                FilledTonalButton(onClick = onSaveToGallery) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save to gallery")
+                }
+                FilledTonalButton(onClick = onCopyUrl) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Copy link")
+                }
+            }
+
+            if (wallpaper.tags.isNotEmpty()) {
+                SheetSection("Tags") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        wallpaper.tags.forEach { tag ->
+                            Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                Text(
+                                    tag.replace('_', ' '),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

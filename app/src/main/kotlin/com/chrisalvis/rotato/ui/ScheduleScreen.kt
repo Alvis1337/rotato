@@ -171,7 +171,8 @@ fun ScheduleScreen(
                     val listMap = remember(lists) { lists.associateBy { it.id } }
                     val selectedLists = entry.listIds.mapNotNull { listMap[it] }
                     val deletedCount = entry.listIds.count { it !in listMap }
-                    val lockedCount = selectedLists.count { it.isLocked }
+                    val nsfwHidden = LocalNsfwHidden.current
+                    val lockedCount = if (nsfwHidden) 0 else selectedLists.count { it.isLocked }
                     val collectionSummary = when {
                         entry.usesMainQueue -> "Main rotation queue"
                         entry.listIds.size == 1 && deletedCount == 0 -> selectedLists.firstOrNull()?.name ?: "Deleted collection"
@@ -190,7 +191,7 @@ fun ScheduleScreen(
                         collectionDetails = collectionDetails,
                         deletedCount = deletedCount,
                         lockedCount = lockedCount,
-                        wasBlockedByLock = entry.lastLockedMs > 0L,
+                        wasBlockedByLock = !nsfwHidden && entry.lastLockedMs > 0L,
                         lastFiredMs = entry.lastFiredMs,
                         lastFiredResult = entry.lastFiredResult,
                         onEdit = { vm.startEdit(entry) },

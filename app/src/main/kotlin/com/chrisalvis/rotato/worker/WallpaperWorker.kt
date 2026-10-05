@@ -148,11 +148,13 @@ class WallpaperWorker(
             now - list.lastRotationMs >= intervalMs
         }.ifEmpty { allRotationLists } // fallback: never stall rotation if all lists are on cooldown
         val hasPerScreen = rotationLists.any { it.rotationTarget != ScreenRotationTarget.BOTH }
-        val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, lists)
+        // Content filter on: locked collections and NSFW images never come up, scheduled or not.
+        val nsfwHiddenNow = prefs.nsfwHidden.first()
+        val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, if (nsfwHiddenNow) lists.filter { !it.isLocked } else lists)
         val scheduledEntry = activeScheduledListIds
             .takeIf { it.isNotEmpty() && !(hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH) }
             ?.let { listIds ->
-                val wallpapers = allWallpapers.filter { it.listId in listIds }
+                val wallpapers = allWallpapers.filter { it.listId in listIds && !(nsfwHiddenNow && it.isNsfw) }
                 selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
             }
 
@@ -192,7 +194,7 @@ class WallpaperWorker(
             lockFiles = allImages
         }
         // Content filter on: NSFW images and anything only in a locked collection sit out of rotation.
-        val filterOut: Set<String> = if (prefs.nsfwHidden.first()) {
+        val filterOut: Set<String> = if (nsfwHiddenNow) {
             val lockedIds = lists.filter { it.isLocked }.mapTo(HashSet()) { it.id }
             val openKeys = allWallpapers.filter { it.listId !in lockedIds }.mapTo(HashSet()) { it.source to it.sourceId }
             val lockedOnly = allWallpapers

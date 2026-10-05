@@ -119,8 +119,10 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         if (hidden) 0 else all.count { it.isLocked && !unlocked.contains(it.id) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val listCounts: StateFlow<Map<String, Int>> = localLists.allWallpapers
-        .map { all -> all.groupBy { it.listId }.mapValues { (_, v) -> v.size } }
+    // Counts match what the grid shows: NSFW images don't count while the content filter is on.
+    val listCounts: StateFlow<Map<String, Int>> = combine(localLists.allWallpapers, nsfwHidden) { all, hidden ->
+            (if (hidden) all.filter { !it.isNsfw } else all).groupBy { it.listId }.mapValues { (_, v) -> v.size }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val allKnownTags: StateFlow<List<String>> = combine(

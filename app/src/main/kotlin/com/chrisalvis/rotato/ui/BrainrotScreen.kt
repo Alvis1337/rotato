@@ -256,6 +256,8 @@ fun BrainrotScreen(
 
     LaunchedEffect(Unit) {
         vm.skipEvent.collect {
+            // The viewer shows its own undo pill.
+            if (vm.selectedItem.value != null) return@collect
             snackbarHostState.currentSnackbarData?.dismiss()
             val result = snackbarHostState.showSnackbar(
                 message = "Wallpaper skipped",
@@ -1079,6 +1081,7 @@ fun BrainrotScreen(
                             isDownloadingFn = { downloadingIds.contains(it.id) },
                             isSavingToGalleryFn = { downloadingIds.contains("gallery:${it.id}") },
                             onSkip = { w -> vm.skip(w, closeViewer = false) },
+                            onUndoSkip = { vm.undo() },
                             onAddToList = { w, list -> onAddToList(w, list) },
                             onDownloadToRotation = { w -> vm.downloadToRotation(w) },
                             onSaveToGallery = { w -> vm.saveToGallery(w) },
@@ -1516,6 +1519,7 @@ private fun WallpaperDetailOverlay(
     isDownloadingFn: (BrainrotWallpaper) -> Boolean,
     isSavingToGalleryFn: (BrainrotWallpaper) -> Boolean,
     onSkip: (BrainrotWallpaper) -> Unit,
+    onUndoSkip: () -> BrainrotWallpaper?,
     onAddToList: (BrainrotWallpaper, LocalList?) -> Unit,
     onDownloadToRotation: (BrainrotWallpaper) -> Unit,
     onSaveToGallery: (BrainrotWallpaper) -> Unit,
@@ -1549,6 +1553,10 @@ private fun WallpaperDetailOverlay(
     val zoomed = zoom.zoomed
     var showInfoExpanded by remember { mutableStateOf(false) }
     var dockHinted by rememberSaveable { mutableStateOf(false) }
+    // Skip moves on to the next image; this offers a few seconds to take it back.
+    var undoVisible by remember { mutableStateOf(false) }
+    var undoTick by remember { mutableIntStateOf(0) }
+    var restoreTo by remember { mutableStateOf<BrainrotWallpaper?>(null) }
     val context = LocalContext.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
@@ -1866,7 +1874,10 @@ private fun WallpaperDetailOverlay(
                 onShare = shareWallpaper,
                 onSkip = {
                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    showInfoExpanded = false
                     onSkip(wallpaper)
+                    undoVisible = true
+                    undoTick++
                 },
                 modifier = mod,
             )
@@ -1914,13 +1925,63 @@ private fun WallpaperDetailOverlay(
                 contentAlignment = Alignment.BottomCenter
             ) {
                 ViewerDock(
-                    wallpaper = wallpaper,
+                    title = wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
+                    subtitle = wallpaper.tags.drop(1).let { rest ->
+                        if (rest.isEmpty()) null
+                        else rest.take(3).joinToString(" · ") { it.replace('_', ' ') } + if (rest.size > 3) " · +${rest.size - 3}" else ""
+                    },
                     onExpand = { showInfoExpanded = true },
                     actions = actions,
                     hint = !dockHinted,
                     onHinted = { dockHinted = true },
                     modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
                 )
+            }
+        }
+
+        LaunchedEffect(undoTick) {
+            if (undoTick == 0) return@LaunchedEffect
+            kotlinx.coroutines.delay(4_000)
+            undoVisible = false
+        }
+        // After an undo, land back on the restored image.
+        LaunchedEffect(items, restoreTo) {
+            val target = restoreTo ?: return@LaunchedEffect
+            val idx = items.indexOfFirst { it.id == target.id && it.source == target.source }
+            if (idx >= 0) {
+                pagerState.scrollToPage(idx)
+                restoreTo = null
+            }
+        }
+        AnimatedVisibility(
+            visible = undoVisible && !zoomed,
+            enter = fadeIn(tween(150)) + slideInVertically(tween(200)) { it },
+            exit = fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (chromeVisible) bottomPanelHeight + 4.dp else 24.dp)
+                .navigationBarsPadding()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = Color.Black.copy(alpha = 0.75f),
+                contentColor = Color.White,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                onClick = {
+                    undoVisible = false
+                    restoreTo = onUndoSkip()
+                }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("Skipped", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.width(12.dp))
+                    Icon(Icons.Default.Undo, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Undo", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
 
@@ -2609,117 +2670,7 @@ private fun ImageInfoPills(
     }
 }
 
-@Composable
-private fun InfoPill(
-    text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    container: Color = Color.Black.copy(alpha = 0.55f),
-    content: Color = Color.White,
-    bold: Boolean = false,
-) {
-    Surface(shape = RoundedCornerShape(50), color = container) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            if (icon != null) {
-                Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-            }
-            Text(
-                text,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
-                color = content
-            )
-        }
-    }
-}
 
-
-private enum class FoldPairState { Idle, PickedHere, ReadyToPair, Busy }
-
-/**
- * The viewer's bottom dock: a floating glass card with a pull handle, the image's name and a
- * peek at its tags, and the main actions. Tapping or pulling up the top part opens the details
- * sheet, which repeats the same actions so the two read as one surface at two heights.
- */
-@Composable
-private fun ViewerDock(
-    wallpaper: BrainrotWallpaper,
-    onExpand: () -> Unit,
-    actions: @Composable (Modifier) -> Unit,
-    hint: Boolean,
-    onHinted: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // The first time the dock shows, the handle nudges upward twice so pulling it is discoverable.
-    val nudge = remember { Animatable(0f) }
-    LaunchedEffect(hint) {
-        if (!hint) return@LaunchedEffect
-        kotlinx.coroutines.delay(600)
-        repeat(2) {
-            nudge.animateTo(-7f, tween(200, easing = FastOutLinearInEasing))
-            nudge.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-        }
-        onHinted()
-    }
-    Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = Color.Black.copy(alpha = 0.62f),
-        contentColor = Color.White,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-        modifier = modifier
-    ) {
-        Column(modifier = Modifier.padding(bottom = 10.dp)) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClickLabel = "Show details", onClick = onExpand)
-                    .padding(horizontal = 18.dp)
-                    .padding(top = 8.dp, bottom = 6.dp)
-            ) {
-                Box(
-                    Modifier
-                        .graphicsLayer { translationY = nudge.value }
-                        .size(width = 36.dp, height = 4.dp)
-                        .background(Color.White.copy(alpha = 0.45f), RoundedCornerShape(50))
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        val rest = wallpaper.tags.drop(1)
-                        if (rest.isNotEmpty()) {
-                            Text(
-                                rest.take(3).joinToString(" · ") { it.replace('_', ' ') } +
-                                    if (rest.size > 3) " · +${rest.size - 3}" else "",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.65f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    Icon(
-                        Icons.Default.KeyboardArrowUp,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.graphicsLayer { translationY = nudge.value }
-                    )
-                }
-            }
-            actions(Modifier.fillMaxWidth().padding(horizontal = 6.dp))
-        }
-    }
-}
 
 /** The main actions as labelled buttons; used by the dock and by the details sheet. */
 @Composable
@@ -2790,7 +2741,7 @@ private fun ViewerActions(
                 Icons.Default.Smartphone,
                 when (foldPairState) {
                     FoldPairState.Busy -> "Pairing…"
-                    FoldPairState.Idle -> "Fold pair"
+                    FoldPairState.Idle -> if (LocalConfiguration.current.screenWidthDp < 400) "Pair" else "Fold pair"
                     FoldPairState.PickedHere -> "Cover ✓"
                     FoldPairState.ReadyToPair -> "Pair"
                 },
@@ -2802,51 +2753,6 @@ private fun ViewerActions(
         }
         DockAction(Icons.Default.Share, "Share", onClick = onShare, modifier = Modifier.weight(1f))
         DockAction(Icons.Default.SkipNext, "Skip", onClick = onSkip, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun DockAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    highlighted: Boolean = false,
-    enabled: Boolean = true,
-) {
-    val content = LocalContentColor.current
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 6.dp)
-            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(44.dp)
-                .background(
-                    if (highlighted) MaterialTheme.colorScheme.primary else content.copy(alpha = 0.12f),
-                    CircleShape
-                )
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (highlighted) MaterialTheme.colorScheme.onPrimary else content,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = content.copy(alpha = 0.85f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
@@ -3026,15 +2932,6 @@ private fun ImageDetailsSheet(
         }
     }
 }
-
-@Composable
-private fun SheetSection(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        content()
-    }
-}
-
 
 /**
  * Shows the two images the way they'll appear: the cover image on a tall narrow screen and the
