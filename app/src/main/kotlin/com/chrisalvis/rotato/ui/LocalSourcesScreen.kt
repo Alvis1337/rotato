@@ -100,6 +100,15 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
         .map { !it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    init {
+        // Every installed plugin gets a row so its switch works without restoring a backup.
+        viewModelScope.launch {
+            pluginRepository.installedManifests.collect { installed ->
+                prefs.ensureRowsFor(installed.map { it.id })
+            }
+        }
+    }
+
     fun dismissMigrationNotice() {
         viewModelScope.launch { rotaPrefs.dismissPluginSystemIntro() }
     }
@@ -522,14 +531,14 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
                                 Switch(
                                     checked = hasActiveSources,
                                     onCheckedChange = { vm.setPluginEnabled(manifest.id, it) },
-                                    enabled = sourceCount > 0 && unlocked
+                                    enabled = unlocked && (sourceCount > 0 || manifest.id != "REDDIT")
                                 )
                             }
 
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(
-                                    onClick = { vm.setPluginEnabled(manifest.id, activeCount != sourceCount) },
-                                    enabled = sourceCount > 0 && unlocked
+                                    onClick = { vm.setPluginEnabled(manifest.id, activeCount != sourceCount || sourceCount == 0) },
+                                    enabled = unlocked && (sourceCount > 0 || manifest.id != "REDDIT")
                                 ) {
                                     Text(if (activeCount == sourceCount && sourceCount > 0) "Disable all" else "Enable all")
                                 }

@@ -60,6 +60,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -2025,7 +2026,9 @@ private fun WallpaperUrlPreviewDialog(
     val currentWallpaper by remember(wallpapers, pagerState) {
         derivedStateOf { wallpapers.getOrNull(pagerState.currentPage) ?: wallpapers.getOrNull(initialPage) }
     }
-    var showZoom by remember { mutableStateOf(false) }
+    val zoom = remember { ZoomState() }
+    val zoomed = zoom.zoomed
+    var chromeVisible by remember { mutableStateOf(true) }
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -2035,7 +2038,8 @@ private fun WallpaperUrlPreviewDialog(
 
     BackHandler(onBack = { onDismiss(currentWallpaper) })
 
-    LaunchedEffect(pagerState.currentPage) { showZoom = false }
+    LaunchedEffect(pagerState.currentPage) { zoom.reset() }
+    BackHandler(enabled = zoomed) { zoom.reset() }
 
     // When an item is removed, either close the dialog (list empty) or
     // keep the pager in bounds by scrolling back one page.
@@ -2058,8 +2062,8 @@ private fun WallpaperUrlPreviewDialog(
                     translationY = offsetY.value
                     alpha = (1f - (offsetY.value / 600f)).coerceIn(0f, 1f)
                 }
-                .pointerInput(isDismissing, showZoom) {
-                    if (isDismissing || showZoom) return@pointerInput
+                .pointerInput(isDismissing, zoomed) {
+                    if (isDismissing || zoomed) return@pointerInput
                     awaitPointerEventScope {
                         while (true) {
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -2071,10 +2075,8 @@ private fun WallpaperUrlPreviewDialog(
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id }
                                 if (change == null || !change.pressed) break
-                                if (event.changes.count { it.pressed } >= 2) {
-                                    coroutineScope.launch { showZoom = true }
-                                    break@detect
-                                }
+                                // Two-finger pinch: leave it to the page's in-place zoom
+                                if (event.changes.count { it.pressed } >= 2) break@detect
                                 val delta = change.position - change.previousPosition
                                 totalDy += delta.y
                                 totalDx += delta.x
@@ -2133,7 +2135,8 @@ private fun WallpaperUrlPreviewDialog(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.aboveTabletopFold().fillMaxSize(),
-                beyondViewportPageCount = 1
+                beyondViewportPageCount = 1,
+                userScrollEnabled = !zoomed,
             ) { page ->
                 val wp = wallpapers.getOrNull(page) ?: return@HorizontalPager
                 val imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }
@@ -2182,15 +2185,16 @@ private fun WallpaperUrlPreviewDialog(
                         url = imageUrl,
                         placeholderKey = wp.thumbUrl.ifBlank { null },
                         contentDescription = wp.animeTitle.ifBlank { null },
+                        modifier = Modifier.onSizeChanged { zoom.size = it },
                         imageModifier = Modifier
-                            .graphicsLayer {
-                                val shrink = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
-                                scaleX = shrink
-                                scaleY = shrink
+                            .zoomTransform(zoom, active = page == pagerState.currentPage) {
+                                1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
                             }
-                            .pointerInput(Unit) {
-                                detectTapGestures(onDoubleTap = { showZoom = true })
-                            }
+                            .zoomGestures(
+                                zoom,
+                                active = page == pagerState.currentPage,
+                                onTap = { chromeVisible = !chromeVisible },
+                            )
                     )
                 }
             }
@@ -2207,8 +2211,8 @@ private fun WallpaperUrlPreviewDialog(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
 
-            // Bottom info + action panel
-            currentWallpaper?.let { wp ->
+            // Bottom info + action panel (a single tap on the image hides and shows it)
+            if (chromeVisible && !zoomed) currentWallpaper?.let { wp ->
                 val inRotation = isInRotation(wp)
                 Column(
                     modifier = Modifier
@@ -2404,68 +2408,6 @@ private fun WallpaperUrlPreviewDialog(
                 }
             }
 
-            if (showZoom) {
-                currentWallpaper?.let { wp ->
-                    ZoomUrlImageDialog(
-                        imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } },
-                        onDismiss = { showZoom = false }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ZoomUrlImageDialog(imageUrl: String, onDismiss: () -> Unit) {
-    BackHandler(onBack = onDismiss)
-    var scale by remember { mutableStateOf(1f) }
-    var panOffset by remember { mutableStateOf(Offset.Zero) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val next = (scale * zoomChange).coerceIn(1f, 8f)
-        scale = next
-        panOffset = if (next > 1f) panOffset + panChange * next else Offset.Zero
-    }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = {
-                        if (scale > 1.5f) {
-                            scale = 1f
-                            panOffset = Offset.Zero
-                        } else {
-                            scale = 2.5f
-                        }
-                    })
-                }
-        ) {
-            FullscreenImage(
-                url = imageUrl,
-                imageModifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = panOffset.x
-                        translationY = panOffset.y
-                    }
-                    .transformable(state = transformState)
-            )
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close zoom", tint = Color.White)
-            }
         }
     }
 }

@@ -15,6 +15,7 @@ class LocalSourcesPreferences(private val context: Context) {
 
     companion object {
         private val SOURCES_KEY = stringPreferencesKey("local_sources_json")
+        private const val REDDIT_PLUGIN_ID = "REDDIT"
     }
 
     val sources: Flow<List<LocalSource>> = context.dataStore.data
@@ -86,9 +87,26 @@ class LocalSourcesPreferences(private val context: Context) {
     suspend fun setPluginEnabled(pluginId: String, enabled: Boolean) {
         context.dataStore.edit { prefs ->
             val current = parse(prefs[SOURCES_KEY] ?: "[]")
-            prefs[SOURCES_KEY] = serialize(current.map {
-                if (it.pluginId == pluginId) it.copy(enabled = enabled) else it
-            })
+            // A plugin installed without a source row (bundled plugins on a fresh install, or
+            // rows lost to an older backup) used to be impossible to switch on except by restoring
+            // a config; create its default row instead.
+            val updated = if (current.none { it.pluginId == pluginId }) {
+                if (pluginId == REDDIT_PLUGIN_ID) current // Reddit rows are per-subreddit
+                else current + LocalSource(pluginId = pluginId, enabled = enabled)
+            } else current.map { if (it.pluginId == pluginId) it.copy(enabled = enabled) else it }
+            prefs[SOURCES_KEY] = serialize(updated)
+        }
+    }
+
+    /** Adds a disabled default row for each installed plugin that has none, in one write. */
+    suspend fun ensureRowsFor(pluginIds: Collection<String>) {
+        context.dataStore.edit { prefs ->
+            val current = parse(prefs[SOURCES_KEY] ?: "[]")
+            val have = current.mapTo(HashSet()) { it.pluginId }
+            val missing = pluginIds.filter { it !in have && it != REDDIT_PLUGIN_ID }.distinct()
+            if (missing.isNotEmpty()) {
+                prefs[SOURCES_KEY] = serialize(current + missing.map { LocalSource(pluginId = it, enabled = false) })
+            }
         }
     }
 

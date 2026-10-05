@@ -3,6 +3,17 @@ package com.chrisalvis.rotato.ui
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animate
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
@@ -1510,7 +1521,10 @@ private fun WallpaperDetailOverlay(
 ) {
     BackHandler(onBack = onDismiss)
     var tagActionTag by remember { mutableStateOf<String?>(null) }
-    var showZoom by remember { mutableStateOf(false) }
+    // Zoom happens in place on the current page; one tap hides/shows everything around the image.
+    val zoom = remember { ZoomState() }
+    var chromeVisible by remember { mutableStateOf(true) }
+    val zoomed = zoom.zoomed
     var showInfoExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -1531,7 +1545,7 @@ private fun WallpaperDetailOverlay(
 
     // Fire whenever wallpaper changes — covers both manual swipes and list-shrink advances.
     LaunchedEffect(wallpaper) {
-        showZoom = false
+        zoom.reset()
         showInfoExpanded = false
         onPageChanged(wallpaper)
     }
@@ -1583,8 +1597,8 @@ private fun WallpaperDetailOverlay(
                 translationY = offsetY.value
                 alpha = 1f - (offsetY.value / 600f).coerceIn(0f, 1f)
             }
-            .pointerInput(isDismissing, showZoom) {
-                if (isDismissing || showZoom) return@pointerInput
+            .pointerInput(isDismissing, zoomed) {
+                if (isDismissing || zoomed) return@pointerInput
                 awaitPointerEventScope {
                     while (true) {
                         val downChange = awaitFirstDown(
@@ -1600,11 +1614,8 @@ private fun WallpaperDetailOverlay(
                             val changeI = eventI.changes.firstOrNull { it.id == downChange.id }
                             if (changeI == null || !changeI.pressed) break
 
-                            // Two-finger pinch → open zoom immediately
-                            if (eventI.changes.count { it.pressed } >= 2) {
-                                coroutineScope.launch { showZoom = true }
-                                break@trackGesture
-                            }
+                            // Two-finger pinch: leave it to the page's in-place zoom
+                            if (eventI.changes.count { it.pressed } >= 2) break@trackGesture
 
                             totalDy += (changeI.position - changeI.previousPosition).y
                             totalDx += (changeI.position - changeI.previousPosition).x
@@ -1677,6 +1688,7 @@ private fun WallpaperDetailOverlay(
             state = pagerState,
             modifier = Modifier.aboveTabletopFold().fillMaxSize().padding(end = railWidth),
             beyondViewportPageCount = 1,
+            userScrollEnabled = !zoomed,
         ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
             // Placeholder is whatever the grid tile already has in memory, so the pager never
@@ -1728,32 +1740,35 @@ private fun WallpaperDetailOverlay(
                     }
                 }
             } else {
+                val isCurrent = page == pagerState.currentPage
                 FullscreenImage(
-                    url = pagerImageUrl,
-                    placeholderKey = placeholderKey,
+                    // Zoomed in, swap to the original resolution; the screen-sized sample stays
+                    // up (unblurred) until it arrives, so zooming never drops to a black screen.
+                    url = if (isCurrent && zoomed) fullImageUrl else pagerImageUrl,
+                    placeholderKey = if (isCurrent && zoomed) pagerImageUrl else placeholderKey,
+                    blurPlaceholder = !(isCurrent && zoomed),
+                    modifier = Modifier.onSizeChanged { zoom.size = it },
                     imageModifier = Modifier
-                        .graphicsLayer {
-                            val scaleFactor = 1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
-                            scaleX = scaleFactor
-                            scaleY = scaleFactor
+                        .zoomTransform(zoom, active = isCurrent) {
+                            1f - ((offsetY.value / 600f).coerceIn(0f, 1f)) * 0.3f
                         }
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onDoubleTap = { showZoom = true },
-                                onLongPress = {
+                        .zoomGestures(
+                            zoom,
+                            active = isCurrent,
+                            onTap = { chromeVisible = !chromeVisible },
+                            onLongPress = {
                                     val url = item.pageUrl.ifBlank { item.fullUrl }
                                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     val clip = ClipData.newPlainText("Wallpaper URL", url)
                                     clipboard.setPrimaryClip(clip)
                                     Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
                                 }
-                            )
-                        }
+                        )
                 )
             }
         } // end HorizontalPager
 
-        if (wide) {
+        if (wide && chromeVisible) {
             ListRail(
                 lists = lists,
                 savedIn = savedListIdsFn(wallpaper),
@@ -1768,12 +1783,17 @@ private fun WallpaperDetailOverlay(
             )
         }
 
-        // Bottom info + actions
+        // Bottom info + actions (a single tap on the image hides and shows them)
+        AnimatedVisibility(
+            visible = chromeVisible && !zoomed,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(180)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
         Column(
             modifier = Modifier
                 .padding(end = railWidth)
                 .fillMaxWidth()
-                .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
@@ -1957,14 +1977,10 @@ private fun WallpaperDetailOverlay(
                 }
             }
         }
+        } // end bottom panel visibility
 
-        if (showZoom) {
-            ZoomImageDialog(
-                wallpaper = wallpaper,
-                placeholderKey = wallpaper.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: wallpaper.gridUrl,
-                onDismiss = { showZoom = false }
-            )
-        }
+        // Back while zoomed zooms out instead of closing the viewer.
+        BackHandler(enabled = zoomed) { zoom.reset() }
     }
 }
 
@@ -2464,64 +2480,6 @@ private fun NoResultsState(
             }
             OutlinedIconButton(onClick = onOpenSettings, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ZoomImageDialog(
-    wallpaper: BrainrotWallpaper,
-    placeholderKey: String? = null,
-    onDismiss: () -> Unit
-) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 8f)
-        offset += panChange * scale
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            if (scale > 1f) { scale = 1f; offset = Offset.Zero } else { scale = 2.5f }
-                        }
-                    )
-                }
-        ) {
-            val imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.thumbUrl }
-            FullscreenImage(
-                url = imageUrl,
-                placeholderKey = placeholderKey,
-                imageModifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offset.x
-                        translationY = offset.y
-                    }
-                    .transformable(state = transformState)
-            )
-
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small)
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
         }
     }
