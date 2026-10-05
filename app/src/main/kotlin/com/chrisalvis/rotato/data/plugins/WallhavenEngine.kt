@@ -56,7 +56,9 @@ object WallhavenEngine : PluginEngine() {
 
     private fun buildUrl(base: String, query: String, source: LocalSource, nsfw: Boolean, filters: BrainrotFilters): String {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
-        var url = "$base/api/v1/search?q=${query.trim().urlEncode()}&categories=111&purity=$purity&sorting=random"
+        // categories = general/anime/people bits.
+        val categories = if (filters.animeOnly) "010" else "111"
+        var url = "$base/api/v1/search?q=${query.trim().urlEncode()}&categories=$categories&purity=$purity&sorting=random"
         when (filters.minResolution) {
             MinResolution.ANY -> Unit
             MinResolution.MY_PHONE ->
@@ -78,8 +80,11 @@ object WallhavenEngine : PluginEngine() {
         val id = post.optString("id").ifBlank { return null }
         val fullUrl = post.optString("path").ifBlank { return null }
         val thumbs = post.optJSONObject("thumbs")
-        val thumbUrl = thumbs?.optString("small").takeUnless { it.isNullOrBlank() }
-            ?: thumbs?.optString("original").takeUnless { it.isNullOrBlank() }
+        // "original" keeps the image's aspect ratio (small/large are 3:2 crops), which matters
+        // for the aspect-ratio-sized Discover tiles.
+        val thumbUrl = thumbs?.optString("original").takeUnless { it.isNullOrBlank() }
+            ?: thumbs?.optString("large").takeUnless { it.isNullOrBlank() }
+            ?: thumbs?.optString("small").takeUnless { it.isNullOrBlank() }
             ?: fullUrl
         val tags = post.optJSONArray("tags")?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }

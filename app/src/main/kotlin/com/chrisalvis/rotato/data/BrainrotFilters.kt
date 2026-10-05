@@ -40,6 +40,12 @@ data class BrainrotFilters(
     val phoneScreenWidth: Int = 0,
     val phoneScreenHeight: Int = 0,
     val useMalFilter: Boolean = true,
+    /**
+     * Set at fetch time when the MAL filter is driving Discover (linked list, no manual search):
+     * general-purpose sources such as Wallhaven then search their anime category only, so the
+     * "" filler query doesn't mix in sports, celebrity or car photos.
+     */
+    val animeOnly: Boolean = false,
     /** If true, space-separated tags are OR'd (any match) instead of AND'd (all must match). */
     val matchAny: Boolean = false,
 )

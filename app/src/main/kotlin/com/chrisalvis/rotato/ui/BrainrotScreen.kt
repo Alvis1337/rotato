@@ -1262,7 +1262,11 @@ private fun DiscoverGridItem(
 
     // Fall back to fullUrl if sampleUrl fails (e.g. 404 on Danbooru restricted posts)
     var useFullUrl by remember(wallpaper.id) { mutableStateOf(false) }
-    val imageUrl = (if (useFullUrl || wallpaper.sampleUrl.isBlank()) wallpaper.fullUrl else wallpaper.sampleUrl)
+    // Sources without a mid-size sample (Wallhaven) report the original as sampleUrl; tiles then
+    // downloaded multi-megabyte 4K originals and often timed out. Use the thumbnail instead.
+    val gridUrl = if (wallpaper.sampleUrl == wallpaper.fullUrl && wallpaper.thumbUrl.isNotBlank() &&
+        !MediaType.isVideoUrl(wallpaper.thumbUrl)) wallpaper.thumbUrl else wallpaper.sampleUrl
+    val imageUrl = (if (useFullUrl || gridUrl.isBlank()) wallpaper.fullUrl else gridUrl)
         .ifBlank { null }
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
     val previewSlot = wallpaper.isVideo && !isBlurred &&
@@ -1317,7 +1321,7 @@ private fun DiscoverGridItem(
                 modifier = Modifier.fillMaxSize().nsfwContentBlur(wallpaper.isNsfw, nsfwBlurEnabled, revealed),
                 loading = { ShimmerBox(Modifier.fillMaxSize()) },
                 error = {
-                    if (!useFullUrl && wallpaper.sampleUrl.isNotBlank() && wallpaper.fullUrl != wallpaper.sampleUrl) {
+                    if (!useFullUrl && gridUrl.isNotBlank() && wallpaper.fullUrl != gridUrl) {
                         LaunchedEffect(Unit) { useFullUrl = true }
                         ShimmerBox(Modifier.fillMaxSize())
                     } else {

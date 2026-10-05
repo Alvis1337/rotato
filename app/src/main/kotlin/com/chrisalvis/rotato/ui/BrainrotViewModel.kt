@@ -53,6 +53,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -266,6 +268,17 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // Linking (or unlinking) MAL must rebuild the feed: Discover keeps its queries stable for
+        // the session, so without this it kept serving the pre-link general feed.
+        viewModelScope.launch {
+            malPrefs.animeList
+                .map { it.isNotEmpty() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    if (prefs.brainrotFilters.first().useMalFilter && !_noSources.value) loadMore(reset = true)
+                }
+        }
     }
 
     private suspend fun init() {
@@ -342,7 +355,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             try {
             val ctx = getApplication<Application>().applicationContext
             val nsfw = prefs.nsfwMode.first()
-            val filters = prefs.brainrotFilters.first()
+            val filters = withMalAnimeOnly(prefs.brainrotFilters.first())
             val alignInterests = prefs.interestAlignEnabled.first()
             val sfwTierMap = if (alignInterests) tastePrefs.sfwTagTiers.first() else emptyMap()
             // NSFW tier tags only apply when NSFW mode is on
@@ -474,6 +487,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (isInitial) _loading.update { false } else _loadingMore.update { false }
             }
         }
+    }
+
+    /** MAL-driven feed (linked list, no manual search) → anime category only on general sources. */
+    private suspend fun withMalAnimeOnly(filters: BrainrotFilters): BrainrotFilters {
+        val malDriven = filters.useMalFilter &&
+            _searchQuery.value.isBlank() &&
+            malPrefs.animeList.first().isNotEmpty()
+        return if (malDriven) filters.copy(animeOnly = true) else filters
     }
 
     private fun cacheKey(source: LocalSource, query: String) = "${source.pluginId}:${source.instanceId}:$query"
@@ -863,7 +884,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             markSourceTesting(source, true)
             try {
                 val nsfw = prefs.nsfwMode.first()
-                val filters = prefs.brainrotFilters.first()
+                val filters = withMalAnimeOnly(prefs.brainrotFilters.first())
                 val explicitQuery = _searchQuery.value
                 val request = buildDiscoverRequests(nsfw, filters, explicitQuery)
                     .firstOrNull { sourceKey(it.source) == sourceId }
@@ -894,7 +915,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             _busy.update { true }
             try {
                 val nsfw = prefs.nsfwMode.first()
-                val filters = prefs.brainrotFilters.first()
+                val filters = withMalAnimeOnly(prefs.brainrotFilters.first())
                 val alignInterests = prefs.interestAlignEnabled.first()
                 val sfwTierMap = if (alignInterests) tastePrefs.sfwTagTiers.first() else emptyMap()
                 val nsfwTierMap = if (alignInterests && nsfw) tastePrefs.nsfwTagTiers.first() else emptyMap()
