@@ -63,7 +63,7 @@ object WallhavenEngine : PluginEngine() {
             MinResolution.ANY -> Unit
             MinResolution.MY_PHONE ->
                 if (filters.phoneScreenWidth > 0 && filters.phoneScreenHeight > 0)
-                    url += "&atleast=${filters.phoneScreenWidth}x${filters.phoneScreenHeight}"
+                    url += "&atleast=${filters.phoneMinWidth}x${filters.phoneMinHeight}"
             else -> url += "&atleast=${filters.minResolution.width}x${filters.minResolution.height}"
         }
         when (filters.aspectRatio) {

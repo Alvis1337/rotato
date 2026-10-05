@@ -21,6 +21,10 @@ data class BrainrotWallpaper(
         get() = if (sampleUrl == fullUrl && thumbUrl.isNotBlank() && !MediaType.isVideoUrl(thumbUrl)) thumbUrl
         else sampleUrl.ifBlank { fullUrl }
 
+    /** Image for a Discover tile in data saver mode: the small preview when there is one. */
+    val dataSaverUrl: String
+        get() = thumbUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: gridUrl
+
     /** Small static preview, when it differs from [gridUrl], to show while that loads. */
     val lowResPreviewUrl: String?
         get() = thumbUrl.takeIf { it.isNotBlank() && it != gridUrl && !MediaType.isVideoUrl(it) }

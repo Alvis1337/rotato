@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -977,23 +978,61 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    val isFoldable: Boolean = com.chrisalvis.rotato.data.isFoldable(app)
+
+    /**
+     * Data saver: on a metered connection Discover tiles load the source's small preview
+     * instead of the larger sample.
+     */
+    val dataSaverActive: StateFlow<Boolean> = combine(prefs.discoverDataSaver, meteredFlow(app)) { on, metered -> on && metered }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private fun meteredFlow(context: Context) = kotlinx.coroutines.flow.callbackFlow {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        trySend(cm.isActiveNetworkMetered)
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: android.net.Network, caps: NetworkCapabilities) {
+                trySend(!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+            }
+        }
+        cm.registerDefaultNetworkCallback(callback)
+        awaitClose { cm.unregisterNetworkCallback(callback) }
+    }.distinctUntilChanged()
+
+    /** One switch for "My Phone" ratio and resolution: images that fill every screen sharply. */
+    fun setFoldFriendly(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled) {
+                applyPhoneShape()
+                prefs.setMinResolution(MinResolution.MY_PHONE)
+                prefs.setAspectRatio(AspectRatio.MY_PHONE)
+            } else {
+                prefs.setMinResolution(MinResolution.ANY)
+                prefs.setAspectRatio(AspectRatio.ANY)
+            }
+            loadMore(reset = true)
+        }
+    }
+
+    private suspend fun applyPhoneShape() {
+        // Every screen the device has (both panels on a foldable), not just the current one.
+        val app = getApplication<Application>()
+        val screens = com.chrisalvis.rotato.data.knownDisplaySizes(app)
+        val narrowest = screens.minBy { it.width.toFloat() / it.height }
+        val widest = screens.maxBy { it.width.toFloat() / it.height }
+        // Normalize to base-9 so Wallhaven gets a clean ratio (e.g. 9x20 for a Pixel)
+        val normalizedH = (9.0 * narrowest.height / narrowest.width).roundToInt()
+        prefs.setPhoneRatio(9, normalizedH)
+        val widestAspect = widest.width.toFloat() / widest.height
+        val narrowestAspect = narrowest.width.toFloat() / narrowest.height
+        prefs.setPhoneMaxAspect(if (widestAspect > narrowestAspect * 1.05f) widestAspect else 0f)
+        val canvas = com.chrisalvis.rotato.data.wallpaperTargetSize(app)
+        prefs.setPhoneScreen(canvas.width, canvas.height)
+    }
+
     fun setAspectRatio(value: AspectRatio) {
         viewModelScope.launch {
-            if (value == AspectRatio.MY_PHONE) {
-                // Every screen the device has (both panels on a foldable), not just the current one.
-                val app = getApplication<Application>()
-                val screens = com.chrisalvis.rotato.data.knownDisplaySizes(app)
-                val narrowest = screens.minBy { it.width.toFloat() / it.height }
-                val widest = screens.maxBy { it.width.toFloat() / it.height }
-                // Normalize to base-9 so Wallhaven gets a clean ratio (e.g. 9x20 for a Pixel)
-                val normalizedH = (9.0 * narrowest.height / narrowest.width).roundToInt()
-                prefs.setPhoneRatio(9, normalizedH)
-                val widestAspect = widest.width.toFloat() / widest.height
-                val narrowestAspect = narrowest.width.toFloat() / narrowest.height
-                prefs.setPhoneMaxAspect(if (widestAspect > narrowestAspect * 1.05f) widestAspect else 0f)
-                val canvas = com.chrisalvis.rotato.data.wallpaperTargetSize(app)
-                prefs.setPhoneScreen(canvas.width, canvas.height)
-            }
+            if (value == AspectRatio.MY_PHONE) applyPhoneShape()
             prefs.setAspectRatio(value)
             loadMore(reset = true)
         }
@@ -1197,7 +1236,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun prefetchGridImage(ctx: android.content.Context, wp: BrainrotWallpaper) {
         if (wp.isVideo) return
-        val url = wp.gridUrl.takeIf { it.isNotBlank() } ?: return
+        val url = (if (dataSaverActive.value) wp.dataSaverUrl else wp.gridUrl).takeIf { it.isNotBlank() } ?: return
         ctx.imageLoader.enqueue(
             ImageRequest.Builder(ctx)
                 .data(url)

@@ -1,7 +1,6 @@
 package com.chrisalvis.rotato.ui
 
 import android.app.Application
-import android.app.WallpaperManager
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,8 +17,6 @@ import androidx.work.workDataOf
 import com.chrisalvis.rotato.data.AutoPauseSettings
 import com.chrisalvis.rotato.data.FeedRepository
 import com.chrisalvis.rotato.data.ImageRepository
-import com.chrisalvis.rotato.data.loadScaledBitmap
-import com.chrisalvis.rotato.data.setWallpaperBitmap
 import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
@@ -63,6 +60,12 @@ data class RotationStats(
     val topSources: List<Pair<String, Int>> = emptyList(),
     val topTags: List<Pair<String, Int>> = emptyList()
 )
+
+sealed interface DuplicateScan {
+    data object Idle : DuplicateScan
+    data object Scanning : DuplicateScan
+    data class Done(val groups: List<com.chrisalvis.rotato.data.DuplicateGroup>) : DuplicateScan
+}
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -432,6 +435,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { preferences.setWifiOnlyDiscover(enabled) }
     }
 
+    val discoverDataSaver: StateFlow<Boolean> = preferences.discoverDataSaver
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setDiscoverDataSaver(enabled: Boolean) {
+        viewModelScope.launch { preferences.setDiscoverDataSaver(enabled) }
+    }
+
+    val isFoldable: Boolean = com.chrisalvis.rotato.data.isFoldable(application)
+
+    val rotateOnUnfold: StateFlow<Boolean> = preferences.rotateOnUnfold
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setRotateOnUnfold(enabled: Boolean) {
+        viewModelScope.launch {
+            preferences.setRotateOnUnfold(enabled)
+            com.chrisalvis.rotato.worker.UnfoldWatcherService.sync(getApplication(), enabled)
+        }
+    }
+
     fun clearAll() {
         viewModelScope.launch {
             cancelRotation()
@@ -439,6 +461,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             repository.clearAll()
             _images.update { emptyList() }
         }
+    }
+
+    private val _duplicateScan = MutableStateFlow<DuplicateScan>(DuplicateScan.Idle)
+    val duplicateScan: StateFlow<DuplicateScan> = _duplicateScan.asStateFlow()
+
+    fun findDuplicates() {
+        if (_duplicateScan.value == DuplicateScan.Scanning) return
+        viewModelScope.launch {
+            _duplicateScan.update { DuplicateScan.Scanning }
+            val groups = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.chrisalvis.rotato.data.findDuplicateImages(_images.value)
+            }
+            _duplicateScan.update { DuplicateScan.Done(groups) }
+        }
+    }
+
+    fun dismissDuplicates() {
+        _duplicateScan.update { DuplicateScan.Idle }
+    }
+
+    fun removeDuplicates(groups: List<com.chrisalvis.rotato.data.DuplicateGroup>) {
+        deleteSelected(groups.flatMap { it.duplicates }.toSet())
+        _duplicateScan.update { DuplicateScan.Idle }
     }
 
     fun deleteSelected(files: Set<File>) {
@@ -546,33 +591,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _setNowState.update { SetNowState.SETTING }
             _setNowErrorMessage.update { null }
             try {
-                val app = getApplication<Application>()
-                val bitmap = loadScaledBitmap(app, file.absolutePath)
-                    ?: run {
-                        _setNowErrorMessage.update { "Could not load image" }
-                        _setNowState.update { SetNowState.ERROR }
-                        resetSetNowUi()
-                        return@launch
-                    }
-                val settingsVal = preferences.settings.first()
-                val wallpaperManager = WallpaperManager.getInstance(app)
-                val isTargetNsfw = preferences.nsfwHomeOnly.first() && preferences.nsfwFileNames.first().contains(file.name)
-                val effectiveTarget = if (isTargetNsfw) com.chrisalvis.rotato.data.WallpaperTarget.HOME_ONLY else settingsVal.wallpaperTarget
-                val flags = when (effectiveTarget) {
-                    com.chrisalvis.rotato.data.WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
-                    com.chrisalvis.rotato.data.WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
-                    com.chrisalvis.rotato.data.WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                val error = com.chrisalvis.rotato.data.applyWallpaperFile(getApplication(), file, recordAsCurrent)
+                if (error != null) {
+                    _setNowErrorMessage.update { error }
+                    _setNowState.update { SetNowState.ERROR }
+                } else {
+                    _setNowState.update { SetNowState.DONE }
+                    com.chrisalvis.rotato.worker.RotatoWidgetProvider.refreshAll(getApplication())
                 }
-                val target = com.chrisalvis.rotato.data.wallpaperTargetSize(app)
-                val screenBitmap = com.chrisalvis.rotato.data.fitWallpaperBitmap(bitmap, settingsVal.wallpaperFit, target)
-                bitmap.recycle()
-                try {
-                    setWallpaperBitmap(app, wallpaperManager, screenBitmap, flags, settingsVal.wallpaperFit, settingsVal.wallpaperEffects)
-                } finally {
-                    screenBitmap.recycle()
-                }
-                if (recordAsCurrent) preferences.pushAppliedWallpaper(file.absolutePath)
-                _setNowState.update { SetNowState.DONE }
                 resetSetNowUi()
             } catch (e: Exception) {
                 _setNowErrorMessage.update { e.message?.take(60) ?: "Unknown error" }

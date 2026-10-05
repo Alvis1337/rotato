@@ -56,6 +56,7 @@ fun RotationWallpaperSettingsScreen(
     val widgetCollectionId by viewModel.widgetCollectionId.collectAsStateWithLifecycle()
     val autoPauseSettings by viewModel.autoPauseSettings.collectAsStateWithLifecycle()
     val chargingTriggerEnabled by viewModel.chargingTriggerEnabled.collectAsStateWithLifecycle()
+    val rotateOnUnfold by viewModel.rotateOnUnfold.collectAsStateWithLifecycle()
     val autoFavoriteEnabled by viewModel.autoFavoriteEnabled.collectAsStateWithLifecycle()
     val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
     val autoRefillEnabled by viewModel.autoRefillEnabled.collectAsStateWithLifecycle()
@@ -242,6 +243,14 @@ fun RotationWallpaperSettingsScreen(
                             onAutoRefillToggle = { viewModel.setAutoRefillEnabled(it) },
                             onAutoRefillMinCountChange = { viewModel.setAutoRefillMinCount(it) },
                         )
+                        if (viewModel.isFoldable) {
+                            SettingsToggleRow(
+                                title = "New wallpaper on unfold",
+                                subtitle = "Changes the wallpaper each time you open the phone. Android requires a silent notification while this is on.",
+                                checked = rotateOnUnfold,
+                                onCheckedChange = { viewModel.setRotateOnUnfold(it) }
+                            )
+                        }
                     }
                 }
             }

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -97,6 +98,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -343,6 +345,13 @@ private fun LibraryContent(
             }
         }
 
+        val duplicateScan by viewModel.duplicateScan.collectAsStateWithLifecycle()
+        DuplicatesDialog(
+            scan = duplicateScan,
+            onDismiss = { viewModel.dismissDuplicates() },
+            onRemove = { viewModel.removeDuplicates(it) },
+        )
+
         var selectedFile by remember { mutableStateOf<File?>(null) }
         var ratingDialogFile by remember { mutableStateOf<File?>(null) }
         val pullRefreshState = rememberPullToRefreshState()
@@ -393,14 +402,24 @@ private fun LibraryContent(
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
                 if (!inSelectionMode) {
-                    Text(
-                        text = "Long press an image to select",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
+                            .padding(start = 16.dp, end = 8.dp)
+                    ) {
+                        Text(
+                            text = "Long press an image to select",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (images.size > 1) {
+                            TextButton(onClick = { viewModel.findDuplicates() }) {
+                                Text("Find duplicates", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 100.dp),
@@ -1512,5 +1531,91 @@ private fun formatErrorTime(epochMs: Long): String {
         diffMin < 60 -> "${diffMin}m ago"
         diffMin < 1440 -> "${diffMin / 60}h ago"
         else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(epochMs))
+    }
+}
+
+@Composable
+private fun DuplicatesDialog(
+    scan: DuplicateScan,
+    onDismiss: () -> Unit,
+    onRemove: (List<com.chrisalvis.rotato.data.DuplicateGroup>) -> Unit,
+) {
+    when (scan) {
+        DuplicateScan.Idle -> Unit
+        DuplicateScan.Scanning -> AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Looking for duplicates") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Comparing your library…")
+                }
+            },
+            confirmButton = {},
+        )
+        is DuplicateScan.Done -> {
+            val groups = scan.groups
+            if (groups.isEmpty()) {
+                AlertDialog(
+                    onDismissRequest = onDismiss,
+                    title = { Text("No duplicates") },
+                    text = { Text("Every image in your library is unique.") },
+                    confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+                )
+            } else {
+                val count = groups.sumOf { it.duplicates.size }
+                AlertDialog(
+                    onDismissRequest = onDismiss,
+                    modifier = Modifier.widthIn(max = 560.dp),
+                    title = { Text("$count duplicate${if (count == 1) "" else "s"} found") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                "The first image in each row is kept (the highest resolution copy). The rest are removed.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            androidx.compose.foundation.lazy.LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.heightIn(max = 360.dp)
+                            ) {
+                                items(groups.size) { index ->
+                                    val group = groups[index]
+                                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        items((listOf(group.keep) + group.duplicates).size) { i ->
+                                            val file = if (i == 0) group.keep else group.duplicates[i - 1]
+                                            Box {
+                                                AsyncImage(
+                                                    model = file,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(72.dp)
+                                                        .clip(MaterialTheme.shapes.small)
+                                                        .alpha(if (i == 0) 1f else 0.55f)
+                                                )
+                                                if (i == 0) {
+                                                    Icon(
+                                                        Icons.Default.CheckCircle,
+                                                        contentDescription = "Kept",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { onRemove(groups) }) { Text("Remove $count") }
+                    },
+                    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+                )
+            }
+        }
     }
 }

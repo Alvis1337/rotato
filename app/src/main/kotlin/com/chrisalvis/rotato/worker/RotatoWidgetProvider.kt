@@ -56,6 +56,12 @@ class RotatoWidgetProvider : AppWidgetProvider() {
                 .build()
             WorkManager.getInstance(context)
                 .enqueueUniqueWork("widget_next", ExistingWorkPolicy.REPLACE, request)
+        } else if (intent.action == ACTION_BACK) {
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "widget_back",
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                OneTimeWorkRequestBuilder<PreviousWallpaperWorker>().build()
+            )
         } else if (intent.action == ACTION_REFRESH_WIDGET) {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, RotatoWidgetProvider::class.java))
@@ -65,6 +71,7 @@ class RotatoWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_NEXT = "com.chrisalvis.rotato.WIDGET_NEXT"
+        const val ACTION_BACK = "com.chrisalvis.rotato.WIDGET_BACK"
         const val ACTION_REFRESH_WIDGET = "com.chrisalvis.rotato.WIDGET_REFRESH"
 
         private val httpClient = OkHttpClient.Builder()
@@ -109,6 +116,14 @@ class RotatoWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_btn_next, nextPendingIntent)
+
+            val backPendingIntent = PendingIntent.getBroadcast(
+                context,
+                1,
+                Intent(context, RotatoWidgetProvider::class.java).apply { action = ACTION_BACK },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_btn_back, backPendingIntent)
             return views
         }
 

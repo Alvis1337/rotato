@@ -85,6 +85,8 @@ class RotatoPreferences(private val context: Context) {
         val EFFECT_BLUR = intPreferencesKey("effect_home_blur")
         val EFFECT_DIM = intPreferencesKey("effect_home_dim")
         val EFFECT_ON_LOCK = booleanPreferencesKey("effect_on_lock")
+        val ROTATE_ON_UNFOLD = booleanPreferencesKey("rotate_on_unfold")
+        val DISCOVER_DATA_SAVER = booleanPreferencesKey("discover_data_saver")
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
     }
 
@@ -554,6 +556,23 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setAutoPauseCharging(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_PAUSE_CHARGING] = enabled }
+    }
+
+    val rotateOnUnfold: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[ROTATE_ON_UNFOLD] ?: false }
+
+    suspend fun setRotateOnUnfold(enabled: Boolean) {
+        context.dataStore.edit { it[ROTATE_ON_UNFOLD] = enabled }
+    }
+
+    /** Discover uses small preview images instead of samples while on a metered connection. */
+    val discoverDataSaver: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[DISCOVER_DATA_SAVER] ?: false }
+
+    suspend fun setDiscoverDataSaver(enabled: Boolean) {
+        context.dataStore.edit { it[DISCOVER_DATA_SAVER] = enabled }
     }
 
     suspend fun setRotateScreenOn(enabled: Boolean) {

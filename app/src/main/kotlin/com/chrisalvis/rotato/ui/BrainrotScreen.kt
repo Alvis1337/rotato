@@ -178,6 +178,7 @@ fun BrainrotScreen(
     val pinnedSearches by vm.pinnedSearches.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
     val gridMode by vm.gridMode.collectAsStateWithLifecycle()
+    val dataSaverActive by vm.dataSaverActive.collectAsStateWithLifecycle()
     val discoverHintSeen by vm.discoverHintSeen.collectAsStateWithLifecycle()
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
@@ -391,6 +392,8 @@ fun BrainrotScreen(
                 onSetNsfwMode = { vm.setNsfwMode(it) },
                 onSetMinResolution = { vm.setMinResolution(it) },
                 onSetAspectRatio = { vm.setAspectRatio(it) },
+                isFoldable = vm.isFoldable,
+                onSetFoldFriendly = { vm.setFoldFriendly(it) },
                 onSetUseMalFilter = { vm.setUseMalFilter(it) },
                 onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
                 onToggleProfile = { vm.toggleDiscoverProfile(it) },
@@ -726,6 +729,7 @@ fun BrainrotScreen(
                                             videoPreviewMode = videoPreviewMode,
                                             isVisible = "${wp.source}:${wp.id}" in visibleStaggeredKeys,
                                             nsfwBlurEnabled = nsfwBlurEnabled,
+                                            dataSaver = dataSaverActive,
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
@@ -1271,6 +1275,7 @@ private fun DiscoverGridItem(
     videoPreviewMode: com.chrisalvis.rotato.data.VideoPreviewMode,
     isVisible: Boolean,
     nsfwBlurEnabled: Boolean,
+    dataSaver: Boolean = false,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -1283,8 +1288,8 @@ private fun DiscoverGridItem(
 
     // Fall back to fullUrl if sampleUrl fails (e.g. 404 on Danbooru restricted posts)
     var useFullUrl by remember(wallpaper.id) { mutableStateOf(false) }
-    val gridUrl = wallpaper.gridUrl
-    val lowResUrl = wallpaper.lowResPreviewUrl
+    val gridUrl = if (dataSaver) wallpaper.dataSaverUrl else wallpaper.gridUrl
+    val lowResUrl = if (dataSaver) null else wallpaper.lowResPreviewUrl
     val imageUrl = (if (useFullUrl || gridUrl.isBlank()) wallpaper.fullUrl else gridUrl)
         .ifBlank { null }
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
@@ -2054,6 +2059,8 @@ private fun DiscoverSettingsSheetContent(
     onSetNsfwMode: (Boolean) -> Unit,
     onSetMinResolution: (MinResolution) -> Unit,
     onSetAspectRatio: (AspectRatio) -> Unit,
+    isFoldable: Boolean = false,
+    onSetFoldFriendly: (Boolean) -> Unit = {},
     onSetUseMalFilter: (Boolean) -> Unit,
     onSetInterestAlign: (Boolean) -> Unit,
     onToggleProfile: (String) -> Unit,
@@ -2155,6 +2162,15 @@ private fun DiscoverSettingsSheetContent(
                 "No profiles yet · using tag tiers. Create profiles in the Taste tab.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
+            )
+        }
+
+        if (isFoldable) {
+            SettingsToggleRow(
+                title = "Fold-friendly only",
+                subtitle = "Large images shaped to fill both the outer and inner screen",
+                checked = filters.isFoldFriendly,
+                onCheckedChange = onSetFoldFriendly,
             )
         }
 

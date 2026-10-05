@@ -41,6 +41,7 @@ fun DiscoverSourcesSettingsScreen(
 ) {
     val discoverBatchSize by viewModel.discoverBatchSize.collectAsStateWithLifecycle()
     val wifiOnlyDiscover by viewModel.wifiOnlyDiscover.collectAsStateWithLifecycle()
+    val discoverDataSaver by viewModel.discoverDataSaver.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -101,6 +102,12 @@ fun DiscoverSourcesSettingsScreen(
                             subtitle = "Only load Discover images on Wi-Fi",
                             checked = wifiOnlyDiscover,
                             onCheckedChange = { viewModel.setWifiOnlyDiscover(it) }
+                        )
+                        SettingsToggleRow(
+                            title = "Data saver",
+                            subtitle = "On mobile data, show small previews in the grid. Full quality on Wi-Fi.",
+                            checked = discoverDataSaver,
+                            onCheckedChange = { viewModel.setDiscoverDataSaver(it) }
                         )
                     }
                 }

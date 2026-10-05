@@ -34,6 +34,7 @@ class BootReceiver : BroadcastReceiver() {
                 // their alarms before bailing out on a disabled rotation.
                 val schedEntries = SchedulePreferences(context).entries.first()
                 ScheduleManager.scheduleAll(context, schedEntries)
+                UnfoldWatcherService.sync(context, prefs.rotateOnUnfold.first())
 
                 val settings = prefs.settings.first()
                 if (!settings.isEnabled) return@launch

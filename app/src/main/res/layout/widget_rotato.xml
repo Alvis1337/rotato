@@ -21,6 +21,15 @@
         android:background="#44000000">
 
         <ImageButton
+            android:id="@+id/widget_btn_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_widget_back"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Previous wallpaper"
+            android:tint="#FFFFFF" />
+
+        <ImageButton
             android:id="@+id/widget_btn_next"
             android:layout_width="48dp"
             android:layout_height="48dp"

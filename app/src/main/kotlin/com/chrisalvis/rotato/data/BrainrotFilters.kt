@@ -48,7 +48,18 @@ data class BrainrotFilters(
     val animeOnly: Boolean = false,
     /** If true, space-separated tags are OR'd (any match) instead of AND'd (all must match). */
     val matchAny: Boolean = false,
-)
+) {
+    /**
+     * Smallest image that still looks sharp on the wallpaper canvas ("My Phone" resolution):
+     * 10% under the canvas, since that little upscaling isn't visible.
+     */
+    val phoneMinWidth: Int get() = (phoneScreenWidth * 0.9f).toInt()
+    val phoneMinHeight: Int get() = (phoneScreenHeight * 0.9f).toInt()
+
+    /** Both "My Phone" filters on: images shaped and sized to fill every screen. */
+    val isFoldFriendly: Boolean
+        get() = aspectRatio == AspectRatio.MY_PHONE && minResolution == MinResolution.MY_PHONE
+}
 
 /** Returns true if the image dimensions satisfy the resolution and ratio filters. */
 fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
@@ -57,7 +68,7 @@ fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
         MinResolution.ANY -> Unit
         MinResolution.MY_PHONE -> {
             if (phoneScreenWidth > 0 && phoneScreenHeight > 0) {
-                if (width < phoneScreenWidth || height < phoneScreenHeight) return false
+                if (width < phoneMinWidth || height < phoneMinHeight) return false
             }
         }
         else -> if (width < minResolution.width || height < minResolution.height) return false

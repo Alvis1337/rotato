@@ -17,6 +17,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.chrisalvis.rotato.worker.UnfoldWatcherService
+import com.chrisalvis.rotato.data.RotatoPreferences
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 
@@ -36,6 +38,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
         // alone doesn't restore them in those cases. scheduleAll is idempotent.
         appScope.launch {
             runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
+            UnfoldWatcherService.sync(this@RotatoApp, RotatoPreferences(this@RotatoApp).rotateOnUnfold.first())
         }
     }
 
@@ -112,6 +115,13 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 NotificationManager.IMPORTANCE_LOW
             ).apply { description = "Progress while filling a collection from sources" }
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_UNFOLD,
+                "New Wallpaper On Unfold",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply { description = "Silent notification Android requires while Rotato watches for the phone being unfolded" }
+        )
     }
 
     companion object {
@@ -120,6 +130,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
         const val CHANNEL_WORKER = "rotato_worker"
         const val CHANNEL_LOCKED_LIST = "rotato_locked_list"
         const val CHANNEL_FILL = "rotato_fill"
+        const val CHANNEL_UNFOLD = "rotato_unfold"
     }
 }
 

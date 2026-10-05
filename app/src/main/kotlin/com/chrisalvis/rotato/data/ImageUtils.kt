@@ -95,7 +95,7 @@ fun knownDisplaySizes(context: Context): List<Size> {
 
 private const val ASSUMED_INNER_ASPECT = 0.95f
 
-private fun isFoldable(context: Context): Boolean =
+fun isFoldable(context: Context): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)
 
