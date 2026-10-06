@@ -60,6 +60,8 @@ data class PluginManifest(
     /** Maximum number of tags this source supports in a single query. Int.MAX_VALUE = unlimited. */
     val maxTagCount: Int = Int.MAX_VALUE,
 ) {
+    /** Adult-only sites (Rule34): their "safe" ratings aren't reliable, so they never load with NSFW off. */
+    val adultOnly: Boolean get() = extras["adultOnly"] == "true" || id == "RULE34"
     val needsApiKey: Boolean get() = auth is PluginAuth.ApiKey || auth is PluginAuth.ApiKeyUserId
     val needsApiUser: Boolean get() = auth is PluginAuth.ApiKeyUserId
     val apiKeyLabel: String get() = when (auth) {

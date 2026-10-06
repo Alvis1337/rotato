@@ -350,6 +350,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Page-level cache: keyed by "SOURCETYPE:query", populated in parallel at load time */
     private val pageCache = java.util.concurrent.ConcurrentHashMap<String, ArrayDeque<BrainrotWallpaper>>()
 
+    // Bumped on every reset. Network calls can't be interrupted, so a fetch started before a
+    // reset (e.g. with NSFW still on) checks this before touching the caches or the grid.
+    @Volatile private var feedGeneration = 0
+
     /**
      * Stable discover requests for the current session — computed once on first load or after reset
      * so MAL title shuffles and tier boost picks don't change between loadMore calls. Changing
@@ -440,6 +444,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             displayedKeys.addAll(persistentBlockedKeys)
             clearBatchSelection()
             viewModelScope.launch(Dispatchers.IO) { prefs.clearSeenWallpaperKeys() }
+            feedGeneration++
             pageCache.clear()
             currentDiscoverRequests = null
             _endReached.update { false }
@@ -451,6 +456,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         if (_endReached.value) return
         if (fetchJob?.isActive == true) return
 
+        val generation = feedGeneration
         fetchJob = viewModelScope.launch {
             // Respect "Wi-Fi only for Discover" setting
             val wifiOnly = prefs.wifiOnlyDiscover.first()
@@ -524,7 +530,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     async(Dispatchers.IO) {
                         val page = fetchPageForSource(source, q, excludes, request.effectiveNsfw, filters, fetchLimit)
                         Log.d("DiscoverFetch", "${source.pluginId} q=$q → ${page.size} items after filter (r${round+1})")
-                        if (page.isNotEmpty()) pageCache[ck] = ArrayDeque(page.shuffled())
+                        if (page.isNotEmpty() && generation == feedGeneration) pageCache[ck] = ArrayDeque(page.shuffled())
                     }
                 }
             }.awaitAll()
@@ -536,7 +542,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (key in displayedKeys) { if (++totalSkipped >= 200) break; continue }
                 if (blacklist.isNotEmpty() && wp.tags.any { normalizeTag(it) in blacklist }) { totalSkipped++; continue }
                 if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
-                if (!nsfw && wp.isNsfw && getApplication<com.chrisalvis.rotato.RotatoApp>().nsfwHidden.value) { totalSkipped++; continue }
+                // With NSFW off nothing fetched as NSFW is ever shown, whatever cache it came from.
+                if (!nsfw && wp.isNsfw) { totalSkipped++; continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
                 prefetchGridImage(ctx, wp)
@@ -601,7 +608,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 }
-                _gridItems.update { it + orderedItems }  // single batch update → one recomposition
+                if (generation != feedGeneration) return@launch
+                _gridItems.update { it + orderedItems.notIn(it) }  // single batch update → one recomposition
                 _hasNewBatch.update { true }
                 viewModelScope.launch(Dispatchers.IO) {
                     prefs.addSeenWallpaperKeys(newItems.map { "${it.source}:${it.id}" }.toSet())
@@ -870,9 +878,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun undo(): BrainrotWallpaper? {
         val wp = undoStack.removeLastOrNull() ?: return null
         val key = "${wp.source}:${wp.id}"
-        displayedKeys.remove(key)
         val at = undoIndex.remove(key) ?: 0
-        _gridItems.update { items -> items.toMutableList().apply { add(at.coerceIn(0, size), wp) } }
+        // The key stays in displayedKeys so a later page can't add the same image a second time
+        // (two grid items with one key crash the grid).
+        _gridItems.update { items ->
+            if (items.any { it.source == wp.source && it.id == wp.id }) items
+            else items.toMutableList().apply { add(at.coerceIn(0, size), wp) }
+        }
         return wp
     }
 
@@ -1020,6 +1032,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** These items minus any already in [existing] (or repeated), so grid keys stay unique. */
+    private fun List<BrainrotWallpaper>.notIn(existing: List<BrainrotWallpaper>): List<BrainrotWallpaper> {
+        val keys = existing.mapTo(HashSet()) { "${it.source}:${it.id}" }
+        return filter { keys.add("${it.source}:${it.id}") }
+    }
+
     private fun removeFromGrid(wp: BrainrotWallpaper) {
         _batchSelected.update { it - wp.id }
         _gridItems.update { items ->
@@ -1094,6 +1112,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun surpriseMe() {
         if (_busy.value) return
+        val generation = feedGeneration
         viewModelScope.launch {
             _busy.update { true }
             try {
@@ -1133,13 +1152,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     .distinctBy { "${it.source}:${it.id}" }
 
-                if (freshItems.isEmpty()) return@launch
+                if (freshItems.isEmpty() || generation != feedGeneration) return@launch
 
                 freshItems.forEach { wp ->
                     displayedKeys.add("${wp.source}:${wp.id}")
                     prefetchGridImage(ctx, wp)
                 }
-                _gridItems.update { freshItems + it }
+                _gridItems.update { freshItems.notIn(it) + it }
                 _noResults.update { false }
                 _noResultsReason.update { null }
                 _endReached.update { false }

@@ -21,6 +21,7 @@
     "count": "xml",
     "imageUrl": "file_url",
     "ratingTag": "safe",
+    "adultOnly": "true",
     "pageUrlTemplate": "https://rule34.xxx/index.php?page=post&s=view&id={id}"
   }
 }

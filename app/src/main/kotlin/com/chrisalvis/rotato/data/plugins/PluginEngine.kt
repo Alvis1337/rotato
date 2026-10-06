@@ -39,6 +39,7 @@ abstract class PluginEngine {
             if (manifest.needsApiKey && source.apiKey.isBlank()) return false
             if (manifest.needsApiUser && source.apiUser.isBlank()) return false
         }
+        if (!nsfw && manifest.adultOnly) return false
         return !(nsfw && manifest.safeContent)
     }
 }

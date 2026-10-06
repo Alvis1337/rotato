@@ -96,14 +96,37 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 val newReq = when {
                     // Gelbooru's image CDN requires a Referer header or it redirects to hotlink.php
                     host.endsWith("gelbooru.com") ->
-                        req.newBuilder().header("Referer", "https://gelbooru.com/").build()
+                        req.newBuilder()
+                            .header("Referer", "https://gelbooru.com/")
+                            .header("User-Agent", BROWSER_UA)
+                            .build()
+                    host.endsWith("rule34.xxx") ->
+                        req.newBuilder()
+                            .header("Referer", "https://rule34.xxx/")
+                            .header("User-Agent", BROWSER_UA)
+                            .build()
                     // Zerochan blocks default/generic User-Agents on its CDN, same as its JSON API
                     // (see ZerochanEngine.ZEROCHAN_UA) — without this, image loads fail silently.
                     host.endsWith("zerochan.net") ->
                         req.newBuilder().header("User-Agent", "Rotato wallpaper app - alvis").build()
                     else -> req
                 }
-                chain.proceed(newReq)
+                // Booru CDNs throttle a screenful of tiles arriving at once (429/503). Back off and
+                // retry a couple of times instead of leaving the tile broken.
+                var response = chain.proceed(newReq)
+                var attempt = 0
+                while ((response.code == 429 || response.code == 503) && attempt < 2) {
+                    response.close()
+                    attempt++
+                    try {
+                        Thread.sleep(700L * attempt)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw java.io.IOException("Interrupted while retrying", e)
+                    }
+                    response = chain.proceed(newReq)
+                }
+                response
             })
             .addInterceptor(com.chrisalvis.rotato.data.ImageLoadProgress.interceptor)
             // Discover fills a whole screen of tiles from one or two hosts at once; OkHttp's
@@ -165,6 +188,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
     }
 
     companion object {
+        private const val BROWSER_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
         const val CHANNEL_WALLPAPER_SET = "rotato_wallpaper_set"
         const val CHANNEL_LOW_QUEUE = "rotato_low_queue"
         const val CHANNEL_WORKER = "rotato_worker"
