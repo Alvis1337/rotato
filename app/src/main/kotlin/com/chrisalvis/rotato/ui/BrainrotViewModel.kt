@@ -879,7 +879,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setWallpaperDirectly(wp: BrainrotWallpaper) {
         learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SET_WALLPAPER)
         if (wp.isVideo) {
-            Toast.makeText(getApplication(), "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
+            setVideoWallpaper(wp)
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -930,6 +930,52 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 toast("Wallpaper set!")
             } catch (e: Exception) {
                 toast("Failed to set wallpaper")
+            }
+        }
+    }
+
+    /** Videos play through Rotato's live wallpaper, so they need it switched on first. */
+    private fun setVideoWallpaper(wp: BrainrotWallpaper) {
+        val app = getApplication<Application>()
+        if (!com.chrisalvis.rotato.live.LiveWallpaper.isActive(app)) {
+            Toast.makeText(app, "Turn on the Rotato live wallpaper (Settings › Rotation) to use videos", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(app, "Downloading video…", Toast.LENGTH_SHORT).show()
+        viewModelScope.launch(Dispatchers.IO) {
+            val url = wp.fullUrl.ifBlank { wp.sampleUrl }
+            val ext = url.substringBefore('?').substringAfterLast('.', "mp4").lowercase().takeIf { it.length in 2..4 } ?: "mp4"
+            val dir = File(app.filesDir, "live").apply { mkdirs() }
+            val file = File(dir, "video_${System.currentTimeMillis()}.$ext")
+            val ok = try {
+                val req = Request.Builder().url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36")
+                    .apply { if (wp.pageUrl.isNotBlank()) header("Referer", wp.pageUrl) }
+                    .build()
+                com.chrisalvis.rotato.data.FeedRepository.httpClient.newCall(req).execute().use { resp ->
+                    val body = resp.body
+                    if (!resp.isSuccessful || body == null) false
+                    else { file.outputStream().use { body.byteStream().copyTo(it) }; file.length() > 0 }
+                }
+            } catch (e: Exception) {
+                false
+            }
+            if (ok) {
+                // Keep just this video; older ones are no longer on screen.
+                dir.listFiles { f -> f.name.startsWith("video_") && f != file }?.forEach { it.delete() }
+                com.chrisalvis.rotato.live.LiveWallpaper.showVideo(app, file)
+                prefs.recordWallpaperShown(
+                    WallpaperHistoryItem(
+                        thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl, fullUrl = wp.fullUrl,
+                        source = wp.source, timestamp = System.currentTimeMillis(),
+                        tags = wp.tags, pageUrl = wp.pageUrl,
+                    )
+                )
+            } else {
+                file.delete()
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(app, if (ok) "Video wallpaper set!" else "Couldn't download the video", Toast.LENGTH_SHORT).show()
             }
         }
     }

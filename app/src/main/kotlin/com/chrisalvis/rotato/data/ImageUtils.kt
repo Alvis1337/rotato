@@ -1,6 +1,7 @@
 package com.chrisalvis.rotato.data
 
 import android.app.WallpaperManager
+import com.chrisalvis.rotato.live.LiveWallpaper
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -213,6 +214,20 @@ fun setWallpaperBitmap(
     effects: WallpaperEffects = WallpaperEffects(),
     crops: Map<Point, Rect>? = null,
 ) {
+    if (which and WallpaperManager.FLAG_SYSTEM != 0 && LiveWallpaper.isActive(context)) {
+        // Rotato's live wallpaper is on: hand it the image so it can crossfade and reframe it.
+        val home = if (effects.isNone) bitmap else applyWallpaperEffects(bitmap, effects)
+        try {
+            LiveWallpaper.showBitmap(context, home, crops)
+        } finally {
+            if (home !== bitmap) home.recycle()
+        }
+        // A lock screen with its own static wallpaper still gets one; otherwise it shows the live one.
+        val lockFlag = which and WallpaperManager.FLAG_LOCK
+        val separateLock = lockFlag != 0 && runCatching { wm.getWallpaperId(WallpaperManager.FLAG_LOCK) > 0 }.getOrDefault(false)
+        if (separateLock) setWallpaperBitmap(context, wm, bitmap, lockFlag, fit, effects, crops)
+        return
+    }
     val focus = if (crops == null && fit == WallpaperFit.SMART && Build.VERSION.SDK_INT >= 35) findFocusPoint(bitmap) else PointF(0.5f, 0.5f)
     if (effects.isNone) {
         applyWallpaper(context, wm, bitmap, which, focus, crops)
@@ -383,7 +398,7 @@ private fun screenCrops(bitmapW: Int, bitmapH: Int, screens: List<Size>, focus: 
 }
 
 /** Largest [aspect] crop of the bitmap, as close to centred on [focus] as the edges allow. */
-private fun focusedCrop(bitmapW: Int, bitmapH: Int, aspect: Float, focus: PointF): Rect {
+internal fun focusedCrop(bitmapW: Int, bitmapH: Int, aspect: Float, focus: PointF): Rect {
     return if (bitmapW.toFloat() / bitmapH > aspect) {
         val w = (bitmapH * aspect).roundToInt().coerceIn(1, bitmapW)
         val left = (focus.x * bitmapW - w / 2f).roundToInt().coerceIn(0, bitmapW - w)

@@ -91,6 +91,8 @@ fun RotationWallpaperSettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
+                    LiveWallpaperSection()
+
                     SettingsSection(title = "Rotation Interval") {
                         RotationInterval.entries.forEach { interval ->
                             Row(
