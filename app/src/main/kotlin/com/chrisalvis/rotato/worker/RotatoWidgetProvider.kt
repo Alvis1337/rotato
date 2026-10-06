@@ -12,6 +12,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Build
+import android.util.SizeF
 import android.widget.RemoteViews
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -25,6 +27,9 @@ import com.chrisalvis.rotato.data.sanitizeFilename
 import com.chrisalvis.rotato.data.poolKey
 import com.chrisalvis.rotato.data.poolKeys
 import com.chrisalvis.rotato.data.findPoolFile
+import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.live.LiveWallpaper
+import com.chrisalvis.rotato.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -89,13 +94,14 @@ class RotatoWidgetProvider : AppWidgetProvider() {
             val requestId = widgetRequestCounter.incrementAndGet()
             latestRequestByWidget[appWidgetId] = requestId
 
-            val fallbackViews = buildViews(context, loadCurrentWallpaperBitmap(context))
-            appWidgetManager.updateAppWidget(appWidgetId, fallbackViews)
+            // Controls show straight away; the picture and caption follow once loaded off the main thread.
+            appWidgetManager.updateAppWidget(appWidgetId, buildViews(context, null, null))
 
             widgetScope.launch {
-                val bitmap = loadCollectionBitmap(context) ?: return@launch
+                val caption = currentCaption(context)
+                val bitmap = loadCollectionBitmap(context) ?: loadCurrentWallpaperBitmap(context)
                 if (latestRequestByWidget[appWidgetId] != requestId) return@launch
-                appWidgetManager.updateAppWidget(appWidgetId, buildViews(context, bitmap))
+                appWidgetManager.updateAppWidget(appWidgetId, buildViews(context, bitmap, caption))
             }
         }
 
@@ -105,29 +111,51 @@ class RotatoWidgetProvider : AppWidgetProvider() {
             })
         }
 
-        private fun buildViews(context: Context, bitmap: Bitmap?): RemoteViews {
-            val views = RemoteViews(context.packageName, R.layout.widget_rotato)
-            bitmap?.let { views.setImageViewBitmap(R.id.widget_image, scaledForWidget(it)) }
+        /**
+         * Glass widget: the wallpaper fills it, with Previous / Save / Next in frosted circles.
+         * On Android 12+ a smaller variant without the caption is used at cover-screen sizes.
+         */
+        private fun buildViews(context: Context, bitmap: Bitmap?, caption: String?): RemoteViews {
+            val scaled = bitmap?.let { scaledForWidget(it) }
+            val full = layoutViews(context, R.layout.widget_rotato, scaled, caption)
+            if (Build.VERSION.SDK_INT < 31) return full
+            val small = layoutViews(context, R.layout.widget_rotato_small, scaled, null)
+            return RemoteViews(mapOf(SizeF(100f, 80f) to small, SizeF(170f, 160f) to full))
+        }
 
-            val nextIntent = Intent(context, RotatoWidgetProvider::class.java).apply {
-                action = ACTION_NEXT
+        private fun layoutViews(context: Context, layout: Int, bitmap: Bitmap?, caption: String?): RemoteViews {
+            val views = RemoteViews(context.packageName, layout)
+            bitmap?.let { views.setImageViewBitmap(R.id.widget_image, it) }
+            if (layout == R.layout.widget_rotato) {
+                views.setTextViewText(R.id.widget_caption, caption?.takeIf { it.isNotBlank() } ?: "Rotato")
             }
-            val nextPendingIntent = PendingIntent.getBroadcast(
-                context,
-                0,
-                nextIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            views.setOnClickPendingIntent(
+                R.id.widget_btn_next,
+                PendingIntent.getBroadcast(context, 0, Intent(context, RotatoWidgetProvider::class.java).apply { action = ACTION_NEXT }, flags)
             )
-            views.setOnClickPendingIntent(R.id.widget_btn_next, nextPendingIntent)
-
-            val backPendingIntent = PendingIntent.getBroadcast(
-                context,
-                1,
-                Intent(context, RotatoWidgetProvider::class.java).apply { action = ACTION_BACK },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            views.setOnClickPendingIntent(
+                R.id.widget_btn_back,
+                PendingIntent.getBroadcast(context, 1, Intent(context, RotatoWidgetProvider::class.java).apply { action = ACTION_BACK }, flags)
             )
-            views.setOnClickPendingIntent(R.id.widget_btn_back, backPendingIntent)
+            views.setOnClickPendingIntent(
+                R.id.widget_btn_save,
+                PendingIntent.getBroadcast(context, 2, Intent(context, FavoriteWallpaperReceiver::class.java), flags)
+            )
+            views.setOnClickPendingIntent(
+                R.id.widget_image,
+                PendingIntent.getActivity(context, 3, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags)
+            )
             return views
+        }
+
+        /** Where the wallpaper on screen came from (tags are left off: the widget is on show to anyone). */
+        private suspend fun currentCaption(context: Context): String? = try {
+            historyFromJson(RotatoPreferences(context).historyJson.first()).firstOrNull()
+                ?.source?.takeIf { it.isNotBlank() }
+                ?.let { "Now showing · " + it.replaceFirstChar { c -> c.uppercase() } }
+        } catch (_: Exception) {
+            null
         }
 
         private suspend fun loadCollectionBitmap(context: Context): Bitmap? {
@@ -238,6 +266,12 @@ class RotatoWidgetProvider : AppWidgetProvider() {
         }
 
         private fun loadCurrentWallpaperBitmap(context: Context): Bitmap? {
+            if (LiveWallpaper.isActive(context)) {
+                val sp = context.getSharedPreferences(LiveWallpaper.PREFS, Context.MODE_PRIVATE)
+                val path = sp.getString(LiveWallpaper.KEY_PATH, null)
+                if (path != null && !sp.getBoolean(LiveWallpaper.KEY_VIDEO, false)) return decodeSampledFile(path)
+                return null
+            }
             return try {
                 val drawable = WallpaperManager.getInstance(context).drawable ?: return null
                 if (drawable is BitmapDrawable) {

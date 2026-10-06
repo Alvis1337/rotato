@@ -286,6 +286,18 @@ fun AboutDataSettingsScreen(
                         }
                     }
 
+                    SettingsSection(title = "Tips") {
+                        OutlinedButton(
+                            onClick = {
+                                FirstRunTour.reset(context)
+                                android.widget.Toast.makeText(context, "Tips will show again on each screen", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Show quick tips again")
+                        }
+                    }
+
                     SettingsSection(title = "Stats") {
                         OutlinedButton(
                             onClick = onNavigateToStats,

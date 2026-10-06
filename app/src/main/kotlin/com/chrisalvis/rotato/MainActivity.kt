@@ -47,6 +47,7 @@ import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.AboutDataSettingsScreen
 import com.chrisalvis.rotato.ui.BrowseScreen
+import com.chrisalvis.rotato.ui.FirstRunTourOverlay
 import com.chrisalvis.rotato.ui.DiscoverSourcesSettingsScreen
 import com.chrisalvis.rotato.ui.IntegrationsSettingsScreen
 import com.chrisalvis.rotato.ui.LocalSourcesScreen
@@ -267,6 +268,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     ) { paddingValues ->
+                      Box(Modifier.fillMaxSize()) {
                         NavHost(
                             navController = navController,
                             startDestination = if (setupDone == true) "discover" else "setup",
@@ -404,6 +406,13 @@ class MainActivity : AppCompatActivity() {
                                 TasteScreen(vm = tasteViewModel)
                             }
                         }
+                        if (showBottomBar) {
+                            FirstRunTourOverlay(
+                                route = currentRoute,
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(paddingValues),
+                            )
+                        }
+                      }
                     }
                 }
               }

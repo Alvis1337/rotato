@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -327,16 +328,44 @@ private fun LibraryContent(
     val selectedColour = colourFilter?.let { n -> com.chrisalvis.rotato.data.ImageColour.entries.find { it.name == n } }
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     var looksLoading by remember { mutableStateOf(false) }
-    val looks by produceState(emptyMap<String, com.chrisalvis.rotato.data.ImageLook>(), images, selectedColour != null) {
-        if (selectedColour == null) return@produceState
+    // Match a photo: pick any picture and the Library shows what goes with it, best match first.
+    var matchLook by remember { mutableStateOf<com.chrisalvis.rotato.data.ImageLook?>(null) }
+    var matchLoading by remember { mutableStateOf(false) }
+    val matchScope = rememberCoroutineScope()
+    val matchPicker = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        matchLoading = true
+        matchScope.launch {
+            val look = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.chrisalvis.rotato.data.ImageAnalysis.lookForUri(appContext, uri)
+            }
+            matchLoading = false
+            if (look == null || look.colours.isEmpty()) {
+                android.widget.Toast.makeText(appContext, "Couldn't read that photo's colours", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                colourFilter = null
+                matchLook = look
+            }
+        }
+    }
+    val looks by produceState(emptyMap<String, com.chrisalvis.rotato.data.ImageLook>(), images, selectedColour != null || matchLook != null) {
+        if (selectedColour == null && matchLook == null) return@produceState
         looksLoading = true
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             com.chrisalvis.rotato.data.ImageAnalysis.looksFor(appContext, images)
         }
         looksLoading = false
     }
-    val gridImages = remember(images, selectedColour, looks) {
-        if (selectedColour == null) images else images.filter { looks[it.name]?.colours?.contains(selectedColour) == true }
+    val gridImages = remember(images, selectedColour, looks, matchLook) {
+        val target = matchLook
+        when {
+            target != null -> images
+                .mapNotNull { f -> looks[f.name]?.let { com.chrisalvis.rotato.data.ImageAnalysis.matchScore(target, it) }?.let { f to it } }
+                .sortedByDescending { it.second }
+                .map { it.first }
+            selectedColour == null -> images
+            else -> images.filter { looks[it.name]?.colours?.contains(selectedColour) == true }
+        }
     }
 
     if (showSaveToListDialog) {
@@ -478,9 +507,14 @@ private fun LibraryContent(
                     if (images.size > 1) {
                         ColourFilterRow(
                             selected = selectedColour,
-                            loading = looksLoading,
-                            matchCount = if (selectedColour != null && !looksLoading) gridImages.size else null,
-                            onSelect = { c -> colourFilter = if (c == selectedColour) null else c?.name },
+                            loading = looksLoading || matchLoading,
+                            matchCount = if ((selectedColour != null || matchLook != null) && !looksLoading) gridImages.size else null,
+                            onSelect = { c -> matchLook = null; colourFilter = if (c == selectedColour) null else c?.name },
+                            matchingPhoto = matchLook != null,
+                            onMatchPhoto = {
+                                matchPicker.launch(PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            onClearMatch = { matchLook = null },
                         )
                     }
                 }
@@ -1828,6 +1862,9 @@ private fun ColourFilterRow(
     loading: Boolean,
     matchCount: Int?,
     onSelect: (com.chrisalvis.rotato.data.ImageColour?) -> Unit,
+    matchingPhoto: Boolean = false,
+    onMatchPhoto: () -> Unit = {},
+    onClearMatch: () -> Unit = {},
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -1837,6 +1874,22 @@ private fun ColourFilterRow(
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
+        // Match a photo: the picked picture's colours become the filter.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(if (matchingPhoto) 30.dp else 26.dp)
+                .clip(CircleShape)
+                .background(if (matchingPhoto) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(onClickLabel = "Match a photo") { onMatchPhoto() }
+        ) {
+            Icon(
+                Icons.Default.ImageSearch,
+                contentDescription = "Match a photo",
+                tint = if (matchingPhoto) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+        }
         com.chrisalvis.rotato.data.ImageColour.entries.forEach { colour ->
             val isSelected = colour == selected
             Box(
@@ -1854,6 +1907,11 @@ private fun ColourFilterRow(
         }
         when {
             loading -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            matchingPhoto && matchCount != null -> AssistChip(
+                onClick = onClearMatch,
+                label = { Text("Matches your photo · $matchCount", style = MaterialTheme.typography.labelMedium) },
+                trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Clear photo match", modifier = Modifier.size(16.dp)) }
+            )
             selected != null && matchCount != null -> AssistChip(
                 onClick = { onSelect(null) },
                 label = { Text("${selected.label} · $matchCount", style = MaterialTheme.typography.labelMedium) },

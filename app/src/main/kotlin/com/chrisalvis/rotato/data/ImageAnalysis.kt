@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.data
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.net.Uri
 import org.json.JSONObject
 import java.io.File
 
@@ -70,6 +71,40 @@ object ImageAnalysis {
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 48) sample *= 2
         val bmp = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
             ?: return null
+        return lookOf(bmp)
+    }
+
+    /** The look of any picture (e.g. a photo picked to match against), not cached. Call off the main thread. */
+    fun lookForUri(context: Context, uri: Uri): ImageLook? = try {
+        decodeSmall(context, uri)?.let { lookOf(it) }
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun decodeSmall(context: Context, uri: Uri): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 48) sample *= 2
+        return context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+    }
+
+    /**
+     * How well a Library image's [look] goes with a [target] look: shared main colours count most,
+     * then how close the brightness is. Null when they share no colour at all.
+     */
+    fun matchScore(target: ImageLook, look: ImageLook): Float? {
+        val shared = target.colours.intersect(look.colours).size
+        if (shared == 0) return null
+        val brightness = 1f - kotlin.math.abs(target.brightness - look.brightness) / 255f
+        return shared * 2f + brightness
+    }
+
+    /** Analyses (and recycles) a small decoded bitmap. */
+    private fun lookOf(bmp: android.graphics.Bitmap): ImageLook {
         try {
             val w = bmp.width
             val h = bmp.height
