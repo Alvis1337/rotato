@@ -57,6 +57,17 @@ data class MalCollectionConfig(
 ) {
     val hasSourceOverride: Boolean get() = !sourcePluginId.isNullOrBlank()
     val resolvedAnimeQuery: String get() = animeQuery.ifBlank { normalizeBooruQuery(animeTitle) }
+
+    /**
+     * Tags to search with. Character tags already belong to their series, so with characters
+     * picked only those are searched (any of them with [matchAny], all together otherwise);
+     * adding the series tag too would also blow past sites' 2-tag limits.
+     */
+    val booruQuery: String get() {
+        val chars = characterTags.map { normalizeBooruQuery(it) }.filter { it.isNotBlank() }
+        return if (chars.isNotEmpty()) chars.joinToString(" ")
+        else normalizeBooruQuery(resolvedAnimeQuery.ifBlank { animeTitle })
+    }
 }
 
 data class LocalList(

@@ -154,6 +154,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val allKnownTags by vm.allKnownTags.collectAsStateWithLifecycle()
     val activeSources by vm.activeSources.collectAsStateWithLifecycle()
     val malAnimeEntries by vm.malAnimeEntries.collectAsStateWithLifecycle()
+    val malLoggedIn by vm.malLoggedIn.collectAsStateWithLifecycle()
+    val malRefreshing by vm.malRefreshing.collectAsStateWithLifecycle()
     val managedMalCollectionCount by vm.managedMalCollectionCount.collectAsStateWithLifecycle()
     val fetchFillLoading by vm.fetchFillLoading.collectAsStateWithLifecycle()
     val tagSuggestions by vm.tagSuggestions.collectAsStateWithLifecycle()
@@ -177,6 +179,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     var showSortMenu by remember { mutableStateOf(false) }
     var showCollectionMenu by remember { mutableStateOf(false) }
     var showCreateMenu by remember { mutableStateOf(false) }
+    var createSmart by remember { mutableStateOf(false) }
     var showCreateMalDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedList?.id) {
@@ -223,7 +226,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             lists = lists.filter { it.id != selectedList!!.id },
             onConfirm = { vm.moveSelectedToList(it); showMoveDialog = false },
             onDismiss = { showMoveDialog = false },
-            onCreateList = { vm.showCreateDialog() },
+            onCreateList = { createSmart = false; vm.showCreateDialog() },
         )
     }
 
@@ -316,8 +319,21 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
         )
     }
 
+    if (showCreateMenu) {
+        NewCollectionSheet(
+            malConnected = malLoggedIn,
+            managedMalCount = managedMalCollectionCount,
+            onPlain = { showCreateMenu = false; createSmart = false; vm.showCreateDialog() },
+            onSmart = { showCreateMenu = false; createSmart = true; vm.showCreateDialog() },
+            onAnime = { showCreateMenu = false; showCreateMalDialog = true },
+            onSyncAnime = { showCreateMenu = false; vm.syncManagedMalCollections() },
+            onDismiss = { showCreateMenu = false },
+        )
+    }
+
     if (showCreateDialog) {
         CreateListDialog(
+            startSmart = createSmart,
             onConfirm = { name, rule -> vm.createList(name, rule) },
             onDismiss = { vm.dismissCreateDialog(); vm.clearTagSuggestions() },
             knownTags = allKnownTags,
@@ -328,23 +344,33 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     }
 
     if (showCreateMalDialog) {
-        MalCollectionDialog(
-            animeEntries = malAnimeEntries,
+        LaunchedEffect(Unit) { vm.refreshMalListIfStale() }
+        AnimeCollectionBuilder(
+            entries = malAnimeEntries,
+            loggedIn = malLoggedIn,
+            refreshing = malRefreshing,
             activeSources = activeSources,
-            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary, nsfwOverride, minResolution, aspectRatio, useMalFilter ->
+            onRefresh = { vm.refreshMalListIfStale(force = true) },
+            onPreview = { tags, any -> vm.previewImages(tags, any) },
+            onQuickStart = { shows, addToRotation ->
+                vm.createCollectionsForShows(shows, addToRotation)
+                showCreateMalDialog = false
+            },
+            onConfirm = { d ->
                 vm.createMalCollection(
-                    name = name,
-                    animeTitle = animeTitle,
-                    characterTags = characterTags,
-                    pluginId = pluginId,
-                    instanceId = instanceId,
-                    fillCount = fillCount,
-                    matchAny = matchAny,
-                    autoAddToLibrary = autoAddToLibrary,
-                    nsfwOverride = nsfwOverride,
-                    minResolution = minResolution,
-                    aspectRatio = aspectRatio,
-                    useMalFilter = useMalFilter,
+                    name = d.name,
+                    animeTitle = d.animeTitle,
+                    characterTags = d.characterTags,
+                    pluginId = d.pluginId,
+                    instanceId = d.instanceId,
+                    fillCount = d.fillCount,
+                    matchAny = d.matchAny,
+                    autoAddToLibrary = d.autoAddToLibrary,
+                    nsfwOverride = d.nsfwOverride,
+                    minResolution = d.minResolution,
+                    aspectRatio = d.aspectRatio,
+                    useMalFilter = d.useMalFilter,
+                    animeQuery = d.seriesTag,
                 )
                 showCreateMalDialog = false
             },
@@ -365,25 +391,31 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     }
 
     editMalFor?.let { list ->
-        MalCollectionDialog(
-            animeEntries = malAnimeEntries,
+        AnimeCollectionBuilder(
+            entries = malAnimeEntries,
+            loggedIn = malLoggedIn,
+            refreshing = malRefreshing,
             activeSources = activeSources,
             existingList = list,
-            onConfirm = { name, animeTitle, characterTags, pluginId, instanceId, fillCount, matchAny, autoAddToLibrary, nsfwOverride, minResolution, aspectRatio, useMalFilter ->
+            onRefresh = { vm.refreshMalListIfStale(force = true) },
+            onPreview = { tags, any -> vm.previewImages(tags, any) },
+            onQuickStart = { _, _ -> },
+            onConfirm = { d ->
                 vm.updateMalCollection(
                     list = list,
-                    name = name,
-                    animeTitle = animeTitle,
-                    characterTags = characterTags,
-                    pluginId = pluginId,
-                    instanceId = instanceId,
-                    fillCount = fillCount,
-                    matchAny = matchAny,
-                    autoAddToLibrary = autoAddToLibrary,
-                    nsfwOverride = nsfwOverride,
-                    minResolution = minResolution,
-                    aspectRatio = aspectRatio,
-                    useMalFilter = useMalFilter,
+                    name = d.name,
+                    animeTitle = d.animeTitle,
+                    characterTags = d.characterTags,
+                    pluginId = d.pluginId,
+                    instanceId = d.instanceId,
+                    fillCount = d.fillCount,
+                    matchAny = d.matchAny,
+                    autoAddToLibrary = d.autoAddToLibrary,
+                    nsfwOverride = d.nsfwOverride,
+                    minResolution = d.minResolution,
+                    aspectRatio = d.aspectRatio,
+                    useMalFilter = d.useMalFilter,
+                    animeQuery = d.seriesTag,
                 )
                 editMalFor = null
             },
@@ -511,36 +543,6 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
                         Box {
                             IconButton(onClick = { showCreateMenu = true }) {
                                 Icon(Icons.Default.Add, contentDescription = "Create collection")
-                            }
-                            DropdownMenu(
-                                expanded = showCreateMenu,
-                                onDismissRequest = { showCreateMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("New collection") },
-                                    onClick = {
-                                        vm.showCreateDialog()
-                                        showCreateMenu = false
-                                    }
-                                )
-                                if (malAnimeEntries.isNotEmpty()) {
-                                    DropdownMenuItem(
-                                        text = { Text("Create from MAL") },
-                                        onClick = {
-                                            showCreateMalDialog = true
-                                            showCreateMenu = false
-                                        }
-                                    )
-                                }
-                                if (managedMalCollectionCount > 0) {
-                                    DropdownMenuItem(
-                                        text = { Text("Sync MAL collections") },
-                                        onClick = {
-                                            vm.syncManagedMalCollections()
-                                            showCreateMenu = false
-                                        }
-                                    )
-                                }
                             }
                         }
                     }
@@ -966,6 +968,7 @@ private fun WallpaperDetailSheet(
 
 @Composable
 private fun CreateListDialog(
+    startSmart: Boolean = false,
     onConfirm: (String, SmartRule?) -> Unit,
     onDismiss: () -> Unit,
     knownTags: List<String> = emptyList(),
@@ -974,7 +977,7 @@ private fun CreateListDialog(
     onClearTagSuggestions: () -> Unit = {},
 ) {
     var name by remember { mutableStateOf("") }
-    var isSmart by remember { mutableStateOf(false) }
+    var isSmart by remember { mutableStateOf(startSmart) }
     var requireAllText by remember { mutableStateOf("") }
     var requireAnyText by remember { mutableStateOf("") }
     var excludeAnyText by remember { mutableStateOf("") }
@@ -988,7 +991,7 @@ private fun CreateListDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Collection") },
+        title = { Text(if (isSmart) "New smart collection" else "New collection") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -1027,6 +1030,26 @@ private fun CreateListDialog(
                     Switch(checked = isSmart, onCheckedChange = { isSmart = it })
                 }
                 if (isSmart) {
+                    Text(
+                        "Pick an idea or type tags. Every image you've saved with a match lands here, now and later.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        SMART_IDEAS.forEach { (label, tags) ->
+                            SuggestionChip(
+                                onClick = {
+                                    if (name.isBlank() || SMART_IDEAS.any { it.first == name }) name = label
+                                    requireAllText = ""
+                                    requireAnyText = tags
+                                },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
                     TagRuleFields(
                         requireAllText = requireAllText,
                         requireAnyText = requireAnyText,
@@ -1058,6 +1081,18 @@ private fun CreateListDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+/** Starting points for smart collections: a name and tags any of which can match. */
+private val SMART_IDEAS = listOf(
+    "Scenery" to "scenery, landscape, sky",
+    "Night skies" to "night_sky, starry_sky, moon",
+    "Cityscapes" to "city, cityscape, city_lights",
+    "Rainy days" to "rain, umbrella",
+    "Flowers" to "flower, cherry_blossoms",
+    "Ocean" to "ocean, beach, underwater",
+    "Cats" to "cat, cat_ears",
+    "Minimal" to "simple_background, minimalism",
+)
 
 @Composable
 private fun TagRuleFields(
@@ -2507,305 +2542,6 @@ private fun CollectionImageSheet(
 private fun LocalSource.displayName(): String {
     val base = pluginId.lowercase().replaceFirstChar { it.uppercase() }
     return if (instanceId.isNotBlank()) "$base / $instanceId" else base
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MalCollectionDialog(
-    animeEntries: List<MalAnimeEntry>,
-    activeSources: List<LocalSource>,
-    existingList: LocalList? = null,
-    onConfirm: (
-        name: String,
-        animeTitle: String,
-        characterTags: List<String>,
-        pluginId: String?,
-        instanceId: String?,
-        fillCount: Int,
-        matchAny: Boolean,
-        autoAddToLibrary: Boolean,
-        nsfwOverride: Boolean?,
-        minResolution: MinResolution,
-        aspectRatio: AspectRatio,
-        useMalFilter: Boolean,
-    ) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val existingConfig = existingList?.malConfig
-    val initialTitle = existingConfig?.animeTitle.orEmpty()
-    var search by remember(existingList?.id, animeEntries) { mutableStateOf(initialTitle) }
-    var selectedTitle by remember(existingList?.id, animeEntries) { mutableStateOf(initialTitle) }
-    var name by remember(existingList?.id, animeEntries) { mutableStateOf(existingList?.name ?: "") }
-    var characterText by remember(existingList?.id) { mutableStateOf(existingConfig?.characterTags?.joinToString(", ").orEmpty()) }
-    var count by remember(existingList?.id) { mutableIntStateOf(existingConfig?.fillCount ?: 25) }
-    var matchAny by remember(existingList?.id) { mutableStateOf(existingConfig?.matchAny ?: false) }
-    var autoAddToLibrary by remember(existingList?.id) {
-        mutableStateOf(existingConfig?.autoAddToLibrary ?: (existingList?.useAsRotation == true))
-    }
-    var nsfwOverride by remember(existingList?.id) { mutableStateOf(existingConfig?.nsfwOverride) }
-    var minResolution by remember(existingList?.id) { mutableStateOf(existingConfig?.minResolution ?: MinResolution.ANY) }
-    var aspectRatio by remember(existingList?.id) { mutableStateOf(existingConfig?.aspectRatio ?: AspectRatio.ANY) }
-    var useMalFilter by remember(existingList?.id) { mutableStateOf(existingConfig?.useMalFilter ?: false) }
-    var selectedPluginId by remember(existingList?.id) { mutableStateOf(existingConfig?.sourcePluginId) }
-    var selectedInstanceId by remember(existingList?.id) {
-        mutableStateOf(existingConfig?.sourceInstanceId?.takeIf { it.isNotBlank() })
-    }
-    var sourceExpanded by remember { mutableStateOf(false) }
-
-    val selectedSource = activeSources.find {
-        it.pluginId == selectedPluginId && it.instanceId == (selectedInstanceId ?: "")
-    }
-    val filteredEntries = remember(search, animeEntries) {
-        val query = search.trim()
-        animeEntries
-            .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
-            .sortedByDescending { it.score }
-    }
-
-    fun selectAnime(entry: MalAnimeEntry) {
-        val previousTitle = selectedTitle
-        selectedTitle = entry.title
-        search = entry.title
-        if (name.isBlank() || name == previousTitle || name == existingList?.name) {
-            name = entry.title
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (existingList == null) "Create from MAL" else "Edit MAL collection") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (animeEntries.isEmpty()) {
-                    Text(
-                        "Refresh your MAL list in Settings first, then come back here to create a collection.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = search,
-                        onValueChange = { search = it },
-                        label = { Text("Find anime") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp)
-                            .border(
-                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                shape = MaterialTheme.shapes.medium
-                            )
-                            .padding(vertical = 4.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        if (filteredEntries.isEmpty()) {
-                            Text(
-                                "No matching anime",
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            filteredEntries.forEach { entry ->
-                                ListItem(
-                                    headlineContent = { Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    supportingContent = {
-                                        if (entry.score > 0) Text("MAL score ${entry.score}")
-                                    },
-                                    trailingContent = {
-                                        if (selectedTitle == entry.title) {
-                                            Icon(Icons.Default.Check, contentDescription = null)
-                                        }
-                                    },
-                                    modifier = Modifier.clickable { selectAnime(entry) }
-                                )
-                            }
-                        }
-                    }
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Collection name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = characterText,
-                        onValueChange = { characterText = it },
-                        label = { Text("Character tags") },
-                        placeholder = { Text("Optional, comma-separated") },
-                        modifier = Modifier.fillMaxWidth(),
-                        supportingText = {
-                            Text("Example: gojo_satoru, makima")
-                        }
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Initial fill", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(10, 25, 50, 100).forEach { n ->
-                                FilterChip(
-                                    selected = count == n,
-                                    onClick = { count = n },
-                                    label = { Text("$n") }
-                                )
-                            }
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(
-                            selected = !matchAny,
-                            onClick = { matchAny = false },
-                            label = { Text("All tags") }
-                        )
-                        FilterChip(
-                            selected = matchAny,
-                            onClick = { matchAny = true },
-                            label = { Text("Any tag") }
-                        )
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { autoAddToLibrary = !autoAddToLibrary }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Checkbox(checked = autoAddToLibrary, onCheckedChange = { autoAddToLibrary = it })
-                        Column {
-                            Text("Auto-add to Library", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Multiple collections can be linked to the Library, and schedules can turn on several at once.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (!LocalNsfwHidden.current) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("NSFW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = nsfwOverride == null, onClick = { nsfwOverride = null }, label = { Text("Auto") })
-                            FilterChip(selected = nsfwOverride == true, onClick = { nsfwOverride = true }, label = { Text("On") })
-                            FilterChip(selected = nsfwOverride == false, onClick = { nsfwOverride = false }, label = { Text("Off") })
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Min resolution", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            listOf(
-                                MinResolution.ANY,
-                                MinResolution.HD,
-                                MinResolution.FHD,
-                                MinResolution.QHD,
-                                MinResolution.UHD,
-                            ).forEach { res ->
-                                FilterChip(
-                                    selected = minResolution == res,
-                                    onClick = { minResolution = res },
-                                    label = { Text(res.label.substringBefore(' ')) }
-                                )
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Aspect ratio", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            AspectRatio.entries.filter { it != AspectRatio.MY_PHONE }.forEach { ratio ->
-                                FilterChip(
-                                    selected = aspectRatio == ratio,
-                                    onClick = { aspectRatio = ratio },
-                                    label = { Text(ratio.label.substringBefore(' ')) }
-                                )
-                            }
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { useMalFilter = !useMalFilter }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Checkbox(checked = useMalFilter, onCheckedChange = { useMalFilter = it })
-                        Text("MAL list only", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (activeSources.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Preferred source", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            ExposedDropdownMenuBox(
-                                expanded = sourceExpanded,
-                                onExpandedChange = { sourceExpanded = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = selectedSource?.displayName() ?: "All active sources",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    modifier = Modifier
-                                        .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                        .fillMaxWidth(),
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sourceExpanded) }
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = sourceExpanded,
-                                    onDismissRequest = { sourceExpanded = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("All active sources") },
-                                        onClick = {
-                                            selectedPluginId = null
-                                            selectedInstanceId = null
-                                            sourceExpanded = false
-                                        }
-                                    )
-                                    activeSources.forEach { src ->
-                                        DropdownMenuItem(
-                                            text = { Text(src.displayName()) },
-                                            onClick = {
-                                                selectedPluginId = src.pluginId
-                                                selectedInstanceId = src.instanceId.takeIf { it.isNotBlank() }
-                                                sourceExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onConfirm(
-                        name.trim(),
-                        selectedTitle,
-                        characterText.split(",").map { it.trim() }.filter { it.isNotBlank() },
-                        selectedPluginId,
-                        selectedInstanceId,
-                        count,
-                        matchAny,
-                        autoAddToLibrary,
-                        nsfwOverride,
-                        minResolution,
-                        aspectRatio,
-                        useMalFilter,
-                    )
-                },
-                enabled = animeEntries.isNotEmpty() && selectedTitle.isNotBlank() && name.isNotBlank()
-            ) {
-                Text(if (existingList == null) "Create" else "Save")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

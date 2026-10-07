@@ -12,7 +12,37 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class MalAnimeEntry(val title: String, val score: Int)
+/**
+ * One show from the user's MAL list. [title] is MAL's main (usually romaji) title; [englishTitle],
+ * [synonyms], [picture], [status] and [year] arrived later and are blank/empty on lists saved
+ * before then until the next refresh.
+ */
+data class MalAnimeEntry(
+    val title: String,
+    val score: Int,
+    val englishTitle: String = "",
+    val synonyms: List<String> = emptyList(),
+    val picture: String = "",
+    val status: String = "",
+    val year: Int = 0,
+    val mediaType: String = "",
+) {
+    /** The name people know it by: English when MAL has one. */
+    val displayTitle: String get() = englishTitle.ifBlank { title }
+    /** MAL's title, shown under [displayTitle] when they differ. */
+    val originalTitle: String? get() = title.takeIf { englishTitle.isNotBlank() && !it.equals(englishTitle, ignoreCase = true) }
+    val hasDetails: Boolean get() = picture.isNotBlank() || englishTitle.isNotBlank() || status.isNotBlank()
+}
+
+/** Human label for a MAL list status. */
+fun malStatusLabel(status: String): String = when (status) {
+    "watching" -> "Watching"
+    "completed" -> "Completed"
+    "on_hold" -> "On hold"
+    "dropped" -> "Dropped"
+    "plan_to_watch" -> "Plan to watch"
+    else -> status.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
 
 class MalPreferences(private val context: Context) {
 
@@ -80,7 +110,16 @@ class MalPreferences(private val context: Context) {
                 val arr = JSONArray(rawJson)
                 List(arr.length()) {
                     val obj = arr.getJSONObject(it)
-                    MalAnimeEntry(obj.getString("title"), obj.getInt("score"))
+                    MalAnimeEntry(
+                        title = obj.getString("title"),
+                        score = obj.optInt("score"),
+                        englishTitle = obj.optString("en"),
+                        synonyms = obj.optJSONArray("syn")?.let { a -> List(a.length()) { i -> a.optString(i) }.filter { it.isNotBlank() } }.orEmpty(),
+                        picture = obj.optString("pic"),
+                        status = obj.optString("status"),
+                        year = obj.optInt("year"),
+                        mediaType = obj.optString("type"),
+                    )
                 }
             }.getOrDefault(emptyList())
         }
@@ -120,7 +159,17 @@ class MalPreferences(private val context: Context) {
     suspend fun setAnimeEntries(entries: List<MalAnimeEntry>) {
         val arr = JSONArray()
         entries.forEach { entry ->
-            arr.put(JSONObject().put("title", entry.title).put("score", entry.score))
+            arr.put(
+                JSONObject()
+                    .put("title", entry.title)
+                    .put("score", entry.score)
+                    .put("en", entry.englishTitle)
+                    .put("syn", JSONArray(entry.synonyms))
+                    .put("pic", entry.picture)
+                    .put("status", entry.status)
+                    .put("year", entry.year)
+                    .put("type", entry.mediaType)
+            )
         }
         context.dataStore.edit { it[MAL_ANIME_ENTRIES_JSON] = arr.toString() }
     }

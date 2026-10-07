@@ -81,11 +81,7 @@ class FillHelper(private val context: Context) {
     }
 
     /** Builds the tag query for a MAL-managed collection. */
-    fun buildMalQuery(config: MalCollectionConfig): String =
-        (listOf(config.resolvedAnimeQuery.ifBlank { config.animeTitle }) + config.characterTags)
-            .map { normalizeBooruQuery(it) }
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
+    fun buildMalQuery(config: MalCollectionConfig): String = config.booruQuery
 
     /** Runs auto-refill on all MAL-managed rotation collections that are below [minCount]. */
     suspend fun autoRefillLowCollections(minCount: Int) {

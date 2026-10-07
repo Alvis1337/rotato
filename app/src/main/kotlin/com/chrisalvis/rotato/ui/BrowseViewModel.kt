@@ -143,6 +143,92 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     val malAnimeEntries = malPrefs.animeEntries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val malLoggedIn: StateFlow<Boolean> = malPrefs.isLoggedIn
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    private val _malRefreshing = MutableStateFlow(false)
+    val malRefreshing: StateFlow<Boolean> = _malRefreshing.asStateFlow()
+
+    /**
+     * Lists saved before English titles and posters were fetched have neither; refresh once so
+     * the anime picker can show them. [force] refreshes regardless (pull the latest list).
+     */
+    fun refreshMalListIfStale(force: Boolean = false) {
+        if (_malRefreshing.value) return
+        viewModelScope.launch {
+            if (!malPrefs.isLoggedIn.first()) return@launch
+            val entries = malPrefs.animeEntries.first()
+            if (!force && entries.isNotEmpty() && entries.any { it.hasDetails }) return@launch
+            _malRefreshing.update { true }
+            try {
+                com.chrisalvis.rotato.data.MalRepository(app).fetchAnimeList().getOrNull()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { malPrefs.setAnimeEntries(it) }
+            } finally {
+                _malRefreshing.update { false }
+            }
+        }
+    }
+
+    /**
+     * A handful of images for [tags] from the enabled sources, for previewing a collection
+     * before it's made. Same NSFW rules and blocklist as filling.
+     */
+    suspend fun previewImages(tags: String, matchAny: Boolean, limit: Int = 9): List<com.chrisalvis.rotato.data.BrainrotWallpaper> {
+        if (tags.isBlank()) return emptyList()
+        val manifests = pluginRepo.installedManifests.first()
+        val globalNsfw = prefs.nsfwMode.first()
+        val blocklist = com.chrisalvis.rotato.data.ContentBlocklist.load(app, globalNsfw)
+        val filters = BrainrotFilters(matchAny = matchAny)
+        val sources = localSources.sources.first().filter { it.enabled }.mapNotNull { src ->
+            val manifest = manifests.find { it.id.equals(src.pluginId, ignoreCase = true) } ?: return@mapNotNull null
+            val nsfw = globalNsfw && src.nsfwEnabled != false
+            if (!PluginExecutor.canServe(manifest, nsfw, src)) null else Triple(src, manifest, nsfw)
+        }
+        val results = kotlinx.coroutines.coroutineScope {
+            sources.map { (src, manifest, nsfw) ->
+                async(Dispatchers.IO) {
+                    runCatching { PluginExecutor.fetchPage(manifest, src, tags.trim(), emptyList(), nsfw, filters, limit) }
+                        .getOrDefault(emptyList())
+                        .filter { !it.isVideo && !blocklist.blocks(it) && (globalNsfw || !it.isNsfw) }
+                }
+            }.awaitAll()
+        }
+        // Interleave sources so one site doesn't fill the whole preview.
+        val out = mutableListOf<com.chrisalvis.rotato.data.BrainrotWallpaper>()
+        var i = 0
+        while (out.size < limit && results.any { i < it.size }) {
+            results.forEach { r -> if (i < r.size && out.size < limit) out += r[i] }
+            i++
+        }
+        return out
+    }
+
+    /** One-tap start: a collection for each of [entries], using each show's series tag. */
+    fun createCollectionsForShows(entries: List<com.chrisalvis.rotato.data.MalAnimeEntry>, autoAddToLibrary: Boolean) {
+        viewModelScope.launch {
+            val existing = _allLists.value.map { it.name.lowercase() }.toSet()
+            entries.filter { it.displayTitle.lowercase() !in existing }.forEach { entry ->
+                val tag = com.chrisalvis.rotato.data.AnimeTagResolver.seriesTags(entry).firstOrNull()?.name
+                createMalCollection(
+                    name = entry.displayTitle,
+                    animeTitle = entry.title,
+                    characterTags = emptyList(),
+                    pluginId = null,
+                    instanceId = null,
+                    fillCount = 25,
+                    matchAny = false,
+                    autoAddToLibrary = autoAddToLibrary,
+                    nsfwOverride = null,
+                    minResolution = MinResolution.ANY,
+                    aspectRatio = AspectRatio.ANY,
+                    useMalFilter = false,
+                    animeQuery = tag,
+                )
+            }
+        }
+    }
+
     val managedMalCollectionCount: StateFlow<Int> = _allLists
         .map { lists -> lists.count { it.isMalManaged } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
@@ -403,6 +489,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         minResolution: MinResolution,
         aspectRatio: AspectRatio,
         useMalFilter: Boolean,
+        animeQuery: String? = null,
     ) {
         val trimmedName = name.trim()
         val trimmedAnimeTitle = animeTitle.trim()
@@ -410,7 +497,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val config = MalCollectionConfig(
                 animeTitle = trimmedAnimeTitle,
-                animeQuery = normalizeBooruQuery(trimmedAnimeTitle),
+                animeQuery = animeQuery?.let(::normalizeBooruQuery)?.ifBlank { null } ?: normalizeBooruQuery(trimmedAnimeTitle),
                 characterTags = characterTags.map { it.trim() }.filter { it.isNotBlank() },
                 sourcePluginId = pluginId?.takeIf { it.isNotBlank() },
                 sourceInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: "",
@@ -462,6 +549,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         minResolution: MinResolution,
         aspectRatio: AspectRatio,
         useMalFilter: Boolean,
+        animeQuery: String? = null,
     ) {
         val trimmedName = name.trim()
         val trimmedAnimeTitle = animeTitle.trim()
@@ -476,7 +564,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             }
             val config = MalCollectionConfig(
                 animeTitle = trimmedAnimeTitle,
-                animeQuery = normalizeBooruQuery(trimmedAnimeTitle),
+                animeQuery = animeQuery?.let(::normalizeBooruQuery)?.ifBlank { null } ?: normalizeBooruQuery(trimmedAnimeTitle),
                 characterTags = characterTags.map { it.trim() }.filter { it.isNotBlank() },
                 sourcePluginId = pluginId?.takeIf { it.isNotBlank() },
                 sourceInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: "",
@@ -537,11 +625,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun buildManagedMalQuery(config: MalCollectionConfig): String =
-        (listOf(config.resolvedAnimeQuery.ifBlank { config.animeTitle }) + config.characterTags)
-            .map { normalizeBooruQuery(it) }
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
+    private fun buildManagedMalQuery(config: MalCollectionConfig): String = config.booruQuery
 
     private suspend fun fillCollectionFromSources(
         list: LocalList,

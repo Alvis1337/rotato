@@ -148,7 +148,7 @@ class MalRepository(private val context: Context) {
         val entries = mutableListOf<MalAnimeEntry>()
         for (status in statuses) {
             var url: String? = "https://api.myanimelist.net/v2/users/@me/animelist" +
-                "?status=$status&fields=list_status&limit=1000"
+                "?status=$status&fields=list_status,alternative_titles,main_picture,start_season,media_type&limit=1000&nsfw=true"
             while (url != null) {
                 val req = Request.Builder()
                     .url(url)
@@ -161,9 +161,24 @@ class MalRepository(private val context: Context) {
                     val data = json.getJSONArray("data")
                     for (i in 0 until data.length()) {
                         val item = data.getJSONObject(i)
-                        val title = item.getJSONObject("node").getString("title")
-                        val score = item.optJSONObject("list_status")?.optInt("score", 0) ?: 0
-                        entries.add(MalAnimeEntry(title, score))
+                        val node = item.getJSONObject("node")
+                        val title = node.getString("title")
+                        val listStatus = item.optJSONObject("list_status")
+                        val alt = node.optJSONObject("alternative_titles")
+                        val picture = node.optJSONObject("main_picture")
+                        entries.add(
+                            MalAnimeEntry(
+                                title = title,
+                                score = listStatus?.optInt("score", 0) ?: 0,
+                                englishTitle = alt?.optString("en").orEmpty(),
+                                synonyms = alt?.optJSONArray("synonyms")?.let { a -> List(a.length()) { i -> a.optString(i) } }
+                                    ?.filter { it.isNotBlank() }.orEmpty(),
+                                picture = picture?.optString("large")?.ifBlank { null } ?: picture?.optString("medium").orEmpty(),
+                                status = listStatus?.optString("status").orEmpty().ifBlank { status },
+                                year = node.optJSONObject("start_season")?.optInt("year") ?: 0,
+                                mediaType = node.optString("media_type"),
+                            )
+                        )
                     }
                     url = json.optJSONObject("paging")?.optString("next")?.takeIf { it.isNotBlank() }
                 }
