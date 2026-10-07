@@ -126,7 +126,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
+fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> Unit = {}) {
     val vm: BrowseViewModel = viewModel()
 
     val lists by vm.lists.collectAsStateWithLifecycle()
@@ -154,6 +154,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
     val allKnownTags by vm.allKnownTags.collectAsStateWithLifecycle()
     val activeSources by vm.activeSources.collectAsStateWithLifecycle()
     val malAnimeEntries by vm.malAnimeEntries.collectAsStateWithLifecycle()
+    val foldPairOuter by vm.foldPairOuter.collectAsStateWithLifecycle()
+    val foldPairBusy by vm.foldPairBusy.collectAsStateWithLifecycle()
     val malLoggedIn by vm.malLoggedIn.collectAsStateWithLifecycle()
     val malRefreshing by vm.malRefreshing.collectAsStateWithLifecycle()
     val managedMalCollectionCount by vm.managedMalCollectionCount.collectAsStateWithLifecycle()
@@ -311,6 +313,23 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             },
             moveTargets = lists.filter { it.id != selectedList?.id && !it.isSmartCollection },
             onMoveTo = { wp, target -> vm.moveEntryToList(wp.entryId, target.id) },
+            onSetWallpaper = { vm.setAsWallpaper(it) },
+            canFoldPair = vm.canFoldPair,
+            foldPairOuter = foldPairOuter,
+            foldPairBusy = foldPairBusy,
+            onFoldPair = { wp ->
+                val outer = foldPairOuter
+                when {
+                    outer == null -> {
+                        vm.pickFoldOuter(wp)
+                        android.widget.Toast.makeText(context, "Cover screen picked. Now open the image for the inside screen and tap Pair.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    outer.fullUrl == wp.fullUrl -> vm.pickFoldOuter(null)
+                    else -> vm.saveFoldPair(outer, wp)
+                }
+            },
+            onTagSearch = { tag -> previewWallpaper = null; onSearchDiscover(tag) },
+            onTagTier = { tag, tier -> vm.setTagTier(tag, tier, initial.isNsfw) },
             onDismiss = { lastViewed ->
                 previewWallpaper = null
                 val idx = wallpapers.indexOfFirst { it.entryId == lastViewed?.entryId }.takeIf { it >= 0 }
@@ -350,6 +369,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             loggedIn = malLoggedIn,
             refreshing = malRefreshing,
             activeSources = activeSources,
+            nsfwBlurEnabled = nsfwBlurEnabled,
             onRefresh = { vm.refreshMalListIfStale(force = true) },
             onPreview = { tags, any -> vm.previewImages(tags, any) },
             onQuickStart = { shows, addToRotation ->
@@ -396,6 +416,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}) {
             loggedIn = malLoggedIn,
             refreshing = malRefreshing,
             activeSources = activeSources,
+            nsfwBlurEnabled = nsfwBlurEnabled,
             existingList = list,
             onRefresh = { vm.refreshMalListIfStale(force = true) },
             onPreview = { tags, any -> vm.previewImages(tags, any) },
@@ -2121,6 +2142,13 @@ private fun WallpaperUrlPreviewDialog(
     onShare: (BrowseWallpaper) -> Unit,
     moveTargets: List<LocalList> = emptyList(),
     onMoveTo: (BrowseWallpaper, LocalList) -> Unit = { _, _ -> },
+    onSetWallpaper: (BrowseWallpaper) -> Unit = {},
+    canFoldPair: Boolean = false,
+    foldPairOuter: BrowseWallpaper? = null,
+    foldPairBusy: Boolean = false,
+    onFoldPair: (BrowseWallpaper) -> Unit = {},
+    onTagSearch: (String) -> Unit = {},
+    onTagTier: (String, com.chrisalvis.rotato.data.TagTier) -> Unit = { _, _ -> },
     onDismiss: (currentWallpaper: BrowseWallpaper?) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -2320,24 +2348,34 @@ private fun WallpaperUrlPreviewDialog(
                 val inRotation = isInRotation(wp)
                 val actions: @Composable (Modifier) -> Unit = { mod ->
                     Row(mod, horizontalArrangement = Arrangement.SpaceEvenly) {
+                        // Same actions as Discover's viewer; videos play through the live wallpaper.
+                        DockAction(Icons.Outlined.Wallpaper, "Set", onClick = { onSetWallpaper(wp) }, modifier = Modifier.weight(1f))
                         DockAction(
-                            if (inRotation) Icons.Default.Check else Icons.Outlined.Wallpaper,
+                            if (inRotation) Icons.Default.Check else Icons.Default.Download,
                             if (inRotation) "In Library" else "Library",
                             highlighted = inRotation,
                             enabled = !wp.isVideo,
                             onClick = { onToggleRotation(wp) },
                             modifier = Modifier.weight(1f)
                         )
-                        DockAction(
-                            Icons.Default.FolderOpen, "Cover",
-                            enabled = !wp.isVideo,
-                            onClick = { onSetAsCover(wp) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        DockAction(Icons.Default.Share, "Share", onClick = { onShare(wp) }, modifier = Modifier.weight(1f))
-                        if (wp.entryId.isNotBlank() && moveTargets.isNotEmpty()) {
-                            DockAction(Icons.Default.DriveFileMove, "Move", onClick = { showDetails = true }, modifier = Modifier.weight(1f))
+                        if (canFoldPair && !wp.isVideo) {
+                            val pickedHere = foldPairOuter?.let { it.fullUrl == wp.fullUrl } == true
+                            DockAction(
+                                Icons.Default.Smartphone,
+                                when {
+                                    foldPairBusy -> "Pairing…"
+                                    pickedHere -> "Cover ✓"
+                                    foldPairOuter != null -> "Pair"
+                                    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400 -> "Pair"
+                                    else -> "Fold pair"
+                                },
+                                highlighted = foldPairOuter != null,
+                                enabled = !foldPairBusy,
+                                onClick = { onFoldPair(wp) },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
+                        DockAction(Icons.Default.Share, "Share", onClick = { onShare(wp) }, modifier = Modifier.weight(1f))
                         if (wp.entryId.isNotBlank()) {
                             DockAction(
                                 Icons.Default.Delete, "Remove",
@@ -2425,6 +2463,9 @@ private fun WallpaperUrlPreviewDialog(
                         onMoveTo = { target -> showDetails = false; onMoveTo(wp, target) },
                         onCopyUrl = { onCopyUrl(wp) },
                         onSaveToGallery = { onSaveToGallery(wp) },
+                        onSetAsCover = if (wp.isVideo) null else ({ showDetails = false; onSetAsCover(wp) }),
+                        onTagSearch = { tag -> showDetails = false; onTagSearch(tag) },
+                        onTagTier = onTagTier,
                         onDismiss = { showDetails = false },
                     )
                 }
@@ -2437,8 +2478,8 @@ private fun WallpaperUrlPreviewDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CollectionInfoPills(wp: BrowseWallpaper, position: String?) {
-    if (wp.source.isNotBlank()) InfoPill(wp.source.replaceFirstChar { it.uppercase() }, bold = true)
-    if (wp.resolution.isNotBlank()) InfoPill(wp.resolution.replace("x", " × "))
+    if (wp.source.isNotBlank()) InfoPill(if (wp.source == "device") "On device" else wp.source.replaceFirstChar { it.uppercase() }, bold = true)
+    ImageFactPills(wp.resolution)
     if (wp.isVideo) InfoPill("Video", icon = Icons.Default.PlayArrow)
     if (wp.isNsfw && !LocalNsfwHidden.current) InfoPill("NSFW", container = MaterialTheme.colorScheme.error.copy(alpha = 0.85f))
     if (position != null) InfoPill(position)
@@ -2454,9 +2495,13 @@ private fun CollectionImageSheet(
     onMoveTo: (LocalList) -> Unit,
     onCopyUrl: () -> Unit,
     onSaveToGallery: () -> Unit,
+    onSetAsCover: (() -> Unit)? = null,
+    onTagSearch: (String) -> Unit = {},
+    onTagTier: (String, com.chrisalvis.rotato.data.TagTier) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    var tagMenu by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)) {
         Column(
             modifier = Modifier
@@ -2518,18 +2563,39 @@ private fun CollectionImageSheet(
                     Spacer(Modifier.width(6.dp))
                     Text("Copy link")
                 }
+                if (onSetAsCover != null) {
+                    FilledTonalButton(onClick = onSetAsCover) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Use as cover")
+                    }
+                }
             }
 
             if (wallpaper.tags.isNotEmpty()) {
-                SheetSection("Tags") {
+                SheetSection("Tags · tap to find more, hold for options") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         wallpaper.tags.forEach { tag ->
-                            Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
-                                Text(
-                                    tag.replace('_', ' '),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                )
+                            Box {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .combinedClickable(onClick = { onTagSearch(tag) }, onLongClick = { tagMenu = tag })
+                                ) {
+                                    Text(
+                                        tag.replace('_', ' '),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
+                                // Same tag actions as Discover: search, or tune your taste.
+                                DropdownMenu(expanded = tagMenu == tag, onDismissRequest = { tagMenu = null }) {
+                                    DropdownMenuItem(text = { Text("Find more in Discover") }, onClick = { tagMenu = null; onTagSearch(tag) })
+                                    DropdownMenuItem(text = { Text("Show me more of this") }, onClick = { tagMenu = null; onTagTier(tag, com.chrisalvis.rotato.data.TagTier.LOVE) })
+                                    DropdownMenuItem(text = { Text("Never show this") }, onClick = { tagMenu = null; onTagTier(tag, com.chrisalvis.rotato.data.TagTier.NEVER) })
+                                }
                             }
                         }
                     }

@@ -229,6 +229,81 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // ── Set as wallpaper and fold pairs, same as Discover's viewer ──────────────────────────
+
+    private fun historyItem(wp: BrowseWallpaper) = com.chrisalvis.rotato.data.WallpaperHistoryItem(
+        thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl, fullUrl = wp.fullUrl,
+        source = wp.source, timestamp = System.currentTimeMillis(),
+        tags = wp.tags, pageUrl = wp.pageUrl,
+    )
+
+    fun setAsWallpaper(wp: BrowseWallpaper) {
+        viewModelScope.launch {
+            if (wp.isVideo && !com.chrisalvis.rotato.live.LiveWallpaper.isActive(app)) {
+                _fetchFillResult.emit("Turn on the Rotato live wallpaper (Settings › Rotation) to use videos")
+                return@launch
+            }
+            if (wp.isVideo) _fetchFillResult.emit("Downloading video…")
+            val err = if (wp.isVideo) {
+                com.chrisalvis.rotato.data.applyVideoWallpaperFromUrl(app, wp.fullUrl.ifBlank { wp.sampleUrl }, wp.pageUrl, historyItem(wp))
+            } else {
+                com.chrisalvis.rotato.data.applyWallpaperFromUrl(app, wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } }, wp.isNsfw, historyItem(wp))
+            }
+            _fetchFillResult.emit(err ?: if (wp.isVideo) "Video wallpaper set!" else "Wallpaper set!")
+        }
+    }
+
+    /** Love/Never a tag from the Collections viewer, the same as from Discover. */
+    fun setTagTier(tag: String, tier: com.chrisalvis.rotato.data.TagTier, isNsfw: Boolean) {
+        viewModelScope.launch {
+            com.chrisalvis.rotato.data.TastePreferences(app).setTagTier(tag.trim().lowercase(), tier, isNsfw)
+            _fetchFillResult.emit(
+                if (tier == com.chrisalvis.rotato.data.TagTier.NEVER) "Discover won't show \"${tag.replace('_', ' ')}\" anymore"
+                else "Discover will show more \"${tag.replace('_', ' ')}\""
+            )
+        }
+    }
+
+    /** True when this phone can show a different wallpaper on each Fold screen. */
+    val canFoldPair: Boolean = com.chrisalvis.rotato.data.supportsFoldPairs(application)
+
+    private val _foldPairOuter = MutableStateFlow<BrowseWallpaper?>(null)
+    /** Image picked for the cover screen while the user looks for an inside one. */
+    val foldPairOuter: StateFlow<BrowseWallpaper?> = _foldPairOuter.asStateFlow()
+    private val _foldPairBusy = MutableStateFlow(false)
+    val foldPairBusy: StateFlow<Boolean> = _foldPairBusy.asStateFlow()
+
+    fun pickFoldOuter(wp: BrowseWallpaper?) { _foldPairOuter.value = wp }
+
+    /** Saves [outer] (cover screen) and [inner] (inside) as a fold pair in the Library and sets it. */
+    fun saveFoldPair(outer: BrowseWallpaper, inner: BrowseWallpaper) {
+        if (_foldPairBusy.value) return
+        viewModelScope.launch {
+            _foldPairBusy.value = true
+            try {
+                val dir = File(app.filesDir, "rotato_images").apply { mkdirs() }
+                val repo = com.chrisalvis.rotato.data.FeedRepository(dir)
+                val files = listOf(outer, inner).map { wp ->
+                    (com.chrisalvis.rotato.data.imageSourceFor(app, wp.fullUrl) as? File)?.takeIf { it.exists() }
+                        ?: repo.downloadWallpaper(wp.sourceId, wp.fullUrl, wp.sampleUrl, source = wp.source)
+                            ?.also { if (wp.isNsfw) prefs.setFileNsfw(it, true) }
+                            ?.let { File(dir, it) }
+                }
+                val (outerFile, innerFile) = files
+                if (outerFile == null || innerFile == null) {
+                    _fetchFillResult.emit("Couldn't download both images")
+                    return@launch
+                }
+                prefs.saveFoldPair(com.chrisalvis.rotato.data.FoldPair(outerFile.absolutePath, innerFile.absolutePath))
+                val err = withContext(Dispatchers.IO) { com.chrisalvis.rotato.data.applyWallpaperFile(app, outerFile) }
+                _foldPairOuter.value = null
+                _fetchFillResult.emit(err ?: "Fold pair set · saved to Library")
+            } finally {
+                _foldPairBusy.value = false
+            }
+        }
+    }
+
     val managedMalCollectionCount: StateFlow<Int> = _allLists
         .map { lists -> lists.count { it.isMalManaged } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)

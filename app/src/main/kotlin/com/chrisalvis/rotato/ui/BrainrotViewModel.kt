@@ -894,57 +894,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             setVideoWallpaper(wp)
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            val app = getApplication<Application>()
-            // Toasts must be shown from the main thread; this coroutine runs on IO.
-            suspend fun toast(msg: String) = withContext(Dispatchers.Main) {
-                Toast.makeText(app, msg, Toast.LENGTH_SHORT).show()
-            }
-            val target = wallpaperTargetSize(app)
-            val request = ImageRequest.Builder(app)
-                .data(wp.fullUrl.ifBlank { wp.thumbUrl })
-                .allowHardware(false)
-                // Decode near wallpaper resolution instead of the original, which can be huge.
-                .size(target.width, target.height)
-                .scale(Scale.FILL)
-                .build()
-            val result = app.imageLoader.execute(request)
-            val bitmap = (result as? SuccessResult)?.drawable?.let {
-                (it as? BitmapDrawable)?.bitmap
-            }
-            if (bitmap == null) {
-                toast("Failed to load image")
-                return@launch
-            }
-            try {
-                val settings = prefs.settings.first()
-                val wm = WallpaperManager.getInstance(app)
-                val effectiveTarget = if (wp.isNsfw && prefs.nsfwHomeOnly.first()) WallpaperTarget.HOME_ONLY else settings.wallpaperTarget
-                val flags = when (effectiveTarget) {
-                    WallpaperTarget.HOME_ONLY -> WallpaperManager.FLAG_SYSTEM
-                    WallpaperTarget.LOCK_ONLY -> WallpaperManager.FLAG_LOCK
-                    WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
-                }
-                // The source bitmap belongs to Coil's memory cache, so only the copy is recycled.
-                val screenBitmap = fitWallpaperBitmap(bitmap, settings.wallpaperFit, target)
-                try {
-                    setWallpaperBitmap(app, wm, screenBitmap, flags, settings.wallpaperFit, settings.wallpaperEffects)
-                } finally {
-                    screenBitmap.recycle()
-                }
-                prefs.recordWallpaperShown(
-                    WallpaperHistoryItem(
-                        thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl, fullUrl = wp.fullUrl,
-                        source = wp.source, timestamp = System.currentTimeMillis(),
-                        tags = wp.tags, pageUrl = wp.pageUrl,
-                    )
-                )
-                toast("Wallpaper set!")
-            } catch (e: Exception) {
-                toast("Failed to set wallpaper")
-            }
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val err = com.chrisalvis.rotato.data.applyWallpaperFromUrl(app, wp.fullUrl.ifBlank { wp.thumbUrl }, wp.isNsfw, historyItem(wp))
+            Toast.makeText(app, err ?: "Wallpaper set!", Toast.LENGTH_SHORT).show()
         }
     }
+
+    private fun historyItem(wp: BrainrotWallpaper) = WallpaperHistoryItem(
+        thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl, fullUrl = wp.fullUrl,
+        source = wp.source, timestamp = System.currentTimeMillis(),
+        tags = wp.tags, pageUrl = wp.pageUrl,
+    )
 
     /** Videos play through Rotato's live wallpaper, so they need it switched on first. */
     private fun setVideoWallpaper(wp: BrainrotWallpaper) {
@@ -954,41 +915,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         Toast.makeText(app, "Downloading video…", Toast.LENGTH_SHORT).show()
-        viewModelScope.launch(Dispatchers.IO) {
-            val url = wp.fullUrl.ifBlank { wp.sampleUrl }
-            val ext = url.substringBefore('?').substringAfterLast('.', "mp4").lowercase().takeIf { it.length in 2..4 } ?: "mp4"
-            val dir = File(app.filesDir, "live").apply { mkdirs() }
-            val file = File(dir, "video_${System.currentTimeMillis()}.$ext")
-            val ok = try {
-                val req = Request.Builder().url(url)
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36")
-                    .apply { if (wp.pageUrl.isNotBlank()) header("Referer", wp.pageUrl) }
-                    .build()
-                com.chrisalvis.rotato.data.FeedRepository.httpClient.newCall(req).execute().use { resp ->
-                    val body = resp.body
-                    if (!resp.isSuccessful || body == null) false
-                    else { file.outputStream().use { body.byteStream().copyTo(it) }; file.length() > 0 }
-                }
-            } catch (e: Exception) {
-                false
-            }
-            if (ok) {
-                // Keep just this video; older ones are no longer on screen.
-                dir.listFiles { f -> f.name.startsWith("video_") && f != file }?.forEach { it.delete() }
-                com.chrisalvis.rotato.live.LiveWallpaper.showVideo(app, file)
-                prefs.recordWallpaperShown(
-                    WallpaperHistoryItem(
-                        thumbUrl = wp.thumbUrl, sampleUrl = wp.sampleUrl, fullUrl = wp.fullUrl,
-                        source = wp.source, timestamp = System.currentTimeMillis(),
-                        tags = wp.tags, pageUrl = wp.pageUrl,
-                    )
-                )
-            } else {
-                file.delete()
-            }
-            withContext(Dispatchers.Main) {
-                Toast.makeText(app, if (ok) "Video wallpaper set!" else "Couldn't download the video", Toast.LENGTH_SHORT).show()
-            }
+        viewModelScope.launch {
+            val err = com.chrisalvis.rotato.data.applyVideoWallpaperFromUrl(app, wp.fullUrl.ifBlank { wp.sampleUrl }, wp.pageUrl, historyItem(wp))
+            Toast.makeText(app, err ?: "Video wallpaper set!", Toast.LENGTH_SHORT).show()
         }
     }
 

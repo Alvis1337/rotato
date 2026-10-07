@@ -2728,8 +2728,9 @@ private fun ViewerActions(
                 }
             }
         }
+        // Videos can be set too: they play through Rotato's live wallpaper.
+        DockAction(Icons.Outlined.Wallpaper, "Set", onClick = onSetWallpaper, modifier = Modifier.weight(1f))
         if (!wallpaper.isVideo) {
-            DockAction(Icons.Outlined.Wallpaper, "Set", onClick = onSetWallpaper, modifier = Modifier.weight(1f))
             DockAction(
                 Icons.Default.Download,
                 if (isDownloading) "Adding…" else "Library",

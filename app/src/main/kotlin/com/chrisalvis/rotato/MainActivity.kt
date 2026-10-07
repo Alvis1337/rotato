@@ -400,7 +400,13 @@ class MainActivity : AppCompatActivity() {
                                 )
                             }
                             composable("browse") {
-                                BrowseScreen(onGoToDiscover = { navController.navigate("discover") })
+                                BrowseScreen(
+                                    onGoToDiscover = { navController.navigate("discover") },
+                                    onSearchDiscover = { tag ->
+                                        brainrotViewModel.searchByTag(tag)
+                                        navController.navigate("discover") { launchSingleTop = true }
+                                    },
+                                )
                             }
                             composable("taste") {
                                 TasteScreen(vm = tasteViewModel)

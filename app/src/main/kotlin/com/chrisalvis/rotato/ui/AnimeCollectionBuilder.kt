@@ -121,6 +121,7 @@ internal fun AnimeCollectionBuilder(
     loggedIn: Boolean,
     refreshing: Boolean,
     activeSources: List<LocalSource>,
+    nsfwBlurEnabled: Boolean = true,
     existingList: LocalList? = null,
     onRefresh: () -> Unit,
     onPreview: suspend (tags: String, matchAny: Boolean) -> List<BrainrotWallpaper>,
@@ -193,6 +194,7 @@ internal fun AnimeCollectionBuilder(
                                         together = together,
                                         onTogether = { together = it },
                                         onPreview = onPreview,
+                                        blur = nsfwBlurEnabled,
                                     )
                                 }
                                 BuilderStep.FINISH -> FinishStep(
@@ -545,6 +547,7 @@ private fun LookStep(
     together: Boolean,
     onTogether: (Boolean) -> Unit,
     onPreview: suspend (String, Boolean) -> List<BrainrotWallpaper>,
+    blur: Boolean,
 ) {
     var series by remember(entry.title) { mutableStateOf<List<TagMatch>?>(null) }
     var castLoading by remember { mutableStateOf(false) }
@@ -717,21 +720,21 @@ private fun LookStep(
         BuilderSection(title = "Preview", hint = "A sample of what your sources have right now.") {
             val items = preview
             when {
-                query.isBlank() || items == null -> PreviewGrid(List(6) { null })
+                query.isBlank() || items == null -> PreviewGrid(List(6) { null }, blur)
                 items.isEmpty() -> Text(
                     if (characters.isNotEmpty()) "Nothing found for this mix. Try fewer characters or \"Any of them\"."
                     else "Nothing found with this tag on your sources. Try another tag above.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
-                else -> PreviewGrid(items)
+                else -> PreviewGrid(items, blur)
             }
         }
     }
 }
 
 @Composable
-private fun PreviewGrid(items: List<BrainrotWallpaper?>) {
+private fun PreviewGrid(items: List<BrainrotWallpaper?>, blur: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -741,12 +744,16 @@ private fun PreviewGrid(items: List<BrainrotWallpaper?>) {
                             .background(MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         if (wp != null) {
+                            // NSFW previews blur like everywhere else; tap to reveal.
+                            var revealed by rememberNsfwRevealed(wp.id)
                             AsyncImage(
                                 model = wp.thumbUrl.ifBlank { wp.sampleUrl },
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().nsfwContentBlur(wp.isNsfw, blur, revealed)
+                                    .clickable(enabled = wp.isNsfw && blur && !revealed) { revealed = true },
                             )
+                            NsfwBlurLayer(wp.isNsfw, blur, revealed, compact = true)
                         }
                     }
                 }

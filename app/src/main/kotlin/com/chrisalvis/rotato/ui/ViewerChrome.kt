@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -188,5 +189,42 @@ internal fun InfoPill(
                 color = content
             )
         }
+    }
+}
+
+/**
+ * Size class, dimensions, orientation and (on a foldable) "Fold-friendly" pills for an image's
+ * "WxH" [resolution]. Emits nothing for an unknown size. Call inside a FlowRow.
+ */
+@Composable
+internal fun ImageFactPills(resolution: String) {
+    val (w, h) = remember(resolution) {
+        resolution.lowercase().split('x', '×').mapNotNull { it.trim().toIntOrNull() }
+            .let { if (it.size == 2) it[0] to it[1] else 0 to 0 }
+    }
+    if (w <= 0 || h <= 0) return
+    val foldCanvas = rememberFoldCanvas()
+    val longSide = maxOf(w, h)
+    InfoPill(
+        when {
+            longSide >= 7680 -> "8K"
+            longSide >= 3840 -> "4K"
+            longSide >= 2560 -> "QHD"
+            longSide >= 1920 -> "FHD"
+            longSide >= 1280 -> "HD"
+            else -> "Low res"
+        },
+        bold = true,
+    )
+    InfoPill("$w × $h")
+    val ratio = w.toFloat() / h
+    InfoPill(if (ratio > 1.15f) "Landscape" else if (ratio < 0.87f) "Portrait" else "Square")
+    if (foldCanvas != null && com.chrisalvis.rotato.data.isFoldFriendly(w, h, foldCanvas)) {
+        InfoPill(
+            "Fold-friendly",
+            icon = Icons.Default.Smartphone,
+            container = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f),
+            content = MaterialTheme.colorScheme.onTertiary,
+        )
     }
 }
