@@ -26,6 +26,7 @@ object LiveWallpaper {
     internal const val KEY_DRIFT = "drift"
     internal const val KEY_PARALLAX = "parallax"
     internal const val KEY_DOUBLE_TAP = "double_tap"
+    internal const val KEY_SUN = "follow_sun"
 
     private val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "m4v")
 
@@ -113,4 +114,33 @@ object LiveWallpaper {
     /** Double-tap an empty spot on the home screen for the next wallpaper. */
     fun doubleTap(context: Context) = sp(context).getBoolean(KEY_DOUBLE_TAP, true)
     fun setDoubleTap(context: Context, on: Boolean) = sp(context).edit().putBoolean(KEY_DOUBLE_TAP, on).apply()
+
+    /** Warm golden-hour glow in the evening, a gentle dim and cool tint at night. */
+    fun followSun(context: Context) = sp(context).getBoolean(KEY_SUN, false)
+    fun setFollowSun(context: Context, on: Boolean) = sp(context).edit().putBoolean(KEY_SUN, on).apply()
+
+    /**
+     * The tint laid over the wallpaper at [hour] (0–24, fractional) when "Follow the sun" is on:
+     * transparent through the day, amber around sunrise and sunset, deep blue at night.
+     */
+    internal fun sunTint(hour: Float): Int {
+        fun bump(h: Float, start: Float, peak: Float, end: Float): Float = when {
+            h <= start || h >= end -> 0f
+            h <= peak -> (h - start) / (peak - start)
+            else -> (end - h) / (end - peak)
+        }
+        val night = when {
+            hour >= 22f || hour < 5f -> 1f
+            hour in 20f..22f -> (hour - 20f) / 2f
+            hour in 5f..6.5f -> 1f - (hour - 5f) / 1.5f
+            else -> 0f
+        }
+        val warm = maxOf(bump(hour, 5.5f, 7f, 9f) * 0.6f, bump(hour, 16.5f, 19f, 21f))
+        if (night >= warm) {
+            val a = (night * 110).toInt()
+            return android.graphics.Color.argb(a, 8, 14, 40)
+        }
+        val a = (warm * 70).toInt()
+        return android.graphics.Color.argb(a, 255, 140, 40)
+    }
 }

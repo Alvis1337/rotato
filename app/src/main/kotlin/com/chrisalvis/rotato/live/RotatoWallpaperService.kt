@@ -30,6 +30,7 @@ import com.chrisalvis.rotato.data.findFocusPoint
 import com.chrisalvis.rotato.data.focusedCrop
 import com.chrisalvis.rotato.worker.AutomationReceiver
 import java.io.File
+import java.time.LocalTime
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -72,6 +73,7 @@ class RotatoWallpaperService : WallpaperService() {
         private var drift = false
         private var parallax = false
         private var doubleTap = true
+        private var followSun = false
         private var tiltX = 0f
         private var tiltY = 0f
         private var baseRoll: Float? = null
@@ -165,6 +167,7 @@ class RotatoWallpaperService : WallpaperService() {
             drift = prefs.getBoolean(LiveWallpaper.KEY_DRIFT, false)
             parallax = prefs.getBoolean(LiveWallpaper.KEY_PARALLAX, false)
             doubleTap = prefs.getBoolean(LiveWallpaper.KEY_DOUBLE_TAP, true)
+            followSun = prefs.getBoolean(LiveWallpaper.KEY_SUN, false)
         }
 
         /** Loads the published image or video; images decode off the main thread. */
@@ -263,6 +266,11 @@ class RotatoWallpaperService : WallpaperService() {
                     paint.alpha = (255 * interpolator.getInterpolation(fadeT)).toInt()
                     drawImage(canvas, cur, now, reveal)
                 }
+                if (followSun && cur != null) {
+                    val time = LocalTime.now()
+                    val tint = LiveWallpaper.sunTint(time.hour + time.minute / 60f)
+                    if (Color.alpha(tint) > 0) canvas.drawColor(tint)
+                }
                 if (fadeT >= 1f && prev != null) {
                     prev.bitmap.recycle()
                     previous = null
@@ -271,7 +279,11 @@ class RotatoWallpaperService : WallpaperService() {
             } finally {
                 runCatching { holder.unlockCanvasAndPost(canvas) }
             }
-            if (animating && visible) main.postDelayed(frameCallback, if (drift && !parallax && fadeMs <= 0) 50L else 16L)
+            // The sun moves slowly: with nothing animating, repaint once a minute so the tint keeps up.
+            when {
+                animating && visible -> main.postDelayed(frameCallback, if (drift && !parallax && fadeMs <= 0) 50L else 16L)
+                followSun && visible -> main.postDelayed(frameCallback, 60_000L)
+            }
         }
 
         private fun drawImage(canvas: Canvas, frame: Frame, now: Long, reveal: Float) {

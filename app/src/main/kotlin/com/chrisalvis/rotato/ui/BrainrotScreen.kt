@@ -2031,6 +2031,7 @@ private fun WallpaperDetailOverlay(
                 },
                 onTagSearch = { tag -> showInfoExpanded = false; onTagSearch(tag) },
                 onTagActions = { tag -> tagActionTag = tag },
+                onSetWallpaper = { showInfoExpanded = false; onSetWallpaper(wallpaper) },
                 onDismiss = { showInfoExpanded = false },
             )
         }
@@ -2834,10 +2835,15 @@ private fun ImageDetailsSheet(
     onBlock: () -> Unit,
     onTagSearch: (String) -> Unit,
     onTagActions: (String) -> Unit,
+    onSetWallpaper: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    var showScreenPreview by remember { mutableStateOf(false) }
+    if (showScreenPreview) {
+        ScreenPreviewDialog(imageUrl = wallpaper.fullUrl, onSet = onSetWallpaper, onDismiss = { showScreenPreview = false })
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
@@ -2887,6 +2893,13 @@ private fun ImageDetailsSheet(
                     Icon(Icons.Default.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(if (isSavingToGallery) "Saving…" else "Save to gallery")
+                }
+            }
+            if (!wallpaper.isVideo) {
+                OutlinedButton(onClick = { showScreenPreview = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Preview on my screens")
                 }
             }
 

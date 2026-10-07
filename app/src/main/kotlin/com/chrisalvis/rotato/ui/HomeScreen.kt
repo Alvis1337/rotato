@@ -331,6 +331,8 @@ private fun LibraryContent(
     // Match a photo: pick any picture and the Library shows what goes with it, best match first.
     var matchLook by remember { mutableStateOf<com.chrisalvis.rotato.data.ImageLook?>(null) }
     var matchLoading by remember { mutableStateOf(false) }
+    // Rainbow order: lay the Library out by each image's main colour, like a bookshelf sorted by spine.
+    var rainbow by rememberSaveable { mutableStateOf(false) }
     val matchScope = rememberCoroutineScope()
     val matchPicker = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -348,17 +350,17 @@ private fun LibraryContent(
             }
         }
     }
-    val looks by produceState(emptyMap<String, com.chrisalvis.rotato.data.ImageLook>(), images, selectedColour != null || matchLook != null) {
-        if (selectedColour == null && matchLook == null) return@produceState
+    val looks by produceState(emptyMap<String, com.chrisalvis.rotato.data.ImageLook>(), images, selectedColour != null || matchLook != null || rainbow) {
+        if (selectedColour == null && matchLook == null && !rainbow) return@produceState
         looksLoading = true
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             com.chrisalvis.rotato.data.ImageAnalysis.looksFor(appContext, images)
         }
         looksLoading = false
     }
-    val gridImages = remember(images, selectedColour, looks, matchLook) {
+    val gridImages = remember(images, selectedColour, looks, matchLook, rainbow) {
         val target = matchLook
-        when {
+        val filtered = when {
             target != null -> images
                 .mapNotNull { f -> looks[f.name]?.let { com.chrisalvis.rotato.data.ImageAnalysis.matchScore(target, it) }?.let { f to it } }
                 .sortedByDescending { it.second }
@@ -366,6 +368,7 @@ private fun LibraryContent(
             selectedColour == null -> images
             else -> images.filter { looks[it.name]?.colours?.contains(selectedColour) == true }
         }
+        if (rainbow && target == null) com.chrisalvis.rotato.data.ImageAnalysis.rainbowOrder(filtered, looks) else filtered
     }
 
     if (showSaveToListDialog) {
@@ -515,6 +518,8 @@ private fun LibraryContent(
                                 matchPicker.launch(PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
                             onClearMatch = { matchLook = null },
+                            rainbow = rainbow,
+                            onRainbow = { rainbow = !rainbow; if (rainbow) matchLook = null },
                         )
                     }
                 }
@@ -1865,6 +1870,8 @@ private fun ColourFilterRow(
     matchingPhoto: Boolean = false,
     onMatchPhoto: () -> Unit = {},
     onClearMatch: () -> Unit = {},
+    rainbow: Boolean = false,
+    onRainbow: () -> Unit = {},
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -1890,6 +1897,23 @@ private fun ColourFilterRow(
                 modifier = Modifier.size(16.dp)
             )
         }
+        // Rainbow order: sorts the grid by colour instead of filtering it.
+        Box(
+            modifier = Modifier
+                .size(if (rainbow) 30.dp else 26.dp)
+                .clip(CircleShape)
+                .background(
+                    androidx.compose.ui.graphics.Brush.sweepGradient(
+                        listOf(Color(0xFFE53935), Color(0xFFFDD835), Color(0xFF43A047), Color(0xFF00ACC1), Color(0xFF1E88E5), Color(0xFF8E24AA), Color(0xFFE53935))
+                    )
+                )
+                .border(
+                    width = if (rainbow) 3.dp else 1.dp,
+                    color = if (rainbow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    shape = CircleShape
+                )
+                .clickable(onClickLabel = if (rainbow) "Back to normal order" else "Sort by colour") { onRainbow() }
+        )
         com.chrisalvis.rotato.data.ImageColour.entries.forEach { colour ->
             val isSelected = colour == selected
             Box(
@@ -1907,6 +1931,11 @@ private fun ColourFilterRow(
         }
         when {
             loading -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            rainbow && !matchingPhoto && selected == null -> AssistChip(
+                onClick = onRainbow,
+                label = { Text("Rainbow order", style = MaterialTheme.typography.labelMedium) },
+                trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Back to normal order", modifier = Modifier.size(16.dp)) }
+            )
             matchingPhoto && matchCount != null -> AssistChip(
                 onClick = onClearMatch,
                 label = { Text("Matches your photo · $matchCount", style = MaterialTheme.typography.labelMedium) },

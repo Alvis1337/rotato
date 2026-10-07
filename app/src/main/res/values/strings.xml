@@ -2,6 +2,7 @@
     <string name="app_name">Rotato</string>
     <string name="widget_description">Your current wallpaper with Previous, Save and Next.</string>
     <string name="live_wallpaper_label">Rotato</string>
+    <string name="dream_label">Rotato slideshow</string>
     <string name="live_wallpaper_description">Crossfades between wallpapers, reframes for each screen when you fold or unfold, and plays video wallpapers.</string>
     <string name="shortcut_discover_short">Discover</string>
     <string name="shortcut_discover_long">Open Discover</string>

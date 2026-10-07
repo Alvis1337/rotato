@@ -35,6 +35,7 @@ internal fun LiveWallpaperSection() {
     var drift by remember { mutableStateOf(LiveWallpaper.drift(context)) }
     var parallax by remember { mutableStateOf(LiveWallpaper.parallax(context)) }
     var doubleTap by remember { mutableStateOf(LiveWallpaper.doubleTap(context)) }
+    var followSun by remember { mutableStateOf(LiveWallpaper.followSun(context)) }
 
     SettingsSection(title = "Live Wallpaper") {
         Text(
@@ -81,6 +82,12 @@ internal fun LiveWallpaperSection() {
             subtitle = "Double-tap an empty spot on the home screen to skip to the next wallpaper",
             checked = doubleTap,
             onCheckedChange = { doubleTap = it; LiveWallpaper.setDoubleTap(context, it) },
+        )
+        SettingsToggleRow(
+            title = "Follow the sun",
+            subtitle = "A warm golden-hour glow around sunrise and sunset, and a soft dim blue tint at night that's easier on the eyes",
+            checked = followSun,
+            onCheckedChange = { followSun = it; LiveWallpaper.setFollowSun(context, it) },
         )
     }
 }

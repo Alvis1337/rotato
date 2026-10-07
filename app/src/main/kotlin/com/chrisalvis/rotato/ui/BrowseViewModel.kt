@@ -359,6 +359,23 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         _tagSuggestions.update { emptyList() }
     }
 
+    /**
+     * Four recent images per collection without a chosen cover, shown as a 2×2 mosaic on its
+     * card. NSFW images are left out since cards are always visible.
+     */
+    val listMosaics: StateFlow<Map<String, List<String>>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
+        val wallpapersByList = all.groupBy { it.listId }
+        val poolFiles = poolFilesByStem(app.filesDir)
+        lists.filter { it.coverUrl.isBlank() }.associate { list ->
+            list.id to wallpapersByList[list.id].orEmpty()
+                .filter { !it.isNsfw && !it.isVideo }
+                .sortedByDescending { it.addedAt }
+                .take(4)
+                .map { e -> resolveEntryUrl(e.thumbUrl.ifBlank { e.fullUrl }, app.filesDir, e.source, e.sourceId, poolFiles) }
+                .filter { it.isNotBlank() }
+        }.filterValues { it.size == 4 }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val listCovers: StateFlow<Map<String, String?>> = combine(_allLists, localLists.allWallpapers) { lists, all ->
         val wallpapersByList = all.groupBy { it.listId }
         val poolFiles = poolFilesByStem(app.filesDir)

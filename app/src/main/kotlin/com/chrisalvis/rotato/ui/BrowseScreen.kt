@@ -134,6 +134,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
     val listCovers by vm.listCovers.collectAsStateWithLifecycle()
+    val listMosaics by vm.listMosaics.collectAsStateWithLifecycle()
     val scheduleEntries by vm.scheduleEntries.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
@@ -667,6 +668,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                 lists = lists,
                 listCounts = listCounts,
                 listCovers = listCovers,
+                listMosaics = listMosaics,
                 scheduleLinkCounts = remember(scheduleEntries) {
                     buildMap {
                         scheduleEntries.filter { it.enabled }.forEach { entry ->
@@ -1243,6 +1245,7 @@ private fun ListPickerContent(
     lists: List<LocalList>,
     listCounts: Map<String, Int>,
     listCovers: Map<String, String?>,
+    listMosaics: Map<String, List<String>> = emptyMap(),
     scheduleLinkCounts: Map<String, Int>,
     lockedHiddenCount: Int,
     unlockedListIds: Set<String>,
@@ -1338,6 +1341,7 @@ private fun ListPickerContent(
                     list = list,
                     count = count,
                     coverUrl = coverUrl,
+                    mosaic = listMosaics[list.id].orEmpty(),
                     scheduleCount = scheduleLinkCounts[list.id] ?: 0,
                     isSessionUnlocked = list.isLocked && list.id in unlockedListIds,
                     onClick = { onSelectList(list) },
@@ -1437,6 +1441,7 @@ private fun CollectionCard(
     list: LocalList,
     count: Int,
     coverUrl: String?,
+    mosaic: List<String> = emptyList(),
     scheduleCount: Int,
     isSessionUnlocked: Boolean,
     onClick: () -> Unit,
@@ -1513,7 +1518,23 @@ private fun CollectionCard(
                     .fillMaxWidth()
                     .height(140.dp)
             ) {
-                if (coverUrl != null) {
+                if (mosaic.size == 4) {
+                    // No cover picked: a 2×2 peek at the newest images.
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        mosaic.chunked(2).forEach { row ->
+                            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                row.forEach { url ->
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = null,
+                                        modifier = Modifier.weight(1f).fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (coverUrl != null) {
                     AsyncImage(
                         model = coverUrl,
                         contentDescription = "${list.name} cover",
@@ -2466,6 +2487,7 @@ private fun WallpaperUrlPreviewDialog(
                         onSetAsCover = if (wp.isVideo) null else ({ showDetails = false; onSetAsCover(wp) }),
                         onTagSearch = { tag -> showDetails = false; onTagSearch(tag) },
                         onTagTier = onTagTier,
+                        onSetWallpaper = { showDetails = false; onSetWallpaper(wp) },
                         onDismiss = { showDetails = false },
                     )
                 }
@@ -2498,10 +2520,15 @@ private fun CollectionImageSheet(
     onSetAsCover: (() -> Unit)? = null,
     onTagSearch: (String) -> Unit = {},
     onTagTier: (String, com.chrisalvis.rotato.data.TagTier) -> Unit = { _, _ -> },
+    onSetWallpaper: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     var tagMenu by remember { mutableStateOf<String?>(null) }
+    var showScreenPreview by remember { mutableStateOf(false) }
+    if (showScreenPreview) {
+        ScreenPreviewDialog(imageUrl = wallpaper.fullUrl, onSet = onSetWallpaper, onDismiss = { showScreenPreview = false })
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)) {
         Column(
             modifier = Modifier
@@ -2568,6 +2595,13 @@ private fun CollectionImageSheet(
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Use as cover")
+                    }
+                }
+                if (!wallpaper.isVideo) {
+                    FilledTonalButton(onClick = { showScreenPreview = true }) {
+                        Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Preview on my screens")
                     }
                 }
             }

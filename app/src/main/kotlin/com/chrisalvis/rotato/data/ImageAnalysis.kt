@@ -142,6 +142,23 @@ object ImageAnalysis {
         }
     }
 
+    /**
+     * [files] laid out like a rainbow: by each image's main colour (red through pink, then light,
+     * then dark), brightest first within a colour. Images not analysed yet go at the end.
+     */
+    fun rainbowOrder(files: List<File>, looks: Map<String, ImageLook>): List<File> {
+        val rank = listOf(
+            ImageColour.RED, ImageColour.ORANGE, ImageColour.YELLOW, ImageColour.GREEN, ImageColour.TEAL,
+            ImageColour.BLUE, ImageColour.PURPLE, ImageColour.PINK, ImageColour.WHITE, ImageColour.BLACK,
+        )
+        return files.sortedWith(
+            compareBy<File>(
+                { f -> looks[f.name]?.colours?.firstOrNull()?.let { rank.indexOf(it) } ?: rank.size },
+                { f -> -(looks[f.name]?.brightness ?: 0) },
+            )
+        )
+    }
+
     private fun nearestHue(hue: Float): ImageColour =
         ImageColour.entries.filter { it.hue != null }.minBy { c ->
             val d = kotlin.math.abs(hue - c.hue!!)
