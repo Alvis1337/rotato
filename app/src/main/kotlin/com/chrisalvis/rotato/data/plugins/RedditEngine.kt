@@ -1,15 +1,19 @@
 package com.chrisalvis.rotato.data.plugins
 
+import com.chrisalvis.rotato.BuildConfig
 import com.chrisalvis.rotato.data.BrainrotFilters
 import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.matches
+import okhttp3.Request
 import org.json.JSONObject
 
 /** Engine for public Reddit subreddits (`/r/{sub}/top.json`). */
 object RedditEngine : PluginEngine() {
     override val protocol = Protocol.REDDIT
+    /** Reddit asks API clients for a descriptive user agent. */
+    private val REDDIT_UA = "android:com.chrisalvis.rotato:v${BuildConfig.VERSION_NAME} (wallpaper app)"
 
     override suspend fun fetch(
         manifest: PluginManifest,
@@ -37,8 +41,7 @@ object RedditEngine : PluginEngine() {
     }
 
     private fun fetchPosts(subreddit: String, nsfw: Boolean, exclude: List<String>, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> {
-        val url = "https://www.reddit.com/r/${subreddit.urlEncode()}/top.json?limit=100&raw_json=1&t=month"
-        val json = getJson(url) ?: return emptyList()
+        val json = listing(subreddit)
         val children = json.optJSONObject("data")?.optJSONArray("children") ?: return emptyList()
         return (0 until children.length()).mapNotNull { i ->
             val post = children.optJSONObject(i)?.optJSONObject("data") ?: return@mapNotNull null
@@ -49,9 +52,65 @@ object RedditEngine : PluginEngine() {
             val previewSource = post.optJSONObject("preview")?.optJSONArray("images")?.optJSONObject(0)?.optJSONObject("source")
             val w = previewSource?.optInt("width") ?: 0
             val h = previewSource?.optInt("height") ?: 0
-            if (!filters.matches(w, h)) return@mapNotNull null
+            val video = post.optBoolean("is_video", false) ||
+                MediaType.isVideoUrl(post.optString("url_overridden_by_dest").ifBlank { post.optString("url") })
+            if (!filters.matches(w, h, video)) return@mapNotNull null
             extractWallpaper(post, subreddit)
         }.take(limit)
+    }
+
+    /**
+     * The subreddit's top posts this month. With a client ID Rotato signs in as an app (no user
+     * account) and uses oauth.reddit.com; anonymous `.json` is refused (HTTP 403/429) from many
+     * networks now. Refusals throw, so Source Health says why Reddit is empty.
+     */
+    private fun listing(subreddit: String): JSONObject {
+        val path = "/r/${subreddit.urlEncode()}/top?limit=100&raw_json=1&t=month"
+        val token = accessToken()
+        val req = Request.Builder()
+            .url(if (token != null) "https://oauth.reddit.com$path" else "https://www.reddit.com${path.replace("/top?", "/top.json?")}")
+            .header("User-Agent", REDDIT_UA)
+            .apply { if (token != null) header("Authorization", "Bearer $token") }
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401 && token != null) cachedToken = null
+            if (resp.code == 403 || resp.code == 429) {
+                throw IllegalStateException(
+                    if (token == null) "Reddit refused anonymous access (HTTP ${resp.code}). Builds with a Reddit client ID avoid this."
+                    else "Reddit refused the request (HTTP ${resp.code})"
+                )
+            }
+            if (!resp.isSuccessful) throw IllegalStateException("Reddit returned HTTP ${resp.code}")
+            return JSONObject(resp.body?.string() ?: throw IllegalStateException("Empty Reddit response"))
+        }
+    }
+
+    @Volatile private var cachedToken: Pair<String, Long>? = null
+    private val deviceId = java.util.UUID.randomUUID().toString()
+
+    /** App-only OAuth token (installed_client grant), cached until shortly before it expires. */
+    private fun accessToken(): String? {
+        val clientId = BuildConfig.REDDIT_CLIENT_ID.ifBlank { return null }
+        cachedToken?.let { (t, expires) -> if (System.currentTimeMillis() < expires) return t }
+        val body = okhttp3.FormBody.Builder()
+            .add("grant_type", "https://oauth.reddit.com/grants/installed_client")
+            .add("device_id", deviceId)
+            .build()
+        val req = Request.Builder()
+            .url("https://www.reddit.com/api/v1/access_token")
+            .header("User-Agent", REDDIT_UA)
+            .header("Authorization", okhttp3.Credentials.basic(clientId, ""))
+            .post(body)
+            .build()
+        return runCatching {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val o = JSONObject(resp.body?.string() ?: return@use null)
+                val token = o.optString("access_token").ifBlank { return@use null }
+                cachedToken = token to System.currentTimeMillis() + (o.optLong("expires_in", 3600) - 120) * 1000
+                token
+            }
+        }.getOrNull()
     }
 
     private fun isSupportedPost(post: JSONObject): Boolean {
