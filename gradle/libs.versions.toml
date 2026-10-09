@@ -3,6 +3,7 @@ agp = "9.1.1"
 kotlin = "2.2.10"
 ksp = "2.2.10-2.0.2"
 room = "2.7.2"
+mlkitSubject = "16.0.0-beta1"
 biometric = "1.1.0"
 coreKtx = "1.15.0"
 junit = "4.13.2"
@@ -24,6 +25,7 @@ ossLicensesPlugin = "0.11.0"
 playServicesOssLicenses = "17.0.1"
 
 [libraries]
+mlkit-subject-segmentation = { group = "com.google.android.gms", name = "play-services-mlkit-subject-segmentation", version.ref = "mlkitSubject" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }

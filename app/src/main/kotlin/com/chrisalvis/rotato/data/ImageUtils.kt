@@ -490,10 +490,62 @@ fun findFocusPoint(bitmap: Bitmap): PointF {
     return try {
         // Aim a little below the subject so it sits in the upper-middle of the crop: the natural
         // place for a face, and clear of the lock screen clock that sits over the top of it.
-        detectFaceCentre(bitmap)?.let { PointF(it.x, (it.y + FACE_HEADROOM).coerceAtMost(1f)) }
+        val face = detectFaceCentre(bitmap)?.let { PointF(it.x, (it.y + FACE_HEADROOM).coerceAtMost(1f)) }
+        val subject = if (face == null) subjectCentre(bitmap) else null
+        val point = face ?: subject
             ?: saliencyCentre(bitmap).let { PointF(it.x, (it.y + SUBJECT_HEADROOM).coerceAtMost(1f)) }
+        if (com.chrisalvis.rotato.BuildConfig.DEBUG) {
+            val how = if (face != null) "face" else if (subject != null) "subject" else "saliency"
+            android.util.Log.d("SmartCrop", "${bitmap.width}x${bitmap.height} focus=$how (%.2f, %.2f)".format(point.x, point.y))
+        }
+        point
     } catch (e: RuntimeException) {
         PointF(0.5f, 0.5f)
+    }
+}
+
+/**
+ * Where the main subject's head probably is, from ML Kit subject segmentation: the foreground
+ * mask's horizontal centre, a third of the way down its bounding box. Unlike the face detector
+ * it finds illustrated characters, animals and objects. Null when there's no clear subject, on
+ * the main thread (the result has to be awaited), or when Play services can't run it.
+ */
+private fun subjectCentre(bitmap: Bitmap): PointF? {
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return null
+    val scale = 512f / maxOf(bitmap.width, bitmap.height)
+    val small = if (scale < 1f) Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).roundToInt().coerceAtLeast(1), (bitmap.height * scale).roundToInt().coerceAtLeast(1), true) else bitmap
+    val segmenter = com.google.mlkit.vision.segmentation.subject.SubjectSegmentation.getClient(
+        com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions.Builder()
+            .enableForegroundConfidenceMask()
+            .build()
+    )
+    return try {
+        val result = com.google.android.gms.tasks.Tasks.await(
+            segmenter.process(com.google.mlkit.vision.common.InputImage.fromBitmap(small, 0)),
+            4, java.util.concurrent.TimeUnit.SECONDS,
+        )
+        val mask = result.foregroundConfidenceMask ?: return null
+        val w = small.width
+        val h = small.height
+        var minX = w; var maxX = -1; var minY = h; var maxY = -1
+        var sumX = 0f; var weight = 0f
+        mask.rewind()
+        for (y in 0 until h) for (x in 0 until w) {
+            val c = mask.get()
+            if (c < 0.5f) continue
+            sumX += x * c; weight += c
+            if (x < minX) minX = x; if (x > maxX) maxX = x
+            if (y < minY) minY = y; if (y > maxY) maxY = y
+        }
+        // Too small to be a subject, or the "subject" is the whole picture: let saliency decide.
+        val area = weight / (w * h)
+        if (maxX < 0 || area < 0.02f || area > 0.9f) return null
+        PointF((sumX / weight / w).coerceIn(0f, 1f), ((minY + (maxY - minY) / 3f) / h).coerceIn(0f, 1f))
+    } catch (e: Exception) {
+        null
+    } finally {
+        segmenter.close()
+        if (small !== bitmap) small.recycle()
     }
 }
 
