@@ -103,6 +103,25 @@ class PluginRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Replaces installed copies of built-in plugins with the newer manifest shipped in this app
+     * version (e.g. new tag aliases), so users don't have to update them by hand. Plugins
+     * installed from a third-party URL are left alone.
+     */
+    suspend fun upgradeBundledIfNewer() = withContext(Dispatchers.IO) {
+        val bundled = bundledCache.associateBy { it.id }
+        context.dataStore.edit { prefs ->
+            val installed = parseInstalledManifests(prefs[INSTALLED_PLUGINS_KEY] ?: "[]")
+            var changed = false
+            val updated = installed.map { m ->
+                val newer = bundled[m.id]
+                val official = m.sourceUrl == null || m.sourceUrl.startsWith("https://raw.githubusercontent.com/Alvis1337/rotato/")
+                if (newer != null && official && newer.versionCode > m.versionCode) { changed = true; newer } else m
+            }
+            if (changed) prefs[INSTALLED_PLUGINS_KEY] = serializeManifests(updated)
+        }
+    }
+
     /** Built-in plugins shipped in assets that aren't currently installed (e.g. removed by the user). */
     val missingBundledManifests: Flow<List<PluginManifest>> get() = installedManifests.map { installed ->
         val have = installed.mapTo(HashSet()) { it.id }

@@ -59,7 +59,26 @@ data class PluginManifest(
     val configFields: List<PluginConfigField> = emptyList(),
     /** Maximum number of tags this source supports in a single query. Int.MAX_VALUE = unlimited. */
     val maxTagCount: Int = Int.MAX_VALUE,
+    /**
+     * This site's spelling for tags it names differently, applied when a query is sent. Most
+     * boorus resolve their own aliases (Gelbooru and Konachan treat cat_ears and nekomimi alike),
+     * so this covers tags a site doesn't have at all: Konachan has no "scenery" ("landscape")
+     * and no count tags like "1girl", so a query with one returned nothing. An empty value drops
+     * the tag from the query.
+     */
+    val tagAliases: Map<String, String> = emptyMap(),
 ) {
+    /** [query] with this site's tag spellings; "-" and "~" prefixes are kept. */
+    fun translateQuery(query: String): String {
+        if (tagAliases.isEmpty() || query.isBlank()) return query
+        return query.trim().split(Regex("\\s+")).mapNotNull { token ->
+            val prefix = token.takeWhile { it == '-' || it == '~' }
+            val tag = token.drop(prefix.length)
+            val alias = tagAliases[tag.lowercase()] ?: return@mapNotNull token
+            if (alias.isBlank()) null else prefix + alias
+        }.joinToString(" ")
+    }
+
     /** Adult-only sites (Rule34): their "safe" ratings aren't reliable, so they never load with NSFW off. */
     val adultOnly: Boolean get() = extras["adultOnly"] == "true" || id == "RULE34"
     val needsApiKey: Boolean get() = auth is PluginAuth.ApiKey || auth is PluginAuth.ApiKeyUserId
@@ -114,6 +133,7 @@ data class PluginManifest(
         }
         put("versionCode", versionCode)
         if (maxTagCount != Int.MAX_VALUE) put("maxTagCount", maxTagCount)
+        if (tagAliases.isNotEmpty()) put("tagAliases", JSONObject().also { o -> tagAliases.forEach { (k, v) -> o.put(k, v) } })
         if (configFields.isNotEmpty()) {
             put("configFields", JSONArray().also { arr ->
                 configFields.forEach { f ->
@@ -167,6 +187,9 @@ data class PluginManifest(
                 } ?: emptyMap(),
                 versionCode = json.optInt("versionCode", 1),
                 maxTagCount = json.optInt("maxTagCount", Int.MAX_VALUE),
+                tagAliases = json.optJSONObject("tagAliases")?.let { o ->
+                    buildMap { o.keys().forEach { k -> put(k.lowercase(), o.optString(k)) } }
+                } ?: emptyMap(),
                 configFields = json.optJSONArray("configFields")?.let { arr ->
                     (0 until arr.length()).mapNotNull { i ->
                         val o = arr.optJSONObject(i) ?: return@mapNotNull null

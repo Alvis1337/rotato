@@ -27,7 +27,7 @@ object PluginExecutor {
         exclude: List<String>,
         nsfw: Boolean,
         filters: BrainrotFilters,
-    ): BrainrotWallpaper? = engineFor(manifest)?.fetch(manifest, source, query, exclude, nsfw, filters)
+    ): BrainrotWallpaper? = engineFor(manifest)?.fetch(manifest, source, manifest.translateQuery(query), exclude, nsfw, filters)
 
     suspend fun fetchPage(
         manifest: PluginManifest,
@@ -37,7 +37,7 @@ object PluginExecutor {
         nsfw: Boolean,
         filters: BrainrotFilters,
         limit: Int = 100,
-    ): List<BrainrotWallpaper> = engineFor(manifest)?.fetchPage(manifest, source, query, exclude, nsfw, filters, limit) ?: emptyList()
+    ): List<BrainrotWallpaper> = engineFor(manifest)?.fetchPage(manifest, source, manifest.translateQuery(query), exclude, nsfw, filters, limit) ?: emptyList()
 
     fun canServe(manifest: PluginManifest, nsfw: Boolean, source: LocalSource): Boolean =
         engineFor(manifest)?.canServe(manifest, nsfw, source) ?: false

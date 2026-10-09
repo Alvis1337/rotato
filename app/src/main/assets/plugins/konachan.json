@@ -2,7 +2,7 @@
   "id": "KONACHAN",
   "name": "Konachan",
   "version": "1.0",
-  "versionCode": 1,
+  "versionCode": 2,
   "author": "Rotato",
   "description": "High-quality anime wallpapers (Moebooru). No account needed.",
   "protocol": "MOEBOORU",
@@ -12,5 +12,17 @@
   "isPremium": true,
   "auth": {
     "type": "none"
+  },
+  "tagAliases": {
+    "scenery": "landscape",
+    "starry_sky": "stars",
+    "night_sky": "night",
+    "1girl": "",
+    "1boy": "",
+    "solo": "",
+    "multiple_girls": "",
+    "highres": "",
+    "absurdres": "",
+    "outdoors": ""
   }
 }

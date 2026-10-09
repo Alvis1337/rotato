@@ -109,7 +109,10 @@ class MainActivity : AppCompatActivity() {
                 // Migration: if user upgraded from pre-store-first build, auto-install bundled plugins
                 val pluginRepo = remember { PluginRepository(applicationContext) }
                 LaunchedEffect(setupDone) {
-                    if (setupDone == true) pluginRepo.autoMigrateIfNeeded()
+                    if (setupDone == true) {
+                        pluginRepo.autoMigrateIfNeeded()
+                        pluginRepo.upgradeBundledIfNewer()
+                    }
                 }
 
                 if (setupDone == null) {
