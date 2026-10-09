@@ -36,6 +36,7 @@ import com.chrisalvis.rotato.data.normalizeTag
 import com.chrisalvis.rotato.data.plugins.PluginEntitlement
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginManifest
+import com.chrisalvis.rotato.data.plugins.Protocol
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.data.plugins.http
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
@@ -681,7 +682,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 // NSFW off globally, with no visible way to notice or undo it.
                 val effectiveNsfw = nsfw && source.nsfwEnabled != false
                 if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
-                val rawQueries = queriesFor(source, explicitQuery, malTitles, tierBoostTags)
+                // Videos only: sites that never carry video sit out; boorus search their video tag
+                // (last, so a free Danbooru account's single tag stays the user's own).
+                if (filters.videoOnly && manifest.protocol !in VIDEO_PROTOCOLS) return@mapNotNull null
+                val rawQueries = queriesFor(source, explicitQuery, malTitles, tierBoostTags).let { qs ->
+                    if (!filters.videoOnly || manifest.protocol == Protocol.REDDIT) qs
+                    else qs.map { q -> if (manifest.protocol == Protocol.DANBOORU && q.isNotBlank()) q else "$q video".trim() }.distinct()
+                }
                 val queries = if (manifest.maxTagCount == Int.MAX_VALUE) rawQueries
                     else rawQueries.filter { q ->
                         q.trim().split(Regex("\\s+")).count { it.isNotBlank() } <= manifest.maxTagCount
@@ -693,6 +700,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     effectiveNsfw = effectiveNsfw,
                 )
             }
+    }
+
+    private companion object {
+        /** API families whose sites carry video posts. */
+        val VIDEO_PROTOCOLS = setOf(Protocol.GELBOORU, Protocol.DANBOORU, Protocol.REDDIT)
     }
 
     private fun sourceKey(source: LocalSource): String =
@@ -1102,6 +1114,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setNsfwMode(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setNsfwMode(enabled)
+            loadMore(reset = true)
+        }
+    }
+
+    fun setVideoOnly(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setDiscoverVideoOnly(enabled)
             loadMore(reset = true)
         }
     }

@@ -45,7 +45,7 @@ object DanbooruEngine : PluginEngine() {
                 val id = obj.optInt("id", 0).toString()
                 if (exclude.contains(id)) continue
                 val w = obj.optInt("image_width"); val h = obj.optInt("image_height")
-                if (!filters.matches(w, h)) continue
+                if (!filters.matches(w, h, isVideoPost(obj))) continue
                 if (obj.optString("file_url").isNotBlank()) return@run obj
             }
             null
@@ -81,11 +81,14 @@ object DanbooruEngine : PluginEngine() {
             val id = obj.optInt("id", 0).toString()
             if (exclude.contains(id)) return@mapNotNull null
             val w = obj.optInt("image_width"); val h = obj.optInt("image_height")
-            if (!filters.matches(w, h)) return@mapNotNull null
+            if (!filters.matches(w, h, isVideoPost(obj))) return@mapNotNull null
             if (obj.optString("file_url").isBlank() && obj.optString("large_file_url").isBlank()) return@mapNotNull null
             buildWallpaper(obj, base, manifest, nsfw)
         }
     }
+
+    private fun isVideoPost(obj: org.json.JSONObject): Boolean =
+        obj.optString("file_ext") in setOf("mp4", "webm") || MediaType.isVideoUrl(obj.optString("file_url"))
 
     private fun authHeader(source: LocalSource): String? =
         if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())

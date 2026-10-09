@@ -94,7 +94,7 @@ internal fun pickFiltered(
         val (id, dims) = entry(obj)
         if (exclude.contains(id)) continue
         val (w, h) = dims
-        if (filters.matches(w, h)) return obj
+        if (filters.matches(w, h, com.chrisalvis.rotato.data.MediaType.isVideoUrl(obj.optString("file_url")))) return obj
     }
     return null
 }

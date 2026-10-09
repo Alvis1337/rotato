@@ -91,6 +91,7 @@ class RotatoPreferences(private val context: Context) {
         val EFFECT_ON_LOCK = booleanPreferencesKey("effect_on_lock")
         val ROTATE_ON_UNFOLD = booleanPreferencesKey("rotate_on_unfold")
         val DISCOVER_DATA_SAVER = booleanPreferencesKey("discover_data_saver")
+        val DISCOVER_VIDEO_ONLY = booleanPreferencesKey("discover_video_only")
         val FOLD_PAIRS = stringPreferencesKey("fold_pairs_json")
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
     }
@@ -439,6 +440,7 @@ class RotatoPreferences(private val context: Context) {
                 phoneScreenWidth = prefs[PHONE_SCREEN_WIDTH] ?: 0,
                 phoneScreenHeight = prefs[PHONE_SCREEN_HEIGHT] ?: 0,
                 useMalFilter = prefs[USE_MAL_FILTER] ?: true,
+                videoOnly = prefs[DISCOVER_VIDEO_ONLY] ?: false,
             )
         }
 
@@ -637,6 +639,10 @@ class RotatoPreferences(private val context: Context) {
     val discoverDataSaver: Flow<Boolean> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { it[DISCOVER_DATA_SAVER] ?: false }
+
+    suspend fun setDiscoverVideoOnly(enabled: Boolean) {
+        context.dataStore.edit { it[DISCOVER_VIDEO_ONLY] = enabled }
+    }
 
     suspend fun setDiscoverDataSaver(enabled: Boolean) {
         context.dataStore.edit { it[DISCOVER_DATA_SAVER] = enabled }

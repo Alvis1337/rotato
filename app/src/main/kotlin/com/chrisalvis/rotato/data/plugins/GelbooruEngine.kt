@@ -85,7 +85,8 @@ object GelbooruEngine : PluginEngine() {
             val post = arr.optJSONObject(i) ?: return@mapNotNull null
             if (exclude.contains(postId(post))) return@mapNotNull null
             val w = post.optInt("width"); val h = post.optInt("height")
-            if (!filters.matches(w, h)) return@mapNotNull null
+            val video = MediaType.isVideoUrl(post.optString("file_url").ifBlank { post.optString("image") })
+            if (!filters.matches(w, h, video)) return@mapNotNull null
             buildWallpaper(post, base, manifest, extras, nsfw)
         }
     }

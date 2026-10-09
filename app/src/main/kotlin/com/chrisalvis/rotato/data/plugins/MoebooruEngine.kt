@@ -27,7 +27,7 @@ object MoebooruEngine : PluginEngine() {
                 val obj = arr.optJSONObject(i) ?: continue
                 if (exclude.contains(obj.optInt("id", 0).toString())) continue
                 val w = obj.optInt("width"); val h = obj.optInt("height")
-                if (!filters.matches(w, h)) continue
+                if (!filters.matches(w, h, MediaType.isVideoUrl(obj.optString("file_url")))) continue
                 if (obj.optString("file_url").isNotBlank()) return@run obj
             }
             null
@@ -53,7 +53,7 @@ object MoebooruEngine : PluginEngine() {
             val id = obj.optInt("id", 0).toString()
             if (exclude.contains(id)) return@mapNotNull null
             val w = obj.optInt("width"); val h = obj.optInt("height")
-            if (!filters.matches(w, h)) return@mapNotNull null
+            if (!filters.matches(w, h, MediaType.isVideoUrl(obj.optString("file_url")))) return@mapNotNull null
             buildWallpaper(obj, base, manifest, nsfw)
         }
     }

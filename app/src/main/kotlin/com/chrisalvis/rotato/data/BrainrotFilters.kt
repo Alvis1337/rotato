@@ -48,6 +48,8 @@ data class BrainrotFilters(
     val animeOnly: Boolean = false,
     /** If true, space-separated tags are OR'd (any match) instead of AND'd (all must match). */
     val matchAny: Boolean = false,
+    /** Discover's "Videos only": everything that isn't a video is left out. */
+    val videoOnly: Boolean = false,
 ) {
     /**
      * Smallest image that still looks sharp on the wallpaper canvas ("My Phone" resolution):
@@ -61,8 +63,15 @@ data class BrainrotFilters(
         get() = aspectRatio == AspectRatio.MY_PHONE && minResolution == MinResolution.MY_PHONE
 }
 
-/** Returns true if the image dimensions satisfy the resolution and ratio filters. */
-fun BrainrotFilters.matches(width: Int, height: Int): Boolean {
+/**
+ * Returns true if a post's dimensions satisfy the resolution and ratio filters. These are
+ * wallpaper-fit filters, so they apply to images only: almost no video is uploaded at wallpaper
+ * size or shape (a Fold's "My Phone" bar is about 2000x2100 and near-square, while video is
+ * mostly 16:9 at 1080p), and applying them used to hide every video from Discover.
+ */
+fun BrainrotFilters.matches(width: Int, height: Int, isVideo: Boolean = false): Boolean {
+    if (videoOnly && !isVideo) return false
+    if (isVideo) return true
     if (width <= 0 || height <= 0) return true // unknown dimensions — let it through
     when (minResolution) {
         MinResolution.ANY -> Unit

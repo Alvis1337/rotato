@@ -417,6 +417,7 @@ fun BrainrotScreen(
                 interestProfiles = interestProfiles,
                 onSelectList = { vm.setSelectedList(it) },
                 onSetNsfwMode = { vm.setNsfwMode(it) },
+                onSetVideoOnly = { vm.setVideoOnly(it) },
                 onSetMinResolution = { vm.setMinResolution(it) },
                 onSetAspectRatio = { vm.setAspectRatio(it) },
                 isFoldable = vm.isFoldable,
@@ -2156,6 +2157,7 @@ private fun DiscoverSettingsSheetContent(
     interestProfiles: List<InterestProfile>,
     onSelectList: (String) -> Unit,
     onSetNsfwMode: (Boolean) -> Unit,
+    onSetVideoOnly: (Boolean) -> Unit = {},
     onSetMinResolution: (MinResolution) -> Unit,
     onSetAspectRatio: (AspectRatio) -> Unit,
     isFoldable: Boolean = false,
@@ -2214,6 +2216,22 @@ private fun DiscoverSettingsSheetContent(
                 Text("Enable adult content", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
             Switch(checked = nsfwMode, onCheckedChange = onSetNsfwMode)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Videos only", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Only video posts, from the sources that have them (Gelbooru, Rule34, Safebooru, Danbooru, Reddit)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+            Switch(checked = filters.videoOnly, onCheckedChange = onSetVideoOnly)
         }
 
         Row(
