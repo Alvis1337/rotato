@@ -2,30 +2,69 @@ package com.chrisalvis.rotato.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+/**
+ * Collections and their wallpapers, stored in [CollectionsDatabase]. The API is unchanged from
+ * when they lived in DataStore; that data is moved into the database once, on first use.
+ */
 class LocalListsPreferences(private val context: Context) {
 
     companion object {
         private val LISTS_KEY = stringPreferencesKey("local_lists_json")
         private val WALLPAPERS_KEY = stringPreferencesKey("local_list_wallpapers_json")
+        private val migration = Mutex()
+        @Volatile private var migrated = false
     }
 
-    val lists: Flow<List<LocalList>> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { parseLists(it[LISTS_KEY] ?: "[]") }
+    private val db = CollectionsDatabase.get(context)
+    private val dao = db.dao()
 
-    val allWallpapers: Flow<List<LocalWallpaperEntry>> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { parseWallpapers(it[WALLPAPERS_KEY] ?: "[]") }
+    /** Moves collections out of DataStore the first time anything reads or writes them. */
+    private suspend fun ensureMigrated() {
+        if (migrated) return
+        migration.withLock {
+            if (migrated) return
+            val prefs = context.dataStore.data.first()
+            val listsJson = prefs[LISTS_KEY]
+            val entriesJson = prefs[WALLPAPERS_KEY]
+            if (listsJson != null || entriesJson != null) {
+                val lists = parseLists(listsJson ?: "[]")
+                val entries = parseWallpapers(entriesJson ?: "[]")
+                db.withTransaction {
+                    if (dao.collectionCount() == 0 && dao.entryCount() == 0) {
+                        dao.upsertCollections(lists.mapIndexed { i, l -> l.toRow(i) })
+                        dao.insertEntries(entries.map { it.toRow() })
+                    }
+                }
+                context.dataStore.edit { it.remove(LISTS_KEY); it.remove(WALLPAPERS_KEY) }
+            }
+            migrated = true
+        }
+    }
+
+    private fun <T> migratedFlow(source: () -> Flow<T>): Flow<T> = flow {
+        ensureMigrated()
+        source().collect { emit(it) }
+    }
+
+    val lists: Flow<List<LocalList>> = migratedFlow {
+        dao.collectionsFlow().map { rows -> rows.mapNotNull { it.toList() } }
+    }
+
+    val allWallpapers: Flow<List<LocalWallpaperEntry>> = migratedFlow {
+        dao.entriesFlow().map { rows -> rows.mapNotNull { it.toEntry() } }
+    }
 
     fun wallpapersForList(listId: String): Flow<List<LocalWallpaperEntry>> =
         allWallpapers.map { all -> all.filter { it.listId == listId } }
@@ -35,88 +74,82 @@ class LocalListsPreferences(private val context: Context) {
         useAsRotation: Boolean = false,
         malConfig: MalCollectionConfig? = null,
     ): LocalList? {
+        ensureMigrated()
         val trimmed = name.trim()
         if (trimmed.isBlank()) return null
-        val list = LocalList(
-            name = trimmed,
-            useAsRotation = useAsRotation,
-            malConfig = malConfig,
-        )
-        var created = false
-        context.dataStore.edit { prefs ->
-            val current = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
-            if (current.any { it.name.equals(trimmed, ignoreCase = true) }) return@edit
-            current.add(list)
-            prefs[LISTS_KEY] = serializeLists(current)
-            created = true
-        }
+        val list = LocalList(name = trimmed, useAsRotation = useAsRotation, malConfig = malConfig)
         // Callers rely on null for "name already taken"; returning the unsaved list made
         // them write entries under an id that doesn't exist.
-        return if (created) list else null
+        return db.withTransaction {
+            val taken = dao.collections().mapNotNull { it.toList() }.any { it.name.equals(trimmed, ignoreCase = true) }
+            if (taken) null else list.also { dao.upsertCollections(listOf(it.toRow(dao.maxPosition() + 1))) }
+        }
     }
 
     suspend fun createListWithId(list: LocalList) {
-        context.dataStore.edit { prefs ->
-            val current = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
-            if (current.none { it.id == list.id }) {
-                current.add(list)
-                prefs[LISTS_KEY] = serializeLists(current)
-            }
+        ensureMigrated()
+        db.withTransaction {
+            if (dao.collection(list.id) == null) dao.upsertCollections(listOf(list.toRow(dao.maxPosition() + 1)))
         }
     }
 
     suspend fun deleteList(id: String) {
-        context.dataStore.edit { prefs ->
-            prefs[LISTS_KEY] = serializeLists(parseLists(prefs[LISTS_KEY] ?: "[]").filter { it.id != id })
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.listId != id })
+        ensureMigrated()
+        db.withTransaction {
+            dao.deleteCollection(id)
+            dao.deleteEntriesIn(id)
         }
     }
 
     /** Moves a collection [delta] places earlier (negative) or later (positive) in the grid. */
     suspend fun moveList(id: String, delta: Int) {
-        context.dataStore.edit { prefs ->
-            val lists = parseLists(prefs[LISTS_KEY] ?: "[]").toMutableList()
-            val from = lists.indexOfFirst { it.id == id }
-            if (from == -1) return@edit
-            val to = (from + delta).coerceIn(0, lists.lastIndex)
-            if (to == from) return@edit
-            lists.add(to, lists.removeAt(from))
-            prefs[LISTS_KEY] = serializeLists(lists)
+        ensureMigrated()
+        db.withTransaction {
+            val rows = dao.collections().toMutableList()
+            val from = rows.indexOfFirst { it.id == id }
+            if (from == -1) return@withTransaction
+            val to = (from + delta).coerceIn(0, rows.lastIndex)
+            if (to == from) return@withTransaction
+            rows.add(to, rows.removeAt(from))
+            dao.upsertCollections(rows.mapIndexed { i, r -> r.copy(position = i) })
         }
     }
 
     /**
-     * Moves entries to [targetListId] in one write. Entries already in the target (same source
-     * id or URL) are dropped instead of duplicated. Returns how many were moved.
+     * Moves entries to [targetListId] in one transaction. Entries already in the target (same
+     * source id or URL) are dropped instead of duplicated. Returns how many were moved.
      */
     suspend fun moveEntries(entryIds: Set<String>, targetListId: String): Int {
-        var moved = 0
-        context.dataStore.edit { prefs ->
-            val all = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            val inTarget = all.filter { it.listId == targetListId }
+        ensureMigrated()
+        if (entryIds.isEmpty()) return 0
+        return db.withTransaction {
+            val inTarget = dao.entriesIn(targetListId).mapNotNull { it.toEntry() }
             val ids = inTarget.mapTo(HashSet()) { it.sourceId }
             val urls = inTarget.mapNotNullTo(HashSet()) { it.fullUrl.ifBlank { null } }
-            val updated = all.mapNotNull { e ->
-                when {
-                    e.id !in entryIds || e.listId == targetListId -> e
-                    e.sourceId in ids || (e.fullUrl.isNotBlank() && e.fullUrl in urls) -> null
-                    else -> {
-                        ids += e.sourceId; if (e.fullUrl.isNotBlank()) urls += e.fullUrl
-                        moved++
-                        e.copy(listId = targetListId)
-                    }
+            val drop = mutableListOf<String>()
+            var moved = 0
+            for (e in dao.entriesById(entryIds.toList()).mapNotNull { it.toEntry() }) {
+                if (e.listId == targetListId) continue
+                if (e.sourceId in ids || (e.fullUrl.isNotBlank() && e.fullUrl in urls)) {
+                    drop += e.id
+                    continue
                 }
+                ids += e.sourceId
+                if (e.fullUrl.isNotBlank()) urls += e.fullUrl
+                val m = e.copy(listId = targetListId)
+                dao.moveEntry(m.id, targetListId, entryJson(m))
+                moved++
             }
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(updated)
+            if (drop.isNotEmpty()) dao.deleteEntries(drop)
+            moved
         }
-        return moved
     }
 
     /** Moves everything from [fromId] into [intoId] (skipping duplicates) and deletes [fromId]. */
     suspend fun mergeLists(fromId: String, intoId: String): Int {
         if (fromId == intoId) return 0
-        val ids = parseWallpapers(context.dataStore.data.first()[WALLPAPERS_KEY] ?: "[]")
-            .filter { it.listId == fromId }.mapTo(HashSet()) { it.id }
+        ensureMigrated()
+        val ids = dao.entriesIn(fromId).mapTo(HashSet()) { it.id }
         val moved = moveEntries(ids, intoId)
         deleteList(fromId)
         return moved
@@ -124,107 +157,49 @@ class LocalListsPreferences(private val context: Context) {
 
     /** Returns true if the rename was applied, false if name is blank or already taken by another list. */
     suspend fun renameList(id: String, name: String): Boolean {
+        ensureMigrated()
         val trimmed = name.trim()
         if (trimmed.isBlank()) return false
-        var renamed = false
-        context.dataStore.edit { prefs ->
-            val lists = parseLists(prefs[LISTS_KEY] ?: "[]")
-            val duplicate = lists.any { it.id != id && it.name.equals(trimmed, ignoreCase = true) }
-            if (duplicate) return@edit
-            prefs[LISTS_KEY] = serializeLists(lists.map {
-                if (it.id == id) it.copy(name = trimmed) else it
-            })
-            renamed = true
-        }
-        return renamed
-    }
-
-    suspend fun setUseAsRotation(listId: String, enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(useAsRotation = enabled) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
+        return db.withTransaction {
+            val lists = dao.collections().mapNotNull { it.toList() }
+            if (lists.any { it.id != id && it.name.equals(trimmed, ignoreCase = true) }) return@withTransaction false
+            updateList(id) { it.copy(name = trimmed) }
         }
     }
 
-    suspend fun setBlurExempt(listId: String, exempt: Boolean) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(blurExempt = exempt) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
+    /** Applies [change] to one collection. Returns false if it doesn't exist. */
+    private suspend fun updateList(id: String, change: (LocalList) -> LocalList): Boolean {
+        ensureMigrated()
+        return db.withTransaction {
+            val row = dao.collection(id) ?: return@withTransaction false
+            val list = row.toList() ?: return@withTransaction false
+            dao.upsertCollections(listOf(change(list).toRow(row.position)))
+            true
         }
     }
 
-    suspend fun setLocked(listId: String, locked: Boolean) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(isLocked = locked) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setUseAsRotation(listId: String, enabled: Boolean) { updateList(listId) { it.copy(useAsRotation = enabled) } }
 
-    suspend fun setCoverImage(listId: String, coverUrl: String) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(coverUrl = coverUrl) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setBlurExempt(listId: String, exempt: Boolean) { updateList(listId) { it.copy(blurExempt = exempt) } }
 
-    suspend fun setRotationTarget(listId: String, target: ScreenRotationTarget) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(rotationTarget = target) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setLocked(listId: String, locked: Boolean) { updateList(listId) { it.copy(isLocked = locked) } }
 
-    suspend fun setSmartRule(listId: String, rule: SmartRule?) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(smartRule = rule) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setCoverImage(listId: String, coverUrl: String) { updateList(listId) { it.copy(coverUrl = coverUrl) } }
 
-    suspend fun setRotationInterval(listId: String, minutes: Int?) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(rotationIntervalMinutes = minutes) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setRotationTarget(listId: String, target: ScreenRotationTarget) { updateList(listId) { it.copy(rotationTarget = target) } }
 
-    suspend fun setLastRotationMs(listId: String, ms: Long) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(lastRotationMs = ms) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setSmartRule(listId: String, rule: SmartRule?) { updateList(listId) { it.copy(smartRule = rule) } }
 
-    suspend fun setMalConfig(listId: String, config: MalCollectionConfig?) {
-        context.dataStore.edit { prefs ->
-            val updated = parseLists(prefs[LISTS_KEY] ?: "[]").map {
-                if (it.id == listId) it.copy(malConfig = config) else it
-            }
-            prefs[LISTS_KEY] = serializeLists(updated)
-        }
-    }
+    suspend fun setRotationInterval(listId: String, minutes: Int?) { updateList(listId) { it.copy(rotationIntervalMinutes = minutes) } }
+
+    suspend fun setLastRotationMs(listId: String, ms: Long) { updateList(listId) { it.copy(lastRotationMs = ms) } }
+
+    suspend fun setMalConfig(listId: String, config: MalCollectionConfig?) { updateList(listId) { it.copy(malConfig = config) } }
 
     suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
-        var added = false
-        context.dataStore.edit { prefs ->
-            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            if (current.any { it.listId == listId && (it.sourceId == wallpaper.id || (wallpaper.fullUrl.isNotBlank() && it.fullUrl == wallpaper.fullUrl)) }) return@edit
+        ensureMigrated()
+        return db.withTransaction {
+            if (dao.countMatching(listId, wallpaper.id, wallpaper.fullUrl) > 0) return@withTransaction false
             val entry = LocalWallpaperEntry(
                 listId = listId,
                 sourceId = wallpaper.id,
@@ -238,64 +213,66 @@ class LocalListsPreferences(private val context: Context) {
                 isVideo = wallpaper.isVideo,
                 isNsfw = wallpaper.isNsfw
             )
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
-            added = true
-        }
-        return added
-    }
-
-    suspend fun addLocalImage(listId: String, relativePath: String) {        val uuid = relativePath.substringAfterLast("/").substringBeforeLast(".")
-        context.dataStore.edit { prefs ->
-            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            if (current.any { it.listId == listId && it.sourceId == uuid }) return@edit
-            val entry = LocalWallpaperEntry(
-                listId = listId,
-                sourceId = uuid,
-                source = "device",
-                thumbUrl = relativePath,
-                fullUrl = relativePath,
-                resolution = "",
-                pageUrl = "",
-                tags = emptyList()
-            )
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
+            dao.insertEntries(listOf(entry.toRow()))
+            true
         }
     }
 
-    suspend fun addWallpaperEntry(entry: LocalWallpaperEntry) {
-        context.dataStore.edit { prefs ->
-            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            if (current.any { it.listId == entry.listId && it.sourceId == entry.sourceId }) return@edit
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(current + entry)
-        }
+    suspend fun addLocalImage(listId: String, relativePath: String) {
+        val uuid = relativePath.substringAfterLast("/").substringBeforeLast(".")
+        addWallpaperEntries(listOf(LocalWallpaperEntry(
+            listId = listId,
+            sourceId = uuid,
+            source = "device",
+            thumbUrl = relativePath,
+            fullUrl = relativePath,
+            resolution = "",
+            pageUrl = "",
+            tags = emptyList()
+        )))
     }
+
+    suspend fun addWallpaperEntry(entry: LocalWallpaperEntry) = addWallpaperEntries(listOf(entry))
 
     /** Removes several entries in one write. */
     suspend fun removeWallpapers(entryIds: Set<String>) {
         if (entryIds.isEmpty()) return
-        context.dataStore.edit { prefs ->
-            val updated = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.id !in entryIds }
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(updated)
-        }
+        ensureMigrated()
+        // SQLite caps bound parameters per statement; delete in chunks.
+        db.withTransaction { entryIds.chunked(500).forEach { dao.deleteEntries(it) } }
     }
 
     /** Adds several entries in one write, skipping ones already in their collection. */
     suspend fun addWallpaperEntries(entries: List<LocalWallpaperEntry>) {
         if (entries.isEmpty()) return
-        context.dataStore.edit { prefs ->
-            val current = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]")
-            val existing = current.mapTo(HashSet()) { it.listId to it.sourceId }
+        ensureMigrated()
+        db.withTransaction {
+            val existing = HashSet<Pair<String, String>>()
+            entries.map { it.listId }.distinct().forEach { listId ->
+                dao.entriesIn(listId).forEach { existing += it.listId to it.sourceId }
+            }
             val fresh = entries.filter { existing.add(it.listId to it.sourceId) }
-            if (fresh.isNotEmpty()) prefs[WALLPAPERS_KEY] = serializeWallpapers(current + fresh)
+            if (fresh.isNotEmpty()) dao.insertEntries(fresh.map { it.toRow() })
         }
     }
 
-    suspend fun removeWallpaper(entryId: String) {
-        context.dataStore.edit { prefs ->
-            val updated = parseWallpapers(prefs[WALLPAPERS_KEY] ?: "[]").filter { it.id != entryId }
-            prefs[WALLPAPERS_KEY] = serializeWallpapers(updated)
-        }
-    }
+    suspend fun removeWallpaper(entryId: String) = removeWallpapers(setOf(entryId))
+
+    // --- rows ---
+
+    private fun LocalList.toRow(position: Int) = CollectionRow(id = id, position = position, json = listJson(this))
+
+    private fun CollectionRow.toList(): LocalList? = parseLists("[$json]").firstOrNull()
+
+    private fun LocalWallpaperEntry.toRow() = EntryRow(
+        id = id, listId = listId, sourceId = sourceId, source = source, fullUrl = fullUrl, json = entryJson(this),
+    )
+
+    private fun EntryRow.toEntry(): LocalWallpaperEntry? = parseWallpapers("[$json]").firstOrNull()
+
+    private fun listJson(l: LocalList): String = JSONArray(serializeLists(listOf(l))).getJSONObject(0).toString()
+
+    private fun entryJson(e: LocalWallpaperEntry): String = JSONArray(serializeWallpapers(listOf(e))).getJSONObject(0).toString()
 
     // --- serialization ---
 

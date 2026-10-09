@@ -2,9 +2,11 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="file" path="datastore" />
+        <include domain="database" path="collections.db" />
     </cloud-backup>
     <device-transfer>
         <include domain="file" path="datastore" />
+        <include domain="database" path="collections.db" />
         <include domain="file" path="list_images" />
     </device-transfer>
 </data-extraction-rules>

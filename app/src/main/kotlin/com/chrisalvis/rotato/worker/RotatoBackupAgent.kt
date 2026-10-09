@@ -10,6 +10,8 @@ class RotatoBackupAgent : BackupAgentHelper() {
         val prefs = getSharedPreferences(BACKUP_PREFS, Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY_ENABLED, true)) {
             addHelper("datastore", FileBackupHelper(this, DATASTORE_FILE))
+            // Collections live in their own database since moving out of DataStore.
+            addHelper("collections", FileBackupHelper(this, COLLECTIONS_DB_FILE))
         }
     }
 
@@ -17,5 +19,6 @@ class RotatoBackupAgent : BackupAgentHelper() {
         const val BACKUP_PREFS = "rotato_backup_cfg"
         const val KEY_ENABLED = "google_drive_backup_enabled"
         private const val DATASTORE_FILE = "../datastore/rotato_prefs.preferences_pb"
+        private const val COLLECTIONS_DB_FILE = "../databases/collections.db"
     }
 }

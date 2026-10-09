@@ -1,6 +1,8 @@
 [versions]
 agp = "9.1.1"
 kotlin = "2.2.10"
+ksp = "2.2.10-2.0.2"
+room = "2.7.2"
 biometric = "1.1.0"
 coreKtx = "1.15.0"
 junit = "4.13.2"
@@ -22,6 +24,9 @@ ossLicensesPlugin = "0.11.0"
 playServicesOssLicenses = "17.0.1"
 
 [libraries]
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -54,6 +59,7 @@ drag-select-compose = { group = "com.dragselectcompose", name = "dragselect", ve
 play-services-oss-licenses = { group = "com.google.android.gms", name = "play-services-oss-licenses", version.ref = "playServicesOssLicenses" }
 
 [plugins]
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
