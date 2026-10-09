@@ -110,8 +110,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 
-private fun sourceDisplayName(source: String): String =
-    source.replaceFirstChar { it.uppercase() }
+private fun sourceDisplayName(source: String): String = when (source.lowercase()) {
+    "wallhaven_photos" -> "Wallhaven Photos"
+    "bing" -> "Bing"
+    "wikimedia" -> "Wikimedia"
+    else -> source.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
 private fun parseAspectRatio(resolution: String): Float {
@@ -2143,6 +2147,10 @@ private fun sourceColor(source: String): Color = when (source.lowercase()) {
     "reddit"     -> Color(0xFFBF360C)
     "yandere"    -> Color(0xFF311B92)
     "e621"       -> Color(0xFF4A148C)
+    "bing"       -> Color(0xFF00695C)
+    "wikimedia"  -> Color(0xFF455A64)
+    "unsplash"   -> Color(0xFF212121)
+    "wallhaven_photos" -> Color(0xFF0D47A1)
     else          -> Color(0xFF37474F)
 }
 

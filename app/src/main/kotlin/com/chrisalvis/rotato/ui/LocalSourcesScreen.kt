@@ -591,7 +591,8 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
             if (missingBuiltIns.isNotEmpty()) {
                 item {
                     Text(
-                        "REMOVED BUILT-IN SOURCES",
+                        // New built-ins land here too, so it isn't only for ones the user removed.
+                        "BUILT-IN SOURCES YOU CAN ADD",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 8.dp)
@@ -614,7 +615,7 @@ fun LocalSourcesScreen(onNavigateBack: () -> Unit, onNavigateToPluginStore: () -
                                     )
                                 }
                             }
-                            FilledTonalButton(onClick = { vm.reinstallBuiltIn(manifest.id) }) { Text("Add back") }
+                            FilledTonalButton(onClick = { vm.reinstallBuiltIn(manifest.id) }) { Text("Add") }
                         }
                     }
                 }

@@ -26,7 +26,7 @@ object WallhavenEngine : PluginEngine() {
     ): BrainrotWallpaper? = onIO {
         if (!canServe(manifest, nsfw, source)) return@onIO null
         val base = baseUrl(manifest, source)
-        val url = buildUrl(base, query, source, nsfw, filters)
+        val url = buildUrl(base, query, source, nsfw, filters, manifest)
         val json = getJson(url) ?: return@onIO null
         val data = json.optJSONArray("data") ?: return@onIO null
         val post = pickRandom(data, exclude) ?: return@onIO null
@@ -44,7 +44,7 @@ object WallhavenEngine : PluginEngine() {
     ): List<BrainrotWallpaper> = onIO {
         if (!canServe(manifest, nsfw, source)) return@onIO emptyList()
         val base = baseUrl(manifest, source)
-        val url = buildUrl(base, query, source, nsfw, filters)
+        val url = buildUrl(base, query, source, nsfw, filters, manifest)
         val json = getJson(url) ?: return@onIO emptyList()
         val data = json.optJSONArray("data") ?: return@onIO emptyList()
         (0 until data.length()).mapNotNull { i ->
@@ -54,10 +54,10 @@ object WallhavenEngine : PluginEngine() {
         }
     }
 
-    private fun buildUrl(base: String, query: String, source: LocalSource, nsfw: Boolean, filters: BrainrotFilters): String {
+    private fun buildUrl(base: String, query: String, source: LocalSource, nsfw: Boolean, filters: BrainrotFilters, manifest: PluginManifest): String {
         val purity = effectivePurity(source.wallhavenPurity, nsfw)
-        // categories = general/anime/people bits.
-        val categories = if (filters.animeOnly) "010" else "111"
+        // categories = general/anime/people bits; a manifest can pin them (Wallhaven Photos: "100").
+        val categories = manifest.extras["categories"] ?: if (filters.animeOnly) "010" else "111"
         // Wallhaven tags use spaces; MAL and tier queries arrive booru-style ("shingeki_no_kyojin").
         var url = "$base/api/v1/search?q=${query.trim().replace('_', ' ').urlEncode()}&categories=$categories&purity=$purity&sorting=random"
         when (filters.minResolution) {

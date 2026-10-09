@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class Protocol {
-    GELBOORU, DANBOORU, MOEBOORU, WALLHAVEN, REDDIT, ZEROCHAN;
+    GELBOORU, DANBOORU, MOEBOORU, WALLHAVEN, REDDIT, ZEROCHAN, BING, WIKIMEDIA, UNSPLASH;
     companion object {
         fun fromString(s: String) = entries.firstOrNull { it.name.equals(s, ignoreCase = true) }
     }

@@ -1,0 +1,19 @@
+{
+  "id": "BING",
+  "name": "Bing Daily",
+  "version": "1.0",
+  "versionCode": 1,
+  "author": "Rotato",
+  "description": "Bing's photo of the day for the last two weeks, in 4K. No account needed; doesn't search tags.",
+  "protocol": "BING",
+  "defaultBaseUrl": "https://www.bing.com",
+  "instanceUrlConfigurable": false,
+  "safeContent": true,
+  "isPremium": false,
+  "auth": {
+    "type": "none"
+  },
+  "extras": {
+    "market": "en-US"
+  }
+}

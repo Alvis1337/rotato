@@ -1,0 +1,16 @@
+{
+  "id": "WIKIMEDIA",
+  "name": "Wikimedia Featured",
+  "version": "1.0",
+  "versionCode": 1,
+  "author": "Rotato",
+  "description": "Featured pictures from Wikimedia Commons: high-resolution, freely licensed photos of nature, places and more. Searchable, no account needed.",
+  "protocol": "WIKIMEDIA",
+  "defaultBaseUrl": "https://commons.wikimedia.org",
+  "instanceUrlConfigurable": false,
+  "safeContent": true,
+  "isPremium": false,
+  "auth": {
+    "type": "none"
+  }
+}

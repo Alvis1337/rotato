@@ -1,0 +1,18 @@
+{
+  "id": "UNSPLASH",
+  "name": "Unsplash",
+  "version": "1.0",
+  "versionCode": 1,
+  "author": "Rotato",
+  "description": "Free photos from Unsplash. Needs a free access key from unsplash.com/developers.",
+  "protocol": "UNSPLASH",
+  "defaultBaseUrl": "https://api.unsplash.com",
+  "instanceUrlConfigurable": false,
+  "safeContent": true,
+  "isPremium": false,
+  "auth": {
+    "type": "api_key",
+    "keyLabel": "Access Key",
+    "required": true
+  }
+}

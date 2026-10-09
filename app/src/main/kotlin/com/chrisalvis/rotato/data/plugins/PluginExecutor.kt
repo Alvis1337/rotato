@@ -16,6 +16,9 @@ object PluginExecutor {
         Protocol.WALLHAVEN to WallhavenEngine,
         Protocol.REDDIT to RedditEngine,
         Protocol.ZEROCHAN to ZerochanEngine,
+        Protocol.BING to BingEngine,
+        Protocol.WIKIMEDIA to WikimediaEngine,
+        Protocol.UNSPLASH to UnsplashEngine,
     )
 
     fun engineFor(manifest: PluginManifest): PluginEngine? = engines[manifest.protocol]

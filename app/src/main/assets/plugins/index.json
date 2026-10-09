@@ -7,5 +7,9 @@
   "konachan.json",
   "yandere.json",
   "zerochan.json",
-  "reddit.json"
+  "reddit.json",
+  "bing.json",
+  "wikimedia.json",
+  "wallhaven_photos.json",
+  "unsplash.json"
 ]

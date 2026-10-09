@@ -58,7 +58,7 @@ class PluginRepository(private val context: Context) {
         private val CUSTOM_STORES_KEY = stringPreferencesKey("custom_store_index_urls")
         const val STORE_INDEX_URL = "https://raw.githubusercontent.com/Alvis1337/rotato/main/plugin-store/index.json"
         const val DEFAULT_STORE_NAME = "Rotato Official"
-        private val BUNDLED_IDS = setOf("GELBOORU", "DANBOORU", "RULE34", "SAFEBOORU", "WALLHAVEN", "KONACHAN", "YANDERE", "ZEROCHAN", "REDDIT")
+        private val BUNDLED_IDS = setOf("GELBOORU", "DANBOORU", "RULE34", "SAFEBOORU", "WALLHAVEN", "KONACHAN", "YANDERE", "ZEROCHAN", "REDDIT", "BING", "WIKIMEDIA", "WALLHAVEN_PHOTOS", "UNSPLASH")
 
         private val httpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

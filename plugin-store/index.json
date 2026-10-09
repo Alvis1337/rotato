@@ -110,6 +110,54 @@
       "tags": ["wallpapers", "free"],
       "isBundled": true,
       "safeContent": true
+    },
+    {
+      "id": "BING",
+      "name": "Bing Daily",
+      "description": "Bing's photo of the day for the last two weeks, in 4K. No account needed; doesn't search tags.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/bing.json",
+      "tags": ["photo", "safe", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "WIKIMEDIA",
+      "name": "Wikimedia Featured",
+      "description": "Featured pictures from Wikimedia Commons: high-resolution, freely licensed photos of nature, places and more. Searchable, no account needed.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/wikimedia.json",
+      "tags": ["photo", "safe", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "WALLHAVEN_PHOTOS",
+      "name": "Wallhaven Photos",
+      "description": "Wallhaven's General category only: landscapes, space, cities, cars and other non-anime wallpapers.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/wallhaven_photos.json",
+      "tags": ["photo", "safe", "free"],
+      "isBundled": true,
+      "safeContent": true
+    },
+    {
+      "id": "UNSPLASH",
+      "name": "Unsplash",
+      "description": "Free photos from Unsplash. Needs a free access key from unsplash.com/developers.",
+      "author": "Rotato",
+      "version": "1.0",
+      "versionCode": 1,
+      "manifestUrl": "https://raw.githubusercontent.com/Alvis1337/rotato/main/app/src/main/assets/plugins/unsplash.json",
+      "tags": ["photo", "safe", "key"],
+      "isBundled": true,
+      "safeContent": true
     }
   ]
 }

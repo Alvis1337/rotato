@@ -1,0 +1,21 @@
+{
+  "id": "WALLHAVEN_PHOTOS",
+  "name": "Wallhaven Photos",
+  "version": "1.0",
+  "versionCode": 1,
+  "author": "Rotato",
+  "description": "Wallhaven's General category only: landscapes, space, cities, cars and other non-anime wallpapers.",
+  "protocol": "WALLHAVEN",
+  "defaultBaseUrl": "https://wallhaven.cc",
+  "instanceUrlConfigurable": false,
+  "safeContent": true,
+  "isPremium": false,
+  "auth": {
+    "type": "api_key",
+    "keyLabel": "API Key",
+    "required": false
+  },
+  "extras": {
+    "categories": "100"
+  }
+}
