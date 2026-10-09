@@ -109,6 +109,10 @@ class RotatoApp : Application(), ImageLoaderFactory {
                     // (see ZerochanEngine.ZEROCHAN_UA) — without this, image loads fail silently.
                     host.endsWith("zerochan.net") ->
                         req.newBuilder().header("User-Agent", "Rotato wallpaper app - alvis").build()
+                    // Wikimedia answers OkHttp's default User-Agent with 403; its policy asks
+                    // clients to identify themselves.
+                    host.endsWith("wikimedia.org") || host.endsWith("wikipedia.org") ->
+                        req.newBuilder().header("User-Agent", "Rotato/1.0 (https://github.com/Alvis1337/rotato)").build()
                     else -> req
                 }
                 // Booru CDNs throttle a screenful of tiles arriving at once (429/503). Back off and
