@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.gms.oss.licenses)
+    alias(libs.plugins.ksp)
 }
 
 val keystoreProps = Properties().apply {
@@ -35,6 +36,7 @@ android {
         targetSdk = 36
         versionCode = gitCommitCount
         versionName = "1.0"
+        resValue("string", "app_name", "Rotato")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -43,6 +45,10 @@ android {
         val malClientSecret = System.getenv("MAL_CLIENT_SECRET") ?: localProps["mal.clientSecret"] ?: ""
         buildConfigField("String", "MAL_CLIENT_ID",     "\"$malClientId\"")
         buildConfigField("String", "MAL_CLIENT_SECRET", "\"$malClientSecret\"")
+        // Reddit "installed app" client ID (reddit.com/prefs/apps). Optional: without it Reddit
+        // is fetched anonymously, which Reddit now refuses from many networks.
+        val redditClientId = System.getenv("REDDIT_CLIENT_ID") ?: localProps["reddit.clientId"] ?: ""
+        buildConfigField("String", "REDDIT_CLIENT_ID", "\"$redditClientId\"")
     }
 
     val hasKeystore = keystoreProps.isNotEmpty() && keystoreProps["storeFile"] != null
@@ -59,6 +65,12 @@ android {
     }
 
     buildTypes {
+        // Installs beside the release app (its own data), labelled "Rotato Dev".
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            resValue("string", "app_name", "Rotato Dev")
+        }
         release {
             isMinifyEnabled = true
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
@@ -78,6 +90,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 }
 
@@ -101,6 +114,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.media3.ui)
     implementation(libs.okhttp)
     implementation(libs.androidx.window)
