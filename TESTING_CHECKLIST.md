@@ -1,31 +1,35 @@
 # Testing Checklist — Video Support + NSFW Feature Expansion
 
+*2026-10-09: a pass on a Pixel Fold over adb ticked what was seen working; everything still
+unticked wasn't exercised. Also found and fixed: videos hidden by the "My Phone" /
+Fold-friendly filters, and looping videos stalling (no cache).*
+
 Everything below shipped via CI (green builds) but has **not been tap-tested on a real device**.
 This is the manual test pass to run before trusting it.
 
 ## Video support
 
 ### Playback
-- [ ] Gelbooru video posts actually play (this needed a Referer header fix — the thing most likely to still be broken if untested)
+- [x] Gelbooru video posts actually play (this needed a Referer header fix — the thing most likely to still be broken if untested) — *4K60 clips failed with "Couldn't load video" until grid previews released their hardware decoders; fixed 2026-10-09*
 - [ ] Danbooru, Moebooru, Wallhaven, Reddit video posts play
 - [ ] Zerochan (no video support expected — confirm it doesn't break anything)
-- [ ] Video autoplays muted in Discover grid as you scroll
+- [x] Video autoplays muted in Discover grid as you scroll
 - [ ] Video autoplays muted in Browse (collection) grid as you scroll
 - [ ] Autoplay only kicks in once a tile is actually on-screen, not just mounted in the scroll buffer
-- [ ] No more than ~3 videos autoplay at once even in a video-heavy feed
+- [x] No more than ~3 videos autoplay at once even in a video-heavy feed — *three "muted preview" tiles at once in a video-only feed*
 - [ ] Video thumbnail shows something reasonable when a source gives no static preview (video-frame decode fallback)
 - [ ] Settings → Video Previews: Autoplay / Static thumbnail / Off all behave as labeled
 
 ### Full-screen player (Discover detail view, Browse detail view/sheet)
 - [ ] Tap toggles play/pause
-- [ ] Mute button is NOT hidden under the status bar
+- [x] Mute button is NOT hidden under the status bar
 - [ ] Unmuting one video keeps the next video you open unmuted too (session-persisted)
 - [ ] Seek bar shows correct current time / duration, drag-to-scrub works
 - [ ] Double-tap left half of video = -10s, right half = +10s, with the +/-10s indicator
 - [ ] Buffering spinner shows before first frame, not just a black screen
-- [ ] A broken/dead video URL shows an error state, not silent nothing
+- [x] A broken/dead video URL shows an error state, not silent nothing — *and now has Retry*
 - [ ] Swiping to the next/prev item in the pager doesn't leave the previous video still playing in the background
-- [ ] "Set as wallpaper" / add-to-rotation actions are disabled or hidden for video items (can't set video as a static wallpaper)
+- [x] "Set as wallpaper" / add-to-rotation actions are disabled or hidden for video items (can't set video as a static wallpaper) — *Library is hidden for video; Set is kept on purpose, it plays the video through the live wallpaper*
 - [ ] Save-to-gallery on a video saves an actual playable video file (Movies/Rotato) with correct extension, not a mislabeled image
 
 ## NSFW feature expansion
@@ -36,7 +40,7 @@ This is the manual test pass to run before trusting it.
 
 ### Blur
 - [ ] Settings → NSFW → "Blur NSFW previews" toggle: off disables blur everywhere; on re-enables it
-- [ ] Discover grid blurs NSFW tiles, tap reveals
+- [x] Discover grid blurs NSFW tiles, tap reveals — *first tap reveals and doesn't open the post*
 - [ ] Library grid blurs NSFW tiles, tap reveals
 - [ ] Browse (collection) grid blurs NSFW tiles, tap reveals
 - [ ] Revealing a tile, scrolling it off-screen, and scrolling back — it should STAY revealed (not re-blur)
