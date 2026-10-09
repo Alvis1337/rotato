@@ -50,6 +50,15 @@
       color: var(--muted);
       margin-bottom: 2rem;
     }
+    .iphone {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 1.5rem 3rem;
+      text-align: center;
+    }
+    .iphone h2 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+    .iphone p { font-size: 0.95rem; color: var(--muted); }
+    .hero .btn + .btn { margin-left: 0.5rem; }
     .features {
       background: var(--surface);
       padding: 3rem 1.5rem;
@@ -171,8 +180,14 @@
 
 <div class="hero">
   <h1>Rotato</h1>
-  <p>Discover, collect, and rotate wallpapers on any Android phone, with extra polish for foldables.</p>
+  <p>Discover, collect, and rotate wallpapers on Android and iPhone, with extra polish for foldables.</p>
   <a class="btn btn-primary" href="https://github.com/Alvis1337/rotato/releases">Download APK</a>
+  <a class="btn" href="https://github.com/Alvis1337/rotato-ios/releases">iPhone version</a>
+</div>
+
+<div class="iphone">
+  <h2>On iPhone</h2>
+  <p>Rotato for iPhone has Discover, collections, the Library, sources and the plugin store, and reads the same backups, so you can move your setup between phones. iOS doesn't let apps change the wallpaper on their own, so rotation runs through a short Shortcuts automation that the app walks you through. It's installed by sideloading (Sideloadly or AltStore). Live wallpaper, the screen saver and the foldable features are Android only.</p>
 </div>
 
 <div class="features">

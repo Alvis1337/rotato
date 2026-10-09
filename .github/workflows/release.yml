@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    # Docs and site edits don't ship a new APK.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
     tags:
       - 'v*'
   workflow_dispatch:
