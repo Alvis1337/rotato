@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.chrisalvis.rotato.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -34,6 +36,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +54,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -98,11 +103,41 @@ object VideoPreviewLimiter {
 @Composable
 fun rememberVideoPreviewSlot(enabled: Boolean): Boolean {
     var acquired by remember { mutableStateOf(false) }
-    DisposableEffect(enabled) {
-        acquired = enabled && VideoPreviewLimiter.tryAcquire()
+    // A full-screen player needs the hardware decoders the grid previews hold; while one is
+    // open, previews fall back to their posters.
+    val blocked = FullscreenVideo.open > 0
+    DisposableEffect(enabled, blocked) {
+        acquired = enabled && !blocked && VideoPreviewLimiter.tryAcquire()
         onDispose { if (acquired) VideoPreviewLimiter.release() }
     }
     return acquired
+}
+
+/**
+ * One disk cache for every player. Booru videos are short clips played on a loop; without a
+ * cache each loop downloaded the whole file again, wasting data and stalling large (4K) clips
+ * mid-loop on slower connections.
+ */
+object VideoCache {
+    @Volatile private var cache: androidx.media3.datasource.cache.SimpleCache? = null
+
+    fun get(context: android.content.Context): androidx.media3.datasource.cache.SimpleCache =
+        cache ?: synchronized(this) {
+            cache ?: androidx.media3.datasource.cache.SimpleCache(
+                java.io.File(context.applicationContext.cacheDir, "video"),
+                androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(400L * 1024 * 1024),
+                androidx.media3.database.StandaloneDatabaseProvider(context.applicationContext),
+            ).also { cache = it }
+        }
+}
+
+/**
+ * Counts full-screen players on screen. Phones have only a few hardware video decoders; when grid
+ * previews kept theirs while the viewer opened, large videos (4K60 is common on Gelbooru) fell
+ * through to the software decoder, which ran out of memory: "Couldn't load video".
+ */
+object FullscreenVideo {
+    var open by mutableIntStateOf(0)
 }
 
 /**
@@ -148,20 +183,40 @@ fun VideoPlayerView(
 ) {
     val context = LocalContext.current
     var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
-    val exoPlayer = remember(url) {
-        val dataSourceFactory = DefaultHttpDataSource.Factory().apply {
+    // Bumped by Retry to rebuild the player after an error.
+    var attempt by remember(url) { mutableIntStateOf(0) }
+    val fullscreen = showSeekBar
+    if (fullscreen) {
+        DisposableEffect(Unit) {
+            FullscreenVideo.open++
+            onDispose { FullscreenVideo.open-- }
+        }
+    }
+    val exoPlayer = remember(url, attempt) {
+        val httpFactory = DefaultHttpDataSource.Factory().apply {
             refererFor(url)?.let { referer -> setDefaultRequestProperties(mapOf("Referer" to referer)) }
         }
-        ExoPlayer.Builder(context)
+        val dataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+            .setCache(VideoCache.get(context))
+            .setUpstreamDataSourceFactory(httpFactory)
+            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        // If a decoder refuses to start, try the next one instead of failing playback outright.
+        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build()
             .apply {
+                if (com.chrisalvis.rotato.BuildConfig.DEBUG) addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger())
                 setMediaItem(MediaItem.fromUri(url))
                 repeatMode = ExoPlayer.REPEAT_MODE_ALL
                 volume = if (isMuted) 0f else 1f
-                prepare()
                 playWhenReady = true
             }
+    }
+    LaunchedEffect(exoPlayer) {
+        // Full screen: give the grid previews a couple of frames to release their decoders first.
+        if (fullscreen) repeat(2) { withFrameNanos { } }
+        exoPlayer.prepare()
     }
     var isPlaying by remember(exoPlayer) { mutableStateOf(true) }
     var isBuffering by remember(exoPlayer) { mutableStateOf(true) }
@@ -282,6 +337,16 @@ fun VideoPlayerView(
                         "Couldn't load video",
                         color = Color.White.copy(alpha = 0.8f),
                         modifier = Modifier.padding(top = 8.dp)
+                    )
+                    Text(
+                        "Retry",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                            .clickable { attempt++ }
+                            .padding(horizontal = 18.dp, vertical = 8.dp)
                     )
                 }
             } else {
