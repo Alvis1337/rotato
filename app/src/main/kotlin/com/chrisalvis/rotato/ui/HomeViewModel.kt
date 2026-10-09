@@ -228,7 +228,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         observeRotationCollections()
     }
 
-    /** Polls rotato_images/ every 2 s and pushes changes into [_images]. */
+    /** Pushes rotato_images/ changes into [_images] as files come and go. */
     private fun observeImageDir() {
         viewModelScope.launch {
             repository.imagesFlow().collect { files ->

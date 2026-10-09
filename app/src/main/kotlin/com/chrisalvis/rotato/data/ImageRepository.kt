@@ -5,10 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import android.os.FileObserver
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -27,13 +29,28 @@ class ImageRepository(private val context: Context) {
             ?: emptyList()
     }
 
-    /** Polls the image directory every [intervalMs] ms, emitting only when the list changes. */
-    fun imagesFlow(intervalMs: Long = 2_000L): Flow<List<File>> = flow {
-        while (true) {
-            emit(getImages())
-            delay(intervalMs)
+    /**
+     * The pool's images, re-read whenever a file lands in or leaves the directory (downloads,
+     * imports, deletes, the worker's temp-file renames). It used to poll every two seconds for
+     * as long as the Library was open.
+     */
+    fun imagesFlow(): Flow<List<File>> = callbackFlow {
+        val dir = imageDir
+        trySend(getImages())
+        val mask = FileObserver.CREATE or FileObserver.DELETE or FileObserver.MOVED_TO or
+            FileObserver.MOVED_FROM or FileObserver.CLOSE_WRITE
+        // The File constructor needs API 29; the path one works back to minSdk 26.
+        @Suppress("DEPRECATION")
+        val observer = object : FileObserver(dir.absolutePath, mask) {
+            override fun onEvent(event: Int, path: String?) {
+                // Half-written downloads end in .part; the rename to the real name is what counts.
+                if (path == null || path.endsWith(".part")) return
+                trySend(getImages())
+            }
         }
-    }.distinctUntilChanged().flowOn(Dispatchers.IO)
+        observer.startWatching()
+        awaitClose { observer.stopWatching() }
+    }.conflate().distinctUntilChanged().flowOn(Dispatchers.IO)
 
     suspend fun addImage(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         try {
