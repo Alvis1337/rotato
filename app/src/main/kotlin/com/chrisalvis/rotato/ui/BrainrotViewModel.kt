@@ -685,14 +685,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 // Videos only: sites that never carry video sit out; boorus search their video tag
                 // (last, so a free Danbooru account's single tag stays the user's own).
                 if (filters.videoOnly && manifest.protocol !in VIDEO_PROTOCOLS) return@mapNotNull null
-                val rawQueries = queriesFor(source, explicitQuery, malTitles, tierBoostTags).let { qs ->
-                    if (!filters.videoOnly || manifest.protocol == Protocol.REDDIT) qs
-                    else qs.map { q -> if (manifest.protocol == Protocol.DANBOORU && q.isNotBlank()) q else "$q video".trim() }.distinct()
+                // The site's tag limit applies to what was searched; the "video" tag added below
+                // for videos-only mode used to push a two-tag search over it and drop the site.
+                val searched = queriesFor(source, explicitQuery, malTitles, tierBoostTags).let { qs ->
+                    if (manifest.maxTagCount == Int.MAX_VALUE) qs
+                    else qs.filter { q -> q.trim().split(Regex("\\s+")).count { it.isNotBlank() } <= manifest.maxTagCount }
                 }
-                val queries = if (manifest.maxTagCount == Int.MAX_VALUE) rawQueries
-                    else rawQueries.filter { q ->
-                        q.trim().split(Regex("\\s+")).count { it.isNotBlank() } <= manifest.maxTagCount
-                    }
+                val queries = if (!filters.videoOnly || manifest.protocol == Protocol.REDDIT) searched
+                    else searched.map { q -> if (manifest.protocol == Protocol.DANBOORU && q.isNotBlank()) q else "$q video".trim() }.distinct()
                 if (queries.isEmpty()) return@mapNotNull null
                 DiscoverRequest(
                     source = source,

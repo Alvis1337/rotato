@@ -37,7 +37,9 @@ class ImageRepository(private val context: Context) {
     fun imagesFlow(): Flow<List<File>> = callbackFlow {
         val dir = imageDir
         trySend(getImages())
-        val mask = FileObserver.CREATE or FileObserver.DELETE or FileObserver.MOVED_TO or
+        // No CREATE: it fires while a copied file is still empty, and the CLOSE_WRITE that follows
+        // produces the same file list, so the grid was left showing a broken thumbnail.
+        val mask = FileObserver.DELETE or FileObserver.MOVED_TO or
             FileObserver.MOVED_FROM or FileObserver.CLOSE_WRITE
         // The File constructor needs API 29; the path one works back to minSdk 26.
         @Suppress("DEPRECATION")

@@ -77,19 +77,26 @@ object WikimediaEngine : PluginEngine() {
         val base = baseUrl(manifest, source)
         val props = "&prop=imageinfo&iiprop=url%7Csize%7Cmime&iiurlwidth=1280"
         val n = limit.coerceIn(10, 50)
-        val url = if (query.isBlank()) {
-            // Random entry point: featured pictures sorted by the time they were added, from a random year.
-            val year = (2008..java.time.Year.now().value).random()
-            val month = (1..12).random().toString().padStart(2, '0')
-            "$base/w/api.php?action=query&format=json&generator=categorymembers&gcmtitle=Category:$CATEGORY" +
-                "&gcmtype=file&gcmsort=timestamp&gcmstart=$year-$month-01T00:00:00Z&gcmlimit=$n$props"
+        fun load(url: String) = getJson(url, "User-Agent" to "Rotato/1.0 (https://github.com/Alvis1337/rotato)")
+            ?.optJSONObject("query")?.optJSONObject("pages")
+        val pages = if (query.isBlank()) {
+            // Random entry point: featured pictures sorted by the time they were added, from a
+            // random past month (a month still to come returned nothing).
+            val first = java.time.LocalDate.of(2008, 1, 1)
+            val last = java.time.LocalDate.now().minusMonths(1)
+            val start = first.plusDays((0..java.time.temporal.ChronoUnit.DAYS.between(first, last)).random()).withDayOfMonth(1)
+            load(
+                "$base/w/api.php?action=query&format=json&generator=categorymembers&gcmtitle=Category:$CATEGORY" +
+                    "&gcmtype=file&gcmsort=timestamp&gcmstart=${start}T00:00:00Z&gcmlimit=$n$props"
+            )
         } else {
             val q = "${query.replace('_', ' ')} incategory:$CATEGORY"
-            "$base/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=$n" +
-                "&gsrsearch=${q.urlEncode()}&gsroffset=${(0..3).random() * n}$props"
-        }
-        val pages = getJson(url, "User-Agent" to "Rotato/1.0 (https://github.com/Alvis1337/rotato)")
-            ?.optJSONObject("query")?.optJSONObject("pages") ?: return@onIO emptyList()
+            val search = "$base/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=$n" +
+                "&gsrsearch=${q.urlEncode()}$props"
+            // A random offset past the end of a narrow search came back empty; start over at 0.
+            val offset = (0..3).random() * n
+            (if (offset > 0) load("$search&gsroffset=$offset") else null)?.takeIf { it.length() > 0 } ?: load(search)
+        } ?: return@onIO emptyList()
         pages.keys().asSequence().mapNotNull { pages.optJSONObject(it) }.mapNotNull { page ->
             val info = page.optJSONArray("imageinfo")?.optJSONObject(0) ?: return@mapNotNull null
             if (!info.optString("mime").startsWith("image/") || info.optString("mime") == "image/svg+xml") return@mapNotNull null

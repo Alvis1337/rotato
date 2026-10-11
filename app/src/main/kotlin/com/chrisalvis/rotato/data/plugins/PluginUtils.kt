@@ -71,6 +71,38 @@ internal fun normalizeUserQuery(q: String): String =
         .filter { it.isNotBlank() && it != "-" && it != "~" }
         .joinToString(" ")
 
+internal fun getText(url: String, vararg headers: Pair<String, String>): String? = try {
+    val req = Request.Builder().url(url)
+        .header("User-Agent", BROWSER_UA)
+        .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
+        .build()
+    http.newCall(req).execute().use { resp -> if (resp.isSuccessful) resp.body?.string() else null }
+} catch (e: Exception) { null }
+
+/**
+ * Tag name/count pairs from a booru tag listing, whichever shape the site answers in: a JSON
+ * array, Gelbooru's `{"tag": [...]}`, or the XML Gelbooru 0.2 sites (Safebooru, Rule34) return.
+ */
+internal fun parseTagListing(body: String): List<Pair<String, Int>> {
+    val text = body.trim()
+    fun fromArray(arr: JSONArray) = (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        val name = o.optString("name").ifBlank { return@mapNotNull null }
+        name to (if (o.has("post_count")) o.optInt("post_count") else o.optInt("count"))
+    }
+    return runCatching {
+        when {
+            text.startsWith("[") -> fromArray(JSONArray(text))
+            text.startsWith("{") -> JSONObject(text).optJSONArray("tag")?.let(::fromArray).orEmpty()
+            else -> Regex("<tag\\s[^>]*>").findAll(text).mapNotNull { m ->
+                val attrs = Regex("(\\w+)=\"([^\"]*)\"").findAll(m.value).associate { it.groupValues[1] to it.groupValues[2] }
+                val name = attrs["name"]?.ifBlank { null } ?: return@mapNotNull null
+                android.text.Html.fromHtml(name, android.text.Html.FROM_HTML_MODE_LEGACY).toString() to (attrs["count"]?.toIntOrNull() ?: 0)
+            }.toList()
+        }
+    }.getOrDefault(emptyList())
+}
+
 internal fun pickRandom(arr: JSONArray, exclude: List<String> = emptyList()): JSONObject? {
     if (arr.length() == 0) return null
     val indices = (0 until arr.length()).shuffled()

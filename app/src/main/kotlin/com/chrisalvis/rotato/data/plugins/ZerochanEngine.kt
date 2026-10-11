@@ -64,9 +64,11 @@ object ZerochanEngine : PluginEngine() {
     }
 
     private suspend fun search(base: String, query: String, page: Int): JSONArray? = onIO {
-        val normalized = query.trim().replace('_', ' ').replace('+', ' ')
-        val url = if (normalized.isBlank()) "$base/?json&l=$PAGE_SIZE&p=$page"
-                  else "$base/?q=${normalized.urlEncode()}&json&l=$PAGE_SIZE&p=$page"
+        // Zerochan takes tags in the path ("/Hatsune+Miku,Rain?json"); "/?q=" ignored the search
+        // and returned the newest posts. Booru-style "cat_ears" becomes Zerochan's "cat ears".
+        val path = query.trim().split(Regex("\\s+")).filter { it.isNotBlank() && !it.startsWith("-") }
+            .joinToString(",") { it.trimStart('~').replace('_', ' ').urlEncode() }
+        val url = "$base/$path?json&l=$PAGE_SIZE&p=$page"
         fetchJson(url)?.optJSONArray("items")
     }
 

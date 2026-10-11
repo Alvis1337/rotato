@@ -519,11 +519,11 @@ private fun subjectCentre(bitmap: Bitmap): PointF? {
             .enableForegroundConfidenceMask()
             .build()
     )
+    var task: com.google.android.gms.tasks.Task<*>? = null
     return try {
-        val result = com.google.android.gms.tasks.Tasks.await(
-            segmenter.process(com.google.mlkit.vision.common.InputImage.fromBitmap(small, 0)),
-            4, java.util.concurrent.TimeUnit.SECONDS,
-        )
+        val pending = segmenter.process(com.google.mlkit.vision.common.InputImage.fromBitmap(small, 0))
+        task = pending
+        val result = com.google.android.gms.tasks.Tasks.await(pending, 4, java.util.concurrent.TimeUnit.SECONDS)
         val mask = result.foregroundConfidenceMask ?: return null
         val w = small.width
         val h = small.height
@@ -545,7 +545,8 @@ private fun subjectCentre(bitmap: Bitmap): PointF? {
         null
     } finally {
         segmenter.close()
-        if (small !== bitmap) small.recycle()
+        // After a timeout ML Kit may still be reading the bitmap; leave it to the GC then.
+        if (small !== bitmap && task?.isComplete != false) small.recycle()
     }
 }
 

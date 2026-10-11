@@ -75,6 +75,19 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 .debounce(30_000)
                 .collect { runCatching { android.app.backup.BackupManager(this@RotatoApp).dataChanged() } }
         }
+        // Collections live in their own database now, so their changes need the same nudge.
+        appScope.launch {
+            com.chrisalvis.rotato.data.LocalListsPreferences(this@RotatoApp).allWallpapers
+                .drop(1)
+                .debounce(30_000)
+                .collect { runCatching { android.app.backup.BackupManager(this@RotatoApp).dataChanged() } }
+        }
+        appScope.launch {
+            com.chrisalvis.rotato.data.LocalListsPreferences(this@RotatoApp).lists
+                .drop(1)
+                .debounce(30_000)
+                .collect { runCatching { android.app.backup.BackupManager(this@RotatoApp).dataChanged() } }
+        }
         appScope.launch {
             runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
             UnfoldWatcherService.sync(this@RotatoApp, RotatoPreferences(this@RotatoApp).rotateOnUnfold.first())

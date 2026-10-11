@@ -30,6 +30,14 @@ abstract class PluginEngine {
         limit: Int = 100,
     ): List<BrainrotWallpaper> = listOfNotNull(fetch(manifest, source, query, exclude, nsfw, filters))
 
+    /**
+     * Tags on this site that start with (or, where the site supports it, are an alias of)
+     * [token], most-used first, as name to post count. Used when a search comes back empty
+     * because people search "jessie" but the site files her under "jessie_(pokemon)".
+     * Blocking; sites without a tag list return nothing.
+     */
+    open fun lookupTags(manifest: PluginManifest, source: LocalSource, token: String): List<Pair<String, Int>> = emptyList()
+
     /** Resolved base URL: user override wins over manifest default. */
     protected fun baseUrl(manifest: PluginManifest, source: LocalSource): String =
         source.baseUrl.ifBlank { manifest.defaultBaseUrl }.trimEnd('/')

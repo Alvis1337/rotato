@@ -77,9 +77,12 @@ object GelbooruEngine : PluginEngine() {
         val extras = manifest.extras
         val tagQuery = buildTagQuery(query, nsfw, extras, filters)
         val authSuffix = buildAuthSuffix(source)
-        val url = "$apiBase&limit=$limit&tags=${tagQuery.urlEncode()}$authSuffix"
+        // Gelbooru-style sites return at most 100 per page; asking for 200 made the random page
+        // maths skip the second half of the results.
+        val pageSize = limit.coerceAtMost(100)
+        val url = "$apiBase&limit=$pageSize&tags=${tagQuery.urlEncode()}$authSuffix"
 
-        val arr = loadPage(url, base, tagQuery, authSuffix, limit, extras) ?: return@onIO emptyList()
+        val arr = loadPage(url, base, tagQuery, authSuffix, pageSize, extras) ?: return@onIO emptyList()
 
         (0 until arr.length()).mapNotNull { i ->
             val post = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -109,6 +112,13 @@ object GelbooruEngine : PluginEngine() {
             }
             append(safeTag)
         }.trim()
+    }
+
+    override fun lookupTags(manifest: PluginManifest, source: LocalSource, token: String): List<Pair<String, Int>> {
+        val base = baseUrl(manifest, source)
+        val url = "$base/index.php?page=dapi&s=tag&q=index&json=1&limit=10&orderby=count&order=DESC" +
+            "&name_pattern=${"$token%".urlEncode()}${buildAuthSuffix(source)}"
+        return getText(url)?.let(::parseTagListing).orEmpty()
     }
 
     private fun buildAuthSuffix(source: LocalSource): String =

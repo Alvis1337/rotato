@@ -47,7 +47,7 @@ object MoebooruEngine : PluginEngine() {
         if (!canServe(manifest, nsfw, source)) return@onIO emptyList()
         val base = baseUrl(manifest, source)
         val tagQuery = buildTagQuery(query, nsfw, filters)
-        val arr = getJsonArray("$base/post.json?tags=${tagQuery.urlEncode()}&limit=$limit") ?: return@onIO emptyList()
+        val arr = getJsonArray("$base/post.json?tags=${tagQuery.urlEncode()}&limit=${limit.coerceAtMost(100)}") ?: return@onIO emptyList()
         (0 until arr.length()).mapNotNull { i ->
             val obj = arr.optJSONObject(i) ?: return@mapNotNull null
             val id = obj.optInt("id", 0).toString()
@@ -56,6 +56,13 @@ object MoebooruEngine : PluginEngine() {
             if (!filters.matches(w, h, MediaType.isVideoUrl(obj.optString("file_url")))) return@mapNotNull null
             buildWallpaper(obj, base, manifest, nsfw)
         }
+    }
+
+    override fun lookupTags(manifest: PluginManifest, source: LocalSource, token: String): List<Pair<String, Int>> {
+        val base = baseUrl(manifest, source)
+        return getText("$base/tag.json?name_pattern=${token.urlEncode()}&order=count&limit=20")
+            ?.let(::parseTagListing).orEmpty()
+            .filter { (name, _) -> name.startsWith(token) }
     }
 
     private fun buildTagQuery(query: String, nsfw: Boolean, filters: BrainrotFilters = BrainrotFilters()): String = buildString {

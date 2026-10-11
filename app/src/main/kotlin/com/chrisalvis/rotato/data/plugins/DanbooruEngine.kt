@@ -90,6 +90,16 @@ object DanbooruEngine : PluginEngine() {
     private fun isVideoPost(obj: org.json.JSONObject): Boolean =
         obj.optString("file_ext") in setOf("mp4", "webm") || MediaType.isVideoUrl(obj.optString("file_url"))
 
+    override fun lookupTags(manifest: PluginManifest, source: LocalSource, token: String): List<Pair<String, Int>> {
+        val base = baseUrl(manifest, source)
+        // Aliases count: "jessie" finds Danbooru's musashi_(pokemon) through jessie_(pokemon).
+        val url = "$base/tags.json?search[name_or_alias_matches]=${"$token*".urlEncode()}" +
+            "&search[hide_empty]=true&search[order]=count&limit=10"
+        val auth = authHeader(source)
+        return if (auth != null) getText(url, "Authorization" to auth)?.let(::parseTagListing).orEmpty()
+        else getText(url)?.let(::parseTagListing).orEmpty()
+    }
+
     private fun authHeader(source: LocalSource): String? =
         if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
             "Basic ${android.util.Base64.encodeToString(
@@ -119,7 +129,8 @@ object DanbooruEngine : PluginEngine() {
     private fun buildTagQuery(query: String, nsfw: Boolean, isPremium: Boolean, exclude: List<String>, filters: BrainrotFilters = BrainrotFilters()): String {
         val normalized = normalizeUserQuery(query)
         return buildString {
-            val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()
+            // Positive tags first, so a free account's one tag is what was searched for, not an exclude.
+            val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() }.sortedBy { it.startsWith("-") } else emptyList()
             val maxTokens = if (isPremium) tokens.size else 1
             if (maxTokens > 0 && tokens.isNotEmpty()) {
                 val effective = tokens.take(maxTokens)

@@ -24,7 +24,7 @@ object RedditEngine : PluginEngine() {
         filters: BrainrotFilters,
     ): BrainrotWallpaper? = onIO {
         val subreddit = source.instanceId.trim().ifBlank { return@onIO null }
-        fetchPosts(subreddit, nsfw, exclude, filters, limit = 100).shuffled().firstOrNull()
+        fetchPosts(subreddit, query, nsfw, exclude, filters, limit = 100).shuffled().firstOrNull()
     }
 
     override suspend fun fetchPage(
@@ -37,11 +37,11 @@ object RedditEngine : PluginEngine() {
         limit: Int,
     ): List<BrainrotWallpaper> = onIO {
         val subreddit = source.instanceId.trim().ifBlank { return@onIO emptyList() }
-        fetchPosts(subreddit, nsfw, exclude, filters, limit)
+        fetchPosts(subreddit, query, nsfw, exclude, filters, limit)
     }
 
-    private fun fetchPosts(subreddit: String, nsfw: Boolean, exclude: List<String>, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> {
-        val json = listing(subreddit)
+    private fun fetchPosts(subreddit: String, query: String, nsfw: Boolean, exclude: List<String>, filters: BrainrotFilters, limit: Int): List<BrainrotWallpaper> {
+        val json = listing(subreddit, query)
         val children = json.optJSONObject("data")?.optJSONArray("children") ?: return emptyList()
         return (0 until children.length()).mapNotNull { i ->
             val post = children.optJSONObject(i)?.optJSONObject("data") ?: return@mapNotNull null
@@ -64,11 +64,17 @@ object RedditEngine : PluginEngine() {
      * account) and uses oauth.reddit.com; anonymous `.json` is refused (HTTP 403/429) from many
      * networks now. Refusals throw, so Source Health says why Reddit is empty.
      */
-    private fun listing(subreddit: String): JSONObject {
-        val path = "/r/${subreddit.urlEncode()}/top?limit=100&raw_json=1&t=month"
+    private fun listing(subreddit: String, query: String): JSONObject {
+        // A search looks inside the subreddit; it used to be ignored, mixing in unrelated top posts.
+        val words = query.trim().split(Regex("\\s+"))
+            .filter { it.isNotBlank() && !it.startsWith("-") && !it.contains(':') }
+            .joinToString(" ") { it.trimStart('~').replace('_', ' ') }
+        val (endpoint, params) = if (words.isBlank()) "top" to "limit=100&raw_json=1&t=month"
+            else "search" to "q=${words.urlEncode()}&restrict_sr=1&sort=relevance&t=all&limit=100&raw_json=1"
         val token = accessToken()
+        val sub = subreddit.urlEncode()
         val req = Request.Builder()
-            .url(if (token != null) "https://oauth.reddit.com$path" else "https://www.reddit.com${path.replace("/top?", "/top.json?")}")
+            .url(if (token != null) "https://oauth.reddit.com/r/$sub/$endpoint?$params" else "https://www.reddit.com/r/$sub/$endpoint.json?$params")
             .header("User-Agent", REDDIT_UA)
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
