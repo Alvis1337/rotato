@@ -121,10 +121,11 @@ object GelbooruEngine : PluginEngine() {
         return getText(url)?.let(::parseTagListing).orEmpty()
     }
 
-    private fun buildAuthSuffix(source: LocalSource): String =
-        if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
-            "&api_key=${source.apiKey.urlEncode()}&user_id=${source.apiUser.urlEncode()}"
-        else ""
+    private fun buildAuthSuffix(source: LocalSource): String {
+        // Also fixes credentials saved before pasting the site's "&api_key=…&user_id=…" was understood.
+        val (key, user) = com.chrisalvis.rotato.data.normalizeCredentials(source.apiKey, source.apiUser)
+        return if (key.isNotBlank() && user.isNotBlank()) "&api_key=${key.urlEncode()}&user_id=${user.urlEncode()}" else ""
+    }
 
     /**
      * Loads a random page of results. The page-0 response used to read the post count is reused

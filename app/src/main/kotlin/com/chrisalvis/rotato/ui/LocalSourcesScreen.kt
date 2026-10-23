@@ -144,7 +144,8 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setCredentials(pluginId: String, instanceId: String = "", apiKey: String, apiUser: String) {
-        viewModelScope.launch { prefs.update(pluginId, instanceId, apiKey = apiKey, apiUser = apiUser) }
+        val (key, user) = com.chrisalvis.rotato.data.normalizeCredentials(apiKey, apiUser)
+        viewModelScope.launch { prefs.update(pluginId, instanceId, apiKey = key, apiUser = user) }
     }
 
     fun setTags(pluginId: String, instanceId: String = "", tags: String) {
@@ -247,9 +248,22 @@ class LocalSourcesViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val manifest = pluginRepository.getManifest(source.pluginId) ?: error("No manifest for ${source.pluginId}")
                 val nsfw = rotaPrefs.nsfwMode.first()
+                val (key, user) = com.chrisalvis.rotato.data.normalizeCredentials(source.apiKey, source.apiUser)
+                when {
+                    manifest.needsApiKey && manifest.requiresCredentials && key.isBlank() ->
+                        throw Exception("Add your ${manifest.apiKeyLabel} first")
+                    manifest.needsApiUser && manifest.requiresCredentials && user.isBlank() ->
+                        throw Exception("Add your ${manifest.apiUserLabel} first")
+                    // Adult-only sites never load with NSFW off, so the test can't reach them then.
+                    manifest.adultOnly && !nsfw ->
+                        throw Exception("${manifest.name} only loads with NSFW mode on. Turn it on, then test again")
+                }
                 val results = PluginExecutor.fetch(manifest, source, "", emptyList(), nsfw, BrainrotFilters())
                 if (results != null) SourceHealthTracker.recordSuccess(source.pluginId)
-                else throw Exception("No results returned")
+                else throw Exception(
+                    if (manifest.needsApiKey) "No results. Check the ${manifest.apiUserLabel} and ${manifest.apiKeyLabel}"
+                    else "No results returned"
+                )
             } catch (e: Exception) {
                 SourceHealthTracker.recordError(source.pluginId, e.message ?: "Unknown error")
             } finally {

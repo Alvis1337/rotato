@@ -16,3 +16,17 @@ data class LocalSource(
     val extraConfig: Map<String, String> = emptyMap(),
 )
 
+/**
+ * Cleans up pasted credentials. Rule34 and Gelbooru show them on the account page as one string,
+ * "&api_key=…&user_id=…", which pasted into either field used to be sent as the key itself and
+ * fail. Either field may hold that string; the pieces it names win.
+ * Returns the API key and user ID.
+ */
+fun normalizeCredentials(apiKey: String, apiUser: String): Pair<String, String> {
+    fun param(name: String): String? = listOf(apiKey, apiUser).firstNotNullOfOrNull { field ->
+        Regex("(?:^|[&?\\s])$name=([^&\\s]+)").find(field.trim())?.groupValues?.get(1)
+    }
+    val key = param("api_key") ?: apiKey.trim()
+    val user = param("user_id") ?: apiUser.trim()
+    return key to user
+}
