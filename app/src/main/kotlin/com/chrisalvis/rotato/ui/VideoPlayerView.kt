@@ -282,7 +282,9 @@ fun VideoPlayerView(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                // TextureView-backed (see the layout): it moves with the window when the phone
+                // unfolds and respects Compose layers, where a SurfaceView could stay black.
+                (android.view.LayoutInflater.from(ctx).inflate(com.chrisalvis.rotato.R.layout.video_player_texture, null) as PlayerView).apply {
                     player = exoPlayer
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
