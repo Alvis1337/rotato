@@ -63,6 +63,9 @@ class RotatoWallpaperService : WallpaperService() {
         private var height = 0
         private var visible = false
         private var player: MediaPlayer? = null
+        /** The published wallpaper is a video; it plays whenever this screen has a live surface. */
+        private var videoPath: String? = null
+        private var surfaceReady = false
         private var loadToken = 0
 
         // Unfold reveal: when the surface gets wider, start zoomed in and settle out.
@@ -113,10 +116,20 @@ class RotatoWallpaperService : WallpaperService() {
             if (wasNarrow && nowWide) revealStart = SystemClock.uptimeMillis()
             width = w
             height = h
-            if (current == null && player == null) load(fade = false) else scheduleFrame()
+            surfaceReady = true
+            val video = videoPath
+            when {
+                // Each screen of a foldable has its own surface, and the inner one is often torn
+                // down and rebuilt while folded. A player bound to an old surface draws nothing,
+                // so a video starts (or restarts) on whichever surface is live now.
+                video != null && player == null -> playVideo(video)
+                current == null && player == null -> load(fade = false)
+                else -> scheduleFrame()
+            }
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
+            surfaceReady = false
             main.removeCallbacks(frameCallback)
             releasePlayer()
             super.onSurfaceDestroyed(holder)
@@ -125,11 +138,15 @@ class RotatoWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(isVisible: Boolean) {
             visible = isVisible
             if (isVisible) {
-                player?.start()
+                val video = videoPath
+                // A new player starts itself once prepared; starting it earlier is an error.
+                if (video != null && player == null && surfaceReady) playVideo(video) else player?.start()
                 if (parallax) startSensors()
                 scheduleFrame()
             } else {
-                player?.pause()
+                // A hidden screen's video gives its decoder back so the other screen can use it;
+                // it starts again when this screen shows.
+                if (videoPath != null) releasePlayer() else player?.pause()
                 stopSensors()
                 main.removeCallbacks(frameCallback)
             }
@@ -179,9 +196,11 @@ class RotatoWallpaperService : WallpaperService() {
                 return
             }
             if (prefs.getBoolean(LiveWallpaper.KEY_VIDEO, false)) {
+                videoPath = path
                 playVideo(path)
                 return
             }
+            videoPath = null
             val crops = LiveWallpaper.parseCrops(prefs.getString(LiveWallpaper.KEY_CROPS, null))
             loader.post {
                 val bmp = BitmapFactory.decodeFile(path) ?: return@post
@@ -213,6 +232,8 @@ class RotatoWallpaperService : WallpaperService() {
             previous?.bitmap?.recycle()
             current = null
             previous = null
+            // With no live surface (this screen is off), wait for onSurfaceChanged to start it.
+            if (!surfaceReady || !surfaceHolder.surface.isValid) return
             try {
                 player = MediaPlayer().apply {
                     setSurface(surfaceHolder.surface)
@@ -221,6 +242,9 @@ class RotatoWallpaperService : WallpaperService() {
                     setVolume(0f, 0f)
                     setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
                     setOnPreparedListener { if (visible) it.start() }
+                    // A decoder error (e.g. both screens' players competing for it) leaves a dead
+                    // player; drop it so the next time this screen shows, it starts again.
+                    setOnErrorListener { _, _, _ -> main.post { releasePlayer() }; true }
                     prepareAsync()
                 }
             } catch (e: Exception) {
