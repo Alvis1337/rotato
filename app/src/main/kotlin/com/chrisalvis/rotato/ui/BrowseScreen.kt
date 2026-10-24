@@ -298,7 +298,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     }
 
     // Unfolded: a picture opens in a pane beside the collection's grid instead of over it.
-    val collectionsTwoPane = LocalConfiguration.current.screenWidthDp >= 700
+    val collectionsTwoPane = viewerBesideGrid()
     val collectionPreview: @Composable (BrowseWallpaper, Boolean, Modifier) -> Unit = { initial, inline, paneModifier ->
         WallpaperUrlPreviewDialog(
             wallpapers = wallpapers,
@@ -2328,7 +2328,11 @@ private fun WallpaperUrlPreviewDialog(
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.aboveTabletopFold().fillMaxSize(),
+                // Beside the grid, keep the picture between the info pills and the dock instead of under them.
+                modifier = Modifier
+                    .aboveTabletopFold()
+                    .fillMaxSize()
+                    .then(if (inline) Modifier.statusBarsPadding().padding(top = 56.dp, bottom = bottomPanelHeight) else Modifier),
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !zoomed,
             ) { page ->
@@ -2350,7 +2354,7 @@ private fun WallpaperUrlPreviewDialog(
                         showMuteButton = true,
                         showSeekBar = true,
                         allowDoubleTapSeek = true,
-                        seekBarBottomInset = bottomPanelHeight
+                        seekBarBottomInset = if (inline) 0.dp else bottomPanelHeight
                     )
                 } else if (wp.isVideo) {
                     val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }

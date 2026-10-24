@@ -522,7 +522,7 @@ private fun LibraryContent(
         }
 
         // Unfolded: the picture opens in a pane beside the grid instead of over it.
-        val libraryTwoPane = LocalConfiguration.current.screenWidthDp >= 700
+        val libraryTwoPane = viewerBesideGrid()
         val preview: @Composable (Boolean, Modifier) -> Unit = { inline, paneModifier ->
         selectedFile?.takeIf { images.isNotEmpty() }?.let { file ->
             ImagePreviewDialog(

@@ -410,146 +410,7 @@ fun BrainrotScreen(
         }
     }
 
-    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    if (showSettings) {
-        ModalBottomSheet(
-            onDismissRequest = { showSettings = false },
-            sheetState = settingsSheetState
-        ) {
-            DiscoverSettingsSheetContent(
-                nsfwMode = nsfwMode,
-                filters = brainrotFilters,
-                lists = lists,
-                selectedListId = selectedListId,
-                interestAlignEnabled = interestAlignEnabled,
-                interestProfiles = interestProfiles,
-                onSelectList = { vm.setSelectedList(it) },
-                onSetNsfwMode = { vm.setNsfwMode(it) },
-                onSetVideoOnly = { vm.setVideoOnly(it) },
-                onSetMinResolution = { vm.setMinResolution(it) },
-                onSetAspectRatio = { vm.setAspectRatio(it) },
-                isFoldable = vm.isFoldable,
-                onSetFoldFriendly = { vm.setFoldFriendly(it) },
-                forYouEnabled = forYouEnabled,
-                onSetForYou = { vm.setForYouEnabled(it) },
-                onResetLearned = { vm.resetLearnedTaste() },
-                onSetUseMalFilter = { vm.setUseMalFilter(it) },
-                onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
-                onToggleProfile = { vm.toggleDiscoverProfile(it) },
-                onDismiss = { showSettings = false }
-            )
-        }
-    }
-
-    // Report sheet — hoisted so it survives selectedItem becoming null after block/dismiss
-    var reportingWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
-    var showReportSheet by remember { mutableStateOf(false) }
-    val reportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    if (showReportSheet && reportingWallpaper != null) {
-        val wp = reportingWallpaper!!
-        ModalBottomSheet(
-            onDismissRequest = { showReportSheet = false },
-            sheetState = reportSheetState
-        ) {
-            ReportSheetContent(
-                wallpaperUrl = wp.fullUrl,
-                onReport = { reason ->
-                    vm.blockAndRemove(wp)
-                    val subject = "Rotato Image Report"
-                    val body = "Reason: $reason\n\nImage URL: ${wp.fullUrl}\nPage URL: ${wp.pageUrl}"
-                    val mailto = android.net.Uri.parse(
-                        "mailto:alvisleet@gmail.com?subject=${android.net.Uri.encode(subject)}&body=${android.net.Uri.encode(body)}"
-                    )
-                    context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
-                    showReportSheet = false
-                    reportingWallpaper = null
-                },
-                onDismiss = { showReportSheet = false }
-            )
-        }
-    }
-
-        // Unfolded with a grid layout: the grid stays on the left and the viewer opens on the right.
-        val twoPane = LocalConfiguration.current.screenWidthDp >= 700 &&
-            (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT)
-        val paneOpen = twoPane && selectedItem != null
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = if (paneOpen) Modifier.fillMaxHeight().fillMaxWidth(0.42f) else Modifier.fillMaxSize()) {
-                if (!noSources) {
-                    Surface(
-                        tonalElevation = 2.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .statusBarsPadding()
-                                .padding(top = 8.dp, bottom = 10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Discover",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                FilledTonalButton(
-                                    onClick = { vm.surpriseMe() },
-                                    enabled = !busy,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    if (busy) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Refresh")
-                                }
-                                IconButton(onClick = { showSearch = true }) {
-                                    Icon(
-                                        Icons.Default.Search,
-                                        contentDescription = "Search",
-                                        tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                                    )
-                                }
-                                DiscoverLayoutButton(mode = viewMode, onSelect = { vm.setViewMode(it) })
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            DiscoverFilterBar(
-                                filters = brainrotFilters,
-                                nsfwMode = nsfwMode,
-                                nsfwHidden = nsfwHidden,
-                                isFoldable = vm.isFoldable,
-                                forYou = forYouEnabled,
-                                interests = interestAlignEnabled,
-                                onNsfw = { vm.setNsfwMode(it) },
-                                onVideos = { vm.setVideoOnly(it) },
-                                onFoldFriendly = { vm.setFoldFriendly(it) },
-                                onMinResolution = { vm.setMinResolution(it) },
-                                onForYou = { vm.setForYouEnabled(it) },
-                                onInterests = { vm.setInterestAlignEnabled(it) },
-                                onMore = { showSettings = true },
-                                onTaste = onNavigateToTaste,
-                            )
-                            if (pinnedSearches.isNotEmpty() || searchQuery.isNotBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                SavedSearchTabs(
-                                    pinned = pinnedSearches,
-                                    current = searchQuery,
-                                    onSelect = { vm.setSearchQuery(it) },
-                                    onPinCurrent = { vm.pinCurrentSearch() },
-                                )
-                            }
-                            Spacer(Modifier.height(4.dp))
+    val sourcesRow: @Composable () -> Unit = {
                             if (allSources.isNotEmpty()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -639,7 +500,131 @@ fun BrainrotScreen(
                                         }
                                     }
                                 }
+                                }
+    }
+
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    if (showSettings) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettings = false },
+            sheetState = settingsSheetState
+        ) {
+            DiscoverSettingsSheetContent(
+                nsfwMode = nsfwMode,
+                filters = brainrotFilters,
+                lists = lists,
+                selectedListId = selectedListId,
+                interestAlignEnabled = interestAlignEnabled,
+                interestProfiles = interestProfiles,
+                onSelectList = { vm.setSelectedList(it) },
+                onSetNsfwMode = { vm.setNsfwMode(it) },
+                onSetVideoOnly = { vm.setVideoOnly(it) },
+                onSetMinResolution = { vm.setMinResolution(it) },
+                onSetAspectRatio = { vm.setAspectRatio(it) },
+                isFoldable = vm.isFoldable,
+                onSetFoldFriendly = { vm.setFoldFriendly(it) },
+                forYouEnabled = forYouEnabled,
+                onSetForYou = { vm.setForYouEnabled(it) },
+                onResetLearned = { vm.resetLearnedTaste() },
+                onSetUseMalFilter = { vm.setUseMalFilter(it) },
+                onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
+                onToggleProfile = { vm.toggleDiscoverProfile(it) },
+                sourcesContent = sourcesRow,
+                onTaste = { showSettings = false; onNavigateToTaste() },
+                onDismiss = { showSettings = false }
+            )
+        }
+    }
+
+    // Report sheet — hoisted so it survives selectedItem becoming null after block/dismiss
+    var reportingWallpaper by remember { mutableStateOf<BrainrotWallpaper?>(null) }
+    var showReportSheet by remember { mutableStateOf(false) }
+    val reportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    if (showReportSheet && reportingWallpaper != null) {
+        val wp = reportingWallpaper!!
+        ModalBottomSheet(
+            onDismissRequest = { showReportSheet = false },
+            sheetState = reportSheetState
+        ) {
+            ReportSheetContent(
+                wallpaperUrl = wp.fullUrl,
+                onReport = { reason ->
+                    vm.blockAndRemove(wp)
+                    val subject = "Rotato Image Report"
+                    val body = "Reason: $reason\n\nImage URL: ${wp.fullUrl}\nPage URL: ${wp.pageUrl}"
+                    val mailto = android.net.Uri.parse(
+                        "mailto:alvisleet@gmail.com?subject=${android.net.Uri.encode(subject)}&body=${android.net.Uri.encode(body)}"
+                    )
+                    context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
+                    showReportSheet = false
+                    reportingWallpaper = null
+                },
+                onDismiss = { showReportSheet = false }
+            )
+        }
+    }
+
+        // Unfolded with a grid layout: the grid stays on the left and the viewer opens on the right.
+        val twoPane = viewerBesideGrid() &&
+            (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT)
+        val paneOpen = twoPane && selectedItem != null
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = if (paneOpen) Modifier.fillMaxHeight().fillMaxWidth(0.42f) else Modifier.fillMaxSize()) {
+                if (!noSources) {
+                    Surface(
+                        tonalElevation = 2.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .statusBarsPadding()
+                                .padding(top = 8.dp, bottom = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Discover",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { vm.surpriseMe() }, enabled = !busy) {
+                                    if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                                }
+                                IconButton(onClick = { showSearch = true }) {
+                                    Icon(
+                                        Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                    )
+                                }
+                                // Everything that narrows the feed lives in one sheet; the icon lights up when any of it is on.
+                                val filtersOn = (nsfwMode && !nsfwHidden) || brainrotFilters.videoOnly || brainrotFilters.isFoldFriendly ||
+                                    brainrotFilters.minResolution != MinResolution.ANY || brainrotFilters.aspectRatio != AspectRatio.ANY ||
+                                    allSources.any { !it.enabled }
+                                IconButton(onClick = { showSettings = true }) {
+                                    Icon(
+                                        Icons.Default.Tune,
+                                        contentDescription = "Filters and sources",
+                                        tint = if (filtersOn) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                    )
+                                }
+                                DiscoverLayoutButton(mode = viewMode, onSelect = { vm.setViewMode(it) })
+                            }
+                            if (pinnedSearches.isNotEmpty() || searchQuery.isNotBlank()) {
                                 Spacer(Modifier.height(6.dp))
+                                SavedSearchTabs(
+                                    pinned = pinnedSearches,
+                                    current = searchQuery,
+                                    onSelect = { vm.setSearchQuery(it) },
+                                    onPinCurrent = { vm.pinCurrentSearch() },
+                                )
                             }
                         }
                     }
@@ -668,8 +653,7 @@ fun BrainrotScreen(
                                         Icon(Icons.Default.Close, contentDescription = "Dismiss", modifier = Modifier.size(16.dp))
                                     }
                                 }
-                                Text("• Tap source chips to toggle which sources appear", style = MaterialTheme.typography.bodySmall)
-                                Text("• The chips under the title are quick filters; More filters has the rest", style = MaterialTheme.typography.bodySmall)
+                                Text("• The sliders icon at the top holds sources and every filter", style = MaterialTheme.typography.bodySmall)
                                 Text("• The layout button (top right) switches between Grid, Swipe and a full-screen Feed", style = MaterialTheme.typography.bodySmall)
                                 Text("• Tap a card to preview · Long-press to batch-select", style = MaterialTheme.typography.bodySmall)
                                 Text("• Tap the bookmark icon on any image to save it", style = MaterialTheme.typography.bodySmall)
@@ -946,41 +930,6 @@ fun BrainrotScreen(
                             }
                             Spacer(Modifier.width(8.dp))
                         }
-                        if (searchQuery.isNotBlank()) {
-                            AssistChip(
-                                onClick = { showSearch = true },
-                                label = { Text(searchQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                trailingIcon = {
-                                    IconButton(onClick = { vm.setSearchQuery("") }, modifier = Modifier.size(16.dp)) {
-                                        Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(12.dp))
-                                    }
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
-                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                border = AssistChipDefaults.assistChipBorder(
-                                    enabled = true,
-                                    borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        SmallFloatingActionButton(onClick = { showSearch = true }) {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        FloatingActionButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Tune, contentDescription = "Discover settings")
-                        }
                     }
                 }
                                 if (showSearch) {
@@ -1141,6 +1090,7 @@ fun BrainrotScreen(
               Box(if (paneOpen) Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.58f).clipToBounds() else Modifier.fillMaxSize()) {
                         val startIndex = gridItems.indexOfFirst { it.id == selected.id && it.source == selected.source }.coerceAtLeast(0)
                         WallpaperDetailOverlay(
+                            inPane = paneOpen,
                             items = gridItems,
                             startIndex = startIndex,
                             onPageChanged = { vm.selectItem(it) },
@@ -1580,6 +1530,8 @@ private fun DiscoverGridItem(
 
 @Composable
 private fun WallpaperDetailOverlay(
+    /** Shown beside the grid when unfolded: media sits between the info pills and the dock, never under them. */
+    inPane: Boolean = false,
     items: List<BrainrotWallpaper>,
     startIndex: Int,
     onPageChanged: (BrainrotWallpaper) -> Unit,
@@ -1681,7 +1633,7 @@ private fun WallpaperDetailOverlay(
     }
 
     // Unfolded (or any wide window): a rail of collections on the right for one-tap saving.
-    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val wide = LocalConfiguration.current.screenWidthDp >= 600 && !inPane
     val foldCanvas = rememberFoldCanvas()
 
     val offsetY = remember { Animatable(0f) }
@@ -1792,7 +1744,10 @@ private fun WallpaperDetailOverlay(
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.aboveTabletopFold().fillMaxSize(),
+            modifier = Modifier
+                .aboveTabletopFold()
+                .fillMaxSize()
+                .then(if (inPane) Modifier.statusBarsPadding().padding(top = 56.dp, bottom = bottomPanelHeight) else Modifier),
             beyondViewportPageCount = 1,
             userScrollEnabled = !zoomed,
         ) { page ->
@@ -1821,7 +1776,8 @@ private fun WallpaperDetailOverlay(
                     showMuteButton = true,
                     showSeekBar = true,
                     allowDoubleTapSeek = true,
-                    seekBarBottomInset = bottomPanelHeight
+                    // In a pane the video already ends above the dock, so its seek bar sits at its own bottom.
+                    seekBarBottomInset = if (inPane) 0.dp else bottomPanelHeight
                 )
             } else if (item.isVideo) {
                 val posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) }
@@ -2240,6 +2196,8 @@ private fun DiscoverSettingsSheetContent(
     onSetUseMalFilter: (Boolean) -> Unit,
     onSetInterestAlign: (Boolean) -> Unit,
     onToggleProfile: (String) -> Unit,
+    sourcesContent: @Composable () -> Unit = {},
+    onTaste: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var listExpanded by remember { mutableStateOf(false) }
@@ -2252,7 +2210,13 @@ private fun DiscoverSettingsSheetContent(
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text("Discover Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Filters", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = onTaste) { Text("Taste") }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            sourcesContent()
+        }
 
         if (lists.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

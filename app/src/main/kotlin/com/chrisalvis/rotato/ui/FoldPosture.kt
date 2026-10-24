@@ -128,3 +128,13 @@ fun FoldBadge(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * True when there's room to show a viewer beside its grid: an unfolded Fold or a tablet.
+ * A phone turned sideways is wide but too short, so it keeps the full-screen viewer.
+ */
+@androidx.compose.runtime.Composable
+fun viewerBesideGrid(): Boolean {
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    return config.screenWidthDp >= 700 && config.screenHeightDp >= 480
+}

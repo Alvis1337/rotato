@@ -182,7 +182,7 @@ class MainActivity : AppCompatActivity() {
                 val showBottomBar = currentRoute !in setOf("sources", "source_health", "setup", "onboarding", "plugin_store")
                     && (brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null ||
                         // Unfolded grid: the viewer opens beside the grid, so the tabs stay.
-                        (LocalConfiguration.current.screenWidthDp >= 700 &&
+                        (com.chrisalvis.rotato.ui.viewerBesideGrid() &&
                             brainrotViewModel.viewMode.collectAsStateWithLifecycle().value.let {
                                 it == com.chrisalvis.rotato.ui.DiscoverViewMode.GRID || it == com.chrisalvis.rotato.ui.DiscoverViewMode.COMPACT
                             } && currentRoute == "discover"))

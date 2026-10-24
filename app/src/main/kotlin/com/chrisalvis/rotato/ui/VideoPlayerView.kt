@@ -41,6 +41,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -166,6 +167,7 @@ private fun formatDuration(ms: Long): String {
  * play/pauses and an optional [showSeekBar]/double-tap-to-seek are drawn in Compose that we
  * fully control.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerView(
     url: String,
@@ -436,6 +438,12 @@ fun VideoPlayerView(
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall
                 )
+                val seekColors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                )
+                val seekInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 Slider(
                     value = if (userSeeking) draggedFraction else (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f),
                     onValueChange = {
@@ -448,11 +456,25 @@ fun VideoPlayerView(
                         positionMs = target
                         userSeeking = false
                     },
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                    ),
+                    colors = seekColors,
+                    interactionSource = seekInteraction,
+                    // A slim scrubber like other video players, not the tall default slider.
+                    thumb = {
+                        SliderDefaults.Thumb(
+                            interactionSource = seekInteraction,
+                            colors = seekColors,
+                            thumbSize = androidx.compose.ui.unit.DpSize(14.dp, 14.dp),
+                        )
+                    },
+                    track = { state ->
+                        SliderDefaults.Track(
+                            sliderState = state,
+                            colors = seekColors,
+                            drawStopIndicator = null,
+                            thumbTrackGapSize = 0.dp,
+                            modifier = Modifier.height(3.dp),
+                        )
+                    },
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                 )
                 Text(
