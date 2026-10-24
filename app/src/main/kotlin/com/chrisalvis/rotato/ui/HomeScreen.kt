@@ -22,6 +22,8 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -206,6 +208,19 @@ fun HomeScreen(
 
     BackHandler(enabled = inSelectionMode) { dragSelectState.disableSelectionMode() }
 
+    var batchCollectionPick by remember { mutableStateOf<List<File>?>(null) }
+    batchCollectionPick?.let { picked ->
+        SaveToCollectionDialog(
+            collections = collections,
+            onDismiss = { batchCollectionPick = null },
+            onSelect = { listId ->
+                viewModel.saveRotationToList(listId, picked)
+                batchCollectionPick = null
+                dragSelectState.disableSelectionMode()
+            }
+        )
+    }
+
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
@@ -239,6 +254,41 @@ fun HomeScreen(
                                 viewModel.unpair(selection.toSet())
                                 dragSelectState.disableSelectionMode()
                             }) { Text("Unpair") }
+                        }
+                        IconButton(onClick = {
+                            viewModel.queueAllUpNext(selection.sortedBy { it.name })
+                            dragSelectState.disableSelectionMode()
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to Up next")
+                        }
+                        if (collections.isNotEmpty()) IconButton(onClick = { batchCollectionPick = selection }) {
+                            Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Add to collection")
+                        }
+                        Box {
+                            var rateOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { rateOpen = true }) {
+                                Icon(Icons.Default.Star, contentDescription = "Rate selected")
+                            }
+                            DropdownMenu(expanded = rateOpen, onDismissRequest = { rateOpen = false }) {
+                                (5 downTo 1).forEach { stars ->
+                                    DropdownMenuItem(
+                                        text = { Text("★".repeat(stars)) },
+                                        onClick = {
+                                            viewModel.setRatingFor(selection, stars)
+                                            rateOpen = false
+                                            dragSelectState.disableSelectionMode()
+                                        },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Clear rating") },
+                                    onClick = {
+                                        viewModel.setRatingFor(selection, 0)
+                                        rateOpen = false
+                                        dragSelectState.disableSelectionMode()
+                                    },
+                                )
+                            }
                         }
                         IconButton(
                             onClick = {
@@ -371,7 +421,17 @@ private fun LibraryContent(
         }
         looksLoading = false
     }
-    val gridImages = remember(images, selectedColour, looks, matchLook, rainbow, tagQuery, photoTags) {
+    // Type, fold, NSFW and rating chips plus sort order, applied on top of colour and tag search.
+    var libraryFilter by remember { mutableStateOf(LibraryFilter()) }
+    val foldCanvas = rememberFoldCanvas()
+    val foldNames by produceState<Set<String>?>(null, images, libraryFilter.foldOnly, foldCanvas) {
+        val canvas = foldCanvas
+        if (!libraryFilter.foldOnly || canvas == null) return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { foldFriendlyNames(images, canvas) }
+    }
+    val hasVideos = remember(images) { images.any { com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(it) } }
+    val nsfwInLibrary = remember(images, nsfwFileNames) { images.any { it.name in nsfwFileNames } }
+    val baseGridImages = remember(images, selectedColour, looks, matchLook, rainbow, tagQuery, photoTags) {
         val target = matchLook
         val filtered = when {
             target != null -> images
@@ -385,6 +445,11 @@ private fun LibraryContent(
         val words = tagQuery.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }.map { it.replace(' ', '_') }
         if (words.isEmpty()) sorted
         else sorted.filter { f -> val tags = photoTags[f.name].orEmpty(); words.all { w -> tags.any { it.contains(w) } } }
+    }
+    val gridImages = remember(baseGridImages, libraryFilter, wallpaperRatings, nsfwFileNames, foldNames, matchLook, rainbow) {
+        // A photo match or rainbow order already decides the order, so sorting only narrows then.
+        val f = if (matchLook != null || rainbow) libraryFilter.copy(sort = LibrarySort.NAME) else libraryFilter
+        f.apply(baseGridImages, wallpaperRatings, nsfwFileNames, foldNames)
     }
 
     if (showSaveToListDialog) {
@@ -546,6 +611,22 @@ private fun LibraryContent(
                             rainbow = rainbow,
                             onRainbow = { rainbow = !rainbow; if (rainbow) matchLook = null },
                         )
+                        LibraryFilterRow(
+                            filter = libraryFilter,
+                            onChange = { libraryFilter = it },
+                            hasVideos = hasVideos,
+                            showFold = foldCanvas != null,
+                            showNsfw = nsfwInLibrary && !LocalNsfwHidden.current,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
+                        if (libraryFilter.active && gridImages.isEmpty()) {
+                            Text(
+                                "Nothing in your Library matches these filters.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
                 LazyVerticalGrid(

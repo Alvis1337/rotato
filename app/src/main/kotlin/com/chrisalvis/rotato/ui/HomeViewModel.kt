@@ -137,6 +137,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Queues [files] after everything already in Up next, keeping their order. */
+    fun queueAllUpNext(files: List<File>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            files.forEach { preferences.queueUpNext(it.absolutePath, false) }
+            android.widget.Toast.makeText(getApplication(), "Added ${files.size} to Up next", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun setRatingFor(files: Collection<File>, rating: Int) {
+        viewModelScope.launch { files.forEach { preferences.setWallpaperRating(it.name, rating) } }
+    }
+
     fun removeFromUpNext(file: File) {
         viewModelScope.launch { preferences.setUpNext(upNext.value.filter { it != file }.map { it.absolutePath }) }
     }
@@ -631,12 +644,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _saveToListInProgress = MutableStateFlow(false)
     val saveToListInProgress: StateFlow<Boolean> = _saveToListInProgress.asStateFlow()
 
-    fun saveRotationToList(listId: String) {
+    /** Adds the whole Library to a collection, or just [only] when given (the selection). */
+    fun saveRotationToList(listId: String, only: Collection<File>? = null) {
         if (_saveToListInProgress.value) return
         viewModelScope.launch {
             _saveToListInProgress.update { true }
             try {
-                val files = imageDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                val files = only?.sortedBy { it.name } ?: imageDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                 val existing = localLists.allWallpapers.first()
                     .filter { it.listId == listId }
                     .map { it.sourceId }
