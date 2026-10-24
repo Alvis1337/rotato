@@ -127,6 +127,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _gridMode = MutableStateFlow(false)
     val gridMode: StateFlow<Boolean> = _gridMode.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            _gridMode.value = prefs.discoverViewMode.first() == DiscoverViewMode.COMPACT.key
+        }
+    }
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -1049,6 +1055,16 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleGridMode() {
         _gridMode.update { !it }
+    }
+
+    /** Grid, compact grid, swipe or feed; remembered between visits. */
+    val viewMode: StateFlow<DiscoverViewMode> = prefs.discoverViewMode
+        .map { DiscoverViewMode.of(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DiscoverViewMode.GRID)
+
+    fun setViewMode(mode: DiscoverViewMode) {
+        _gridMode.value = mode == DiscoverViewMode.COMPACT
+        viewModelScope.launch { prefs.setDiscoverViewMode(mode.key) }
     }
 
     fun surpriseMe() {

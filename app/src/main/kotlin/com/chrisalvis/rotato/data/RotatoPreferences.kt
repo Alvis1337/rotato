@@ -96,7 +96,6 @@ class RotatoPreferences(private val context: Context) {
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
         val UP_NEXT_PATHS = stringPreferencesKey("up_next_paths_json")
         val DISCOVER_VIEW_MODE = stringPreferencesKey("discover_view_mode")
-        val SAVED_SEARCHES = stringPreferencesKey("saved_searches_json")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -233,15 +232,6 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun setDiscoverViewMode(mode: String) {
         context.dataStore.edit { it[DISCOVER_VIEW_MODE] = mode }
-    }
-
-    /** Searches pinned as Discover tabs, in order. */
-    val savedSearches: Flow<List<String>> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { parsePaths(it[SAVED_SEARCHES]) }
-
-    suspend fun setSavedSearches(searches: List<String>) {
-        context.dataStore.edit { it[SAVED_SEARCHES] = JSONArray(searches.distinct().take(12)).toString() }
     }
 
     val lastRotationMs: Flow<Long> = context.dataStore.data

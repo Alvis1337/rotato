@@ -315,7 +315,8 @@ class MainActivity : AppCompatActivity() {
                                             restoreState = true
                                         }
                                     },
-                                    onNavigateToSources = { navController.navigate("sources") }
+                                    onNavigateToSources = { navController.navigate("sources") },
+                                    onNavigateToTaste = { navController.navigate("taste") },
                                 )
                             }
                             // Library: what's in rotation, with Collections as its second tab.

@@ -167,7 +167,8 @@ private fun LoadingMoreIndicator(modifier: Modifier = Modifier) {
 fun BrainrotScreen(
     externalViewModel: BrainrotViewModel? = null,
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToSources: () -> Unit = {}
+    onNavigateToSources: () -> Unit = {},
+    onNavigateToTaste: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val vm: BrainrotViewModel = externalViewModel ?: viewModel()
@@ -211,6 +212,7 @@ fun BrainrotScreen(
     val discoverHintSeen by vm.discoverHintSeen.collectAsStateWithLifecycle()
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
+    val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
     val gridState = rememberLazyStaggeredGridState()
@@ -506,13 +508,42 @@ fun BrainrotScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Text("Refresh")
                                 }
-                                IconButton(onClick = { vm.toggleGridMode() }) {
+                                IconButton(onClick = { showSearch = true }) {
                                     Icon(
-                                        imageVector = if (gridMode) Icons.Default.ViewAgenda else Icons.Default.GridView,
-                                        contentDescription = if (gridMode) "Card layout" else "Grid layout"
+                                        Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
                                     )
                                 }
+                                DiscoverLayoutButton(mode = viewMode, onSelect = { vm.setViewMode(it) })
                             }
+                            Spacer(Modifier.height(6.dp))
+                            DiscoverFilterBar(
+                                filters = brainrotFilters,
+                                nsfwMode = nsfwMode,
+                                nsfwHidden = nsfwHidden,
+                                isFoldable = vm.isFoldable,
+                                forYou = forYouEnabled,
+                                interests = interestAlignEnabled,
+                                onNsfw = { vm.setNsfwMode(it) },
+                                onVideos = { vm.setVideoOnly(it) },
+                                onFoldFriendly = { vm.setFoldFriendly(it) },
+                                onMinResolution = { vm.setMinResolution(it) },
+                                onForYou = { vm.setForYouEnabled(it) },
+                                onInterests = { vm.setInterestAlignEnabled(it) },
+                                onMore = { showSettings = true },
+                                onTaste = onNavigateToTaste,
+                            )
+                            if (pinnedSearches.isNotEmpty() || searchQuery.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                SavedSearchTabs(
+                                    pinned = pinnedSearches,
+                                    current = searchQuery,
+                                    onSelect = { vm.setSearchQuery(it) },
+                                    onPinCurrent = { vm.pinCurrentSearch() },
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
                             if (allSources.isNotEmpty()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -632,7 +663,8 @@ fun BrainrotScreen(
                                     }
                                 }
                                 Text("• Tap source chips to toggle which sources appear", style = MaterialTheme.typography.bodySmall)
-                                Text("• Tap ⚙️ (bottom-right) to set ${if (nsfwHidden) "" else "NSFW mode, "}filters & search tags", style = MaterialTheme.typography.bodySmall)
+                                Text("• The chips under the title are quick filters; More filters has the rest", style = MaterialTheme.typography.bodySmall)
+                                Text("• The layout button (top right) switches between Grid, Swipe and a full-screen Feed", style = MaterialTheme.typography.bodySmall)
                                 Text("• Tap a card to preview · Long-press to batch-select", style = MaterialTheme.typography.bodySmall)
                                 Text("• Tap the bookmark icon on any image to save it", style = MaterialTheme.typography.bodySmall)
                             }
@@ -671,6 +703,30 @@ fun BrainrotScreen(
                             }
                         }
                     }
+                    viewMode == DiscoverViewMode.FEED -> DiscoverFeed(
+                        items = gridItems,
+                        isSaved = { "${it.source}:${it.id}" in savedSourceIds },
+                        nsfwBlurEnabled = nsfwBlurEnabled,
+                        loadingMore = loadingMore || loading,
+                        endReached = endReached,
+                        onLoadMore = { vm.loadMore() },
+                        // Saving here keeps the item in the feed, so the page doesn't jump.
+                        onSave = { wp ->
+                            if (lists.isEmpty()) onAddToList(wp) else vm.addToList(selectedListId ?: lists.first().id, wp, leaveGrid = false)
+                        },
+                        onOpen = { vm.selectItem(it) },
+                        onSet = { vm.setWallpaperDirectly(it) },
+                    )
+                    viewMode == DiscoverViewMode.SWIPE -> SwipeDeck(
+                        items = gridItems,
+                        nsfwBlurEnabled = nsfwBlurEnabled,
+                        loading = loading || loadingMore,
+                        endReached = endReached,
+                        onLoadMore = { vm.loadMore() },
+                        onSave = { wp -> onAddToList(wp) },
+                        onSkip = { wp -> vm.skip(wp) },
+                        onOpen = { vm.selectItem(it) },
+                    )
                     else -> {
                         val pullRefreshState = rememberPullToRefreshState()
                         PullToRefreshBox(
@@ -861,7 +917,7 @@ fun BrainrotScreen(
                             }
                         }
                     }
-                } else {
+                } else if (viewMode != DiscoverViewMode.FEED && viewMode != DiscoverViewMode.SWIPE) {
                     Row(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
