@@ -65,7 +65,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -110,6 +114,11 @@ internal data class AnimeCollectionDraft(
 
 private enum class BuilderStep { PICK, LOOK, FINISH }
 
+private val StringStateListSaver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
+
 /**
  * Full-screen, three-step way to turn a show from the user's MyAnimeList into a wallpaper
  * collection: pick a show (posters, English titles), check how image sites tag it and which
@@ -130,30 +139,35 @@ internal fun AnimeCollectionBuilder(
     onDismiss: () -> Unit,
 ) {
     val existing = existingList?.malConfig
-    var step by remember { mutableStateOf(if (existing != null) BuilderStep.LOOK else BuilderStep.PICK) }
-    var picked by remember(entries) {
-        mutableStateOf(existing?.let { cfg -> entries.find { it.title == cfg.animeTitle } ?: MalAnimeEntry(cfg.animeTitle, 0) })
+    // Saveable so a fold/rotate mid-build keeps the step and picks. The show is kept by title and
+    // looked up again, so a MAL list refresh updates its details without dropping the pick.
+    var step by rememberSaveable { mutableStateOf(if (existing != null) BuilderStep.LOOK else BuilderStep.PICK) }
+    var pickedTitle by rememberSaveable { mutableStateOf(existing?.animeTitle) }
+    val picked = remember(pickedTitle, entries) {
+        pickedTitle?.let { t -> entries.find { it.title == t } ?: MalAnimeEntry(t, 0) }
     }
     // Look step
-    var seriesTag by remember { mutableStateOf(existing?.animeQuery.orEmpty()) }
-    val characters = remember { mutableStateListOf<String>().apply { existing?.characterTags?.let { addAll(it) } } }
-    var together by remember { mutableStateOf(existing != null && !existing.matchAny && existing.characterTags.size > 1) }
+    var seriesTag by rememberSaveable { mutableStateOf(existing?.animeQuery.orEmpty()) }
+    val characters = rememberSaveable(saver = StringStateListSaver) {
+        mutableStateListOf<String>().apply { existing?.characterTags?.let { addAll(it) } }
+    }
+    var together by rememberSaveable { mutableStateOf(existing != null && !existing.matchAny && existing.characterTags.size > 1) }
     // Finish step
-    var name by remember { mutableStateOf(existingList?.name.orEmpty()) }
-    var fillCount by remember { mutableIntStateOf(existing?.fillCount ?: 25) }
-    var autoAdd by remember { mutableStateOf(existing?.autoAddToLibrary ?: (existingList?.useAsRotation == true)) }
-    var pluginId by remember { mutableStateOf(existing?.sourcePluginId) }
-    var instanceId by remember { mutableStateOf(existing?.sourceInstanceId?.takeIf { it.isNotBlank() }) }
-    var nsfwOverride by remember { mutableStateOf(existing?.nsfwOverride) }
-    var minResolution by remember { mutableStateOf(existing?.minResolution ?: MinResolution.ANY) }
-    var aspectRatio by remember { mutableStateOf(existing?.aspectRatio ?: AspectRatio.ANY) }
+    var name by rememberSaveable { mutableStateOf(existingList?.name.orEmpty()) }
+    var fillCount by rememberSaveable { mutableIntStateOf(existing?.fillCount ?: 25) }
+    var autoAdd by rememberSaveable { mutableStateOf(existing?.autoAddToLibrary ?: (existingList?.useAsRotation == true)) }
+    var pluginId by rememberSaveable { mutableStateOf(existing?.sourcePluginId) }
+    var instanceId by rememberSaveable { mutableStateOf(existing?.sourceInstanceId?.takeIf { it.isNotBlank() }) }
+    var nsfwOverride by rememberSaveable { mutableStateOf(existing?.nsfwOverride) }
+    var minResolution by rememberSaveable { mutableStateOf(existing?.minResolution ?: MinResolution.ANY) }
+    var aspectRatio by rememberSaveable { mutableStateOf(existing?.aspectRatio ?: AspectRatio.ANY) }
 
     fun choose(entry: MalAnimeEntry) {
-        if (picked?.title != entry.title) {
+        if (pickedTitle != entry.title) {
             seriesTag = ""
             characters.clear()
         }
-        picked = entry
+        pickedTitle = entry.title
         if (existingList == null || name.isBlank()) name = entry.displayTitle
         step = BuilderStep.LOOK
     }

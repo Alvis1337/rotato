@@ -82,6 +82,16 @@ fun SetupScreen(
 
     val isLastPage = pagerState.currentPage == TOTAL_PAGES - 1
 
+    // Shared by Skip and Get Started so skipping also marks onboarding done.
+    val finishSetup = {
+        vm.complete()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            onSetupComplete()
+        }
+    }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Skip / page counter row
@@ -99,7 +109,7 @@ fun SetupScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (!isLastPage) {
-                    TextButton(onClick = onSetupComplete) { Text("Skip") }
+                    TextButton(onClick = finishSetup) { Text("Skip") }
                 }
             }
 
@@ -150,12 +160,7 @@ fun SetupScreen(
             Button(
                 onClick = {
                     if (isLastPage) {
-                        vm.complete()
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            onSetupComplete()
-                        }
+                        finishSetup()
                     } else {
                         scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                     }

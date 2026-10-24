@@ -44,11 +44,13 @@ import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.toJson
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -142,8 +144,9 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         return keys.contains("rotation:${item.fullUrl}") || keys.contains("gallery:${item.fullUrl}")
     }
 
-    private fun saveLocalFileToGallery(ctx: android.content.Context, file: java.io.File): Boolean {
-        if (!file.exists()) return false
+    /** Copies the file into Pictures/Rotato; the file IO runs off the main thread. */
+    private suspend fun saveLocalFileToGallery(ctx: android.content.Context, file: java.io.File): Boolean = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext false
         val ext = file.extension.lowercase()
         val mimeType = when (ext) {
             "png" -> "image/png"
@@ -151,7 +154,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
             "gif" -> "image/gif"
             else -> "image/jpeg"
         }
-        return try {
+        try {
             val bytes = file.readBytes()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
@@ -161,7 +164,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val resolver = ctx.contentResolver
-                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@withContext false
                 resolver.openOutputStream(uri)?.use { it.write(bytes) }
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -339,7 +342,11 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                     onSaveToCollection = { saveToCollectionFor = item },
                     onRemove = { vm.removeItem(item) },
                     onOpenPage = if (openUri != null) ({
-                        context.startActivity(Intent(Intent.ACTION_VIEW, openUri.toUri()))
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, openUri.toUri()))
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
+                        }
                     }) else null
                 )
             }

@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -210,7 +211,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     var showCollectionMenu by remember { mutableStateOf(false) }
     var showCreateMenu by remember { mutableStateOf(false) }
     var createSmart by remember { mutableStateOf(false) }
-    var showCreateMalDialog by remember { mutableStateOf(false) }
+    var showCreateMalDialog by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(selectedList?.id) {
         vm.setCollectionSearch("")
@@ -281,7 +282,9 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     var showActionsFor by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var previewWallpaper by remember { mutableStateOf<BrowseWallpaper?>(null) }
     var editRulesFor by remember { mutableStateOf<LocalList?>(null) }
-    var editMalFor by remember { mutableStateOf<LocalList?>(null) }
+    // Kept by id so the open builder survives fold/rotate.
+    var editMalForId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editMalFor = editMalForId?.let { id -> lists.find { it.id == id } }
     val gridState = rememberLazyGridState()
     val browseScope = rememberCoroutineScope()
 
@@ -471,9 +474,9 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                     useMalFilter = d.useMalFilter,
                     animeQuery = d.seriesTag,
                 )
-                editMalFor = null
+                editMalForId = null
             },
-            onDismiss = { editMalFor = null }
+            onDismiss = { editMalForId = null }
         )
     }
 
@@ -724,7 +727,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                 onSetRotationTarget = { list, target -> vm.setRotationTarget(list, target) },
                 onSetRotationInterval = { list, minutes -> vm.setRotationInterval(list, minutes) },
                 onEditRules = { editRulesFor = it },
-                onEditMal = { editMalFor = it },
+                onEditMal = { editMalForId = it.id },
                 onAutofill = { vm.autofillSmartCollection(it) },
                 onRefreshMal = { vm.refreshManagedMalCollection(it) },
                 onLockCollection = { vm.lockCollection(it.id) },

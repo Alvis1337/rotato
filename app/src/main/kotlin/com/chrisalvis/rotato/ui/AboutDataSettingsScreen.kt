@@ -49,6 +49,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +71,23 @@ import com.chrisalvis.rotato.data.UpdateRepository
 import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import kotlinx.coroutines.launch
 
+private fun UpdateInfo.toSaveable(): ArrayList<Any> =
+    arrayListOf(versionCode, versionName, releaseNotes, downloadUrl, tagName)
+
+private fun updateInfoFrom(list: ArrayList<Any>): UpdateInfo =
+    UpdateInfo(list[0] as Int, list[1] as String, list[2] as String, list[3] as String, list[4] as String)
+
+private val UpdateInfoSaver = Saver<UpdateInfo?, ArrayList<Any>>(
+    save = { it?.toSaveable() },
+    restore = { updateInfoFrom(it) },
+)
+
+/** Only a found update is kept; other results just mean the button offers a fresh check. */
+private val UpdateCheckSaver = Saver<UpdateCheckResult?, ArrayList<Any>>(
+    save = { (it as? UpdateCheckResult.UpdateAvailable)?.info?.toSaveable() },
+    restore = { UpdateCheckResult.UpdateAvailable(updateInfoFrom(it)) },
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutDataSettingsScreen(
@@ -88,9 +107,11 @@ fun AboutDataSettingsScreen(
 
     // "Check for Updates" — self-contained here; the auto-check-on-open dialog lives on the
     // top-level Settings screen, this is the manual on-demand check triggered by the button below.
-    var updateCheckState by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    // The found update and its open dialog survive fold/rotate. The in-flight check and download
+    // run in this composition's scope and are cancelled by it, so their state starts over.
+    var updateCheckState by rememberSaveable(stateSaver = UpdateCheckSaver) { mutableStateOf<UpdateCheckResult?>(null) }
     var updateChecking by remember { mutableStateOf(false) }
-    var pendingUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var pendingUpdateInfo by rememberSaveable(stateSaver = UpdateInfoSaver) { mutableStateOf<UpdateInfo?>(null) }
     var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
 
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()

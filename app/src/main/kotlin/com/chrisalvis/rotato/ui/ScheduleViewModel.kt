@@ -71,16 +71,16 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
             schedPrefs.upsert(entry)
             val now = Calendar.getInstance()
             val todayDow = now.get(Calendar.DAY_OF_WEEK)
-            val triggerTodayMs = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, entry.startHour)
-                set(Calendar.MINUTE, entry.startMinute)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            if (entry.enabled && todayDow in entry.days && triggerTodayMs <= now.timeInMillis) {
+            val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+            val allEntries = schedPrefs.entries.first().map { if (it.id == entry.id) entry else it }
+            fun startedToday(e: ScheduleEntry) =
+                e.enabled && todayDow in e.days && e.startHour * 60 + e.startMinute <= nowMinutes
+            // Only apply right away if this is the most recent entry to have started today;
+            // if a later entry has already taken over, just re-arm this one for its next slot.
+            val latestStartedToday = (allEntries + entry).filter { startedToday(it) }.maxOfOrNull { it.startHour * 60 + it.startMinute }
+            if (startedToday(entry) && entry.startHour * 60 + entry.startMinute == latestStartedToday) {
                 withContext(Dispatchers.IO) {
                     try {
-                        val allEntries = schedPrefs.entries.first()
                         val result = ScheduleReceiver.applyEntry(getApplication(), entry, allEntries, schedPrefs, listPrefs)
                         _triggerResult.tryEmit(result)
                     } catch (e: Exception) {

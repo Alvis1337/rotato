@@ -98,10 +98,15 @@ class MainActivity : AppCompatActivity() {
         // user already answered and re-run notification navigation.
         if (savedInstanceState == null) {
             _pendingNavigate.value = intent.getStringExtra(ScheduleReceiver.EXTRA_NAVIGATE_TO)
-            _pendingSharedImages.value = extractSharedImages(intent)
-            // The MAL OAuth redirect can cold-start the activity (e.g. the process was killed
-            // while the browser was open); onNewIntent never sees it in that case.
-            _pendingMalCode.value = malCallbackCode(intent)
+            // Relaunching from Recents replays the original intent; a share or OAuth code in it
+            // was already handled (or is stale), so only act on it for a fresh launch.
+            val fromHistory = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+            if (!fromHistory) {
+                _pendingSharedImages.value = extractSharedImages(intent)
+                // The MAL OAuth redirect can cold-start the activity (e.g. the process was killed
+                // while the browser was open); onNewIntent never sees it in that case.
+                _pendingMalCode.value = malCallbackCode(intent)
+            }
         } else {
             // Keep a share/navigation the user hasn't acted on yet across the recreation.
             _pendingNavigate.value = savedInstanceState.getString(STATE_PENDING_NAV)
@@ -200,8 +205,16 @@ class MainActivity : AppCompatActivity() {
 
                 // Handle navigation from notifications, shortcuts, or schedule receiver
                 val pendingNav = _pendingNavigate.value
-                LaunchedEffect(pendingNav) {
+                LaunchedEffect(pendingNav, setupDone) {
                     val route = pendingNav ?: return@LaunchedEffect
+                    // The activity is exported, so the extra can be anything: unknown routes would
+                    // crash navigate().
+                    if (route !in EXTERNAL_NAV_ROUTES) {
+                        _pendingNavigate.value = null
+                        return@LaunchedEffect
+                    }
+                    // Hold it until onboarding is finished; setupDone flipping re-runs this.
+                    if (setupDone != true) return@LaunchedEffect
                     navController.navigate(route) {
                         popUpTo("discover") { saveState = true }
                         launchSingleTop = true
@@ -520,6 +533,13 @@ class MainActivity : AppCompatActivity() {
 }
 
 private const val STATE_PENDING_NAV = "pending_nav"
+
+/** Routes an external navigate_to extra (shortcuts, notifications) may open. */
+private val EXTERNAL_NAV_ROUTES = setOf(
+    "discover", "home", "now", "settings", "browse", "taste", "schedule", "stats", "source_health",
+    "sources", "plugin_store", "settings_rotation_wallpaper", "settings_nsfw_privacy",
+    "settings_discover_sources", "settings_integrations", "settings_tools", "settings_about_data",
+)
 private const val STATE_PENDING_SHARED = "pending_shared"
 private const val STATE_PENDING_MAL_CODE = "pending_mal_code"
 

@@ -5,7 +5,9 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.chrisalvis.rotato.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -99,8 +101,8 @@ object UpdateRepository {
         info: UpdateInfo,
         onProgress: (DownloadState) -> Unit,
     ) = withContext(Dispatchers.IO) {
+        val destFile = File(context.getExternalFilesDir(null), "rotato-update.apk")
         try {
-            val destFile = File(context.getExternalFilesDir(null), "rotato-update.apk")
             if (destFile.exists()) destFile.delete()
 
             val request = Request.Builder().url(info.downloadUrl).build()
@@ -120,6 +122,8 @@ object UpdateRepository {
                         val buf = ByteArray(8 * 1024)
                         var read: Int
                         while (input.read(buf).also { read = it } != -1) {
+                            // Stop when the dialog's scope is cancelled instead of finishing in the background.
+                            ensureActive()
                             out.write(buf, 0, read)
                             downloaded += read
                             if (total > 0) {
@@ -131,6 +135,7 @@ object UpdateRepository {
                 }
             }
 
+            ensureActive()
             onProgress(DownloadState.Installing)
 
             val uri = FileProvider.getUriForFile(
@@ -144,6 +149,10 @@ object UpdateRepository {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
+        } catch (e: CancellationException) {
+            // Don't leave a partial APK behind, and let cancellation propagate.
+            destFile.delete()
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Download failed", e)
             onProgress(DownloadState.Failed(e.message ?: "Download failed"))

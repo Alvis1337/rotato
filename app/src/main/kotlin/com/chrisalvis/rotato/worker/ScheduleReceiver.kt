@@ -56,10 +56,16 @@ class ScheduleReceiver : BroadcastReceiver() {
                 .flatMap { it.listIds.asSequence() }
                 .filter { it.isNotBlank() }
                 .toSet()
+            // Pool files the incoming collections also use must survive the outgoing cleanup,
+            // otherwise they'd be deleted and immediately re-downloaded (or lost when offline).
+            val incomingKeys = if (entry.listIds.isEmpty()) emptySet() else listPrefs.allWallpapers.first()
+                .filter { it.listId in entry.listIds }
+                .flatMap { poolKeys(it.source, it.sourceId) }
+                .toSet()
             scheduledListIds.forEach { listId ->
                 val active = listId in entry.listIds
                 listPrefs.setUseAsRotation(listId, active)
-                if (!active) removeRotationFiles(context, listId, listPrefs)
+                if (!active) removeRotationFiles(context, listId, listPrefs, keepKeys = incomingKeys)
             }
 
             val imagesInPool = syncRotationPool(context, entry.listIds, listPrefs)
@@ -139,11 +145,13 @@ class ScheduleReceiver : BroadcastReceiver() {
             context: Context,
             listId: String,
             listPrefs: LocalListsPreferences,
+            keepKeys: Set<String> = emptySet(),
         ) {
             val wallpapers = listPrefs.wallpapersForList(listId).first()
             val imageDir = File(context.filesDir, "rotato_images")
             wallpapers.forEach { entry ->
-                imageDir.listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId)?.delete()
+                val file = imageDir.listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId)
+                if (file != null && file.nameWithoutExtension !in keepKeys) file.delete()
             }
         }
     }

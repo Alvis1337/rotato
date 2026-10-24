@@ -17,12 +17,15 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chrisalvis.rotato.data.LocalList
@@ -52,7 +55,12 @@ fun ScheduleScreen(
     val entries by vm.entries.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
     val editEntry by vm.editEntry.collectAsStateWithLifecycle()
-    val needsExactAlarm = vm.needsExactAlarmPermission
+    // Re-checked on resume so the warning clears after granting the permission in Settings.
+    var needsExactAlarm by remember { mutableStateOf(vm.needsExactAlarmPermission) }
+    LifecycleResumeEffect(Unit) {
+        needsExactAlarm = vm.needsExactAlarmPermission
+        onPauseOrDispose { }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
@@ -361,6 +369,9 @@ private fun ScheduleEntryCard(
     }
 }
 
+private val IntSetSaver = Saver<Set<Int>, ArrayList<Int>>(save = { ArrayList(it) }, restore = { it.toSet() })
+private val StringSetSaver = Saver<Set<String>, ArrayList<String>>(save = { ArrayList(it) }, restore = { it.toSet() })
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScheduleEditDialog(
@@ -370,11 +381,11 @@ private fun ScheduleEditDialog(
     onSave: (ScheduleEntry) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var days by remember(entry.id) { mutableStateOf(entry.days) }
-    var hour by remember(entry.id) { mutableIntStateOf(entry.startHour) }
-    var minute by remember(entry.id) { mutableIntStateOf(entry.startMinute) }
-    var selectedListIds by remember(entry.id) { mutableStateOf(entry.listIds) }
-    var showTimePicker by remember { mutableStateOf(false) }
+    var days by rememberSaveable(entry.id, stateSaver = IntSetSaver) { mutableStateOf(entry.days) }
+    var hour by rememberSaveable(entry.id) { mutableIntStateOf(entry.startHour) }
+    var minute by rememberSaveable(entry.id) { mutableIntStateOf(entry.startMinute) }
+    var selectedListIds by rememberSaveable(entry.id, stateSaver = StringSetSaver) { mutableStateOf(entry.listIds) }
+    var showTimePicker by rememberSaveable { mutableStateOf(false) }
 
     if (showTimePicker) {
         val state = rememberTimePickerState(initialHour = hour, initialMinute = minute)

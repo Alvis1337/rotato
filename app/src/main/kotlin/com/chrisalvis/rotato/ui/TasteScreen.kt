@@ -59,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -520,6 +521,8 @@ private fun ProfileRow(
     }
 }
 
+private val StringListSaver = Saver<List<String>, ArrayList<String>>(save = { ArrayList(it) }, restore = { it })
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ProfileEditorSheet(
@@ -531,8 +534,8 @@ private fun ProfileEditorSheet(
     var name by rememberSaveable { mutableStateOf(initial.name) }
     var includeInput by rememberSaveable { mutableStateOf("") }
     var excludeInput by rememberSaveable { mutableStateOf("") }
-    var includeTags by remember { mutableStateOf(initial.includeTags) }
-    var excludeTags by remember { mutableStateOf(initial.excludeTags) }
+    var includeTags by rememberSaveable(stateSaver = StringListSaver) { mutableStateOf(initial.includeTags) }
+    var excludeTags by rememberSaveable(stateSaver = StringListSaver) { mutableStateOf(initial.excludeTags) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.padding(16.dp)) {

@@ -53,10 +53,10 @@ object StorageTools {
         File(context.filesDir, "live").listFiles { f -> f.name.startsWith("frame_") }
             ?.sortedByDescending { it.lastModified() }?.drop(2).orEmpty()
 
-    /** Files in list_images that no collection entry points at. */
+    /** Files in list_images (stored as list_images/<listId>/<file>) that no collection entry points at. */
     private suspend fun unusedCollectionFiles(context: Context): List<File> {
         val dir = File(context.filesDir, "list_images")
-        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val files = dir.walkTopDown().filter { it.isFile }.toList()
         if (files.isEmpty()) return emptyList()
         val used = LocalListsPreferences(context).allWallpapers.first()
             .flatMap { listOf(it.fullUrl, it.thumbUrl, it.sampleUrl) }
@@ -65,15 +65,18 @@ object StorageTools {
         val covers = LocalListsPreferences(context).lists.first()
             .map { it.coverUrl }.filter { it.startsWith("list_images/") }
             .mapTo(HashSet()) { it.removePrefix("list_images/") }
-        return files.filter { it.name !in used && it.name !in covers }
+        return files.filter {
+            val rel = it.relativeTo(dir).invariantSeparatorsPath
+            rel !in used && rel !in covers
+        }
     }
 
     @OptIn(ExperimentalCoilApi::class)
     suspend fun scan(context: Context): List<StorageItem> = withContext(Dispatchers.IO) {
         val unused = unusedCollectionFiles(context)
-        val unusedNames = unused.mapTo(HashSet()) { it.name }
+        val unusedPaths = unused.mapTo(HashSet()) { it.absolutePath }
         val (libBytes, libCount) = dirSize(File(context.filesDir, "rotato_images")) { !it.name.endsWith(".part") }
-        val (colBytes, colCount) = dirSize(File(context.filesDir, "list_images")) { it.name !in unusedNames }
+        val (colBytes, colCount) = dirSize(File(context.filesDir, "list_images")) { it.absolutePath !in unusedPaths }
         val (offBytes, offCount) = dirSize(OfflinePack.dir(context))
         val (vidBytes, vidCount) = dirSize(File(context.cacheDir, "video"))
         val imageCache = context.imageLoader.diskCache
