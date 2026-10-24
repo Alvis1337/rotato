@@ -620,7 +620,7 @@ fun BrainrotScreen(
                 onSet = { vm.setWallpaperDirectly(wp); peekItem = null },
                 onSkip = { vm.skip(wp); peekItem = null },
                 onOpen = { vm.selectItem(wp); peekItem = null },
-                onSelect = { vm.toggleBatchSelect(wp.id); peekItem = null },
+                onSelect = { vm.toggleBatchSelect(wp); peekItem = null },
             )
         }
 
@@ -723,17 +723,17 @@ fun BrainrotScreen(
                                       Box(Modifier.onGloballyPositioned { tileBounds["${wp.source}:${wp.id}"] = it.boundsInRoot() }) {
                                         DiscoverThumbnailGridItem(
                                             wallpaper = wp,
-                                            isDownloading = downloadingIds.contains(wp.id),
+                                            isDownloading = downloadingIds.contains("${wp.source}:${wp.id}"),
                                             isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
-                                            isSelected = wp.id in batchSelected,
+                                            isSelected = "${wp.source}:${wp.id}" in batchSelected,
                                             selectionMode = batchMode,
                                             videoPreviewMode = videoPreviewMode,
                                             isVisible = "${wp.source}:${wp.id}" in visibleCompactKeys,
                                             nsfwBlurEnabled = nsfwBlurEnabled,
                                             onClick = {
-                                                if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
+                                                if (batchMode) vm.toggleBatchSelect(wp) else vm.selectItem(wp)
                                             },
-                                            onLongPress = { if (batchMode) vm.toggleBatchSelect(wp.id) else peekItem = wp },
+                                            onLongPress = { if (batchMode) vm.toggleBatchSelect(wp) else peekItem = wp },
                                             onDoubleTap = { quickSave(wp) },
                                         )
                                       }
@@ -792,18 +792,18 @@ fun BrainrotScreen(
                                       Box(Modifier.onGloballyPositioned { tileBounds["${wp.source}:${wp.id}"] = it.boundsInRoot() }) {
                                         DiscoverGridItem(
                                             wallpaper = wp,
-                                            isDownloading = downloadingIds.contains(wp.id),
+                                            isDownloading = downloadingIds.contains("${wp.source}:${wp.id}"),
                                             isSaved = "${wp.source}:${wp.id}" in savedSourceIds,
-                                            isSelected = wp.id in batchSelected,
+                                            isSelected = "${wp.source}:${wp.id}" in batchSelected,
                                             selectionMode = batchMode,
                                             videoPreviewMode = videoPreviewMode,
                                             isVisible = "${wp.source}:${wp.id}" in visibleStaggeredKeys,
                                             nsfwBlurEnabled = nsfwBlurEnabled,
                                             dataSaver = dataSaverActive,
                                             onClick = {
-                                                if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
+                                                if (batchMode) vm.toggleBatchSelect(wp) else vm.selectItem(wp)
                                             },
-                                            onLongPress = { if (batchMode) vm.toggleBatchSelect(wp.id) else peekItem = wp },
+                                            onLongPress = { if (batchMode) vm.toggleBatchSelect(wp) else peekItem = wp },
                                             onDoubleTap = { quickSave(wp) },
                                         )
                                       }
@@ -1130,8 +1130,8 @@ fun BrainrotScreen(
                             onPageChanged = { vm.selectItem(it) },
                             selectedListName = lists.find { it.id == selectedListId }?.name,
                             lists = lists,
-                            isDownloadingFn = { downloadingIds.contains(it.id) },
-                            isSavingToGalleryFn = { downloadingIds.contains("gallery:${it.id}") },
+                            isDownloadingFn = { downloadingIds.contains("${it.source}:${it.id}") },
+                            isSavingToGalleryFn = { downloadingIds.contains("gallery:${it.source}:${it.id}") },
                             onSkip = { w -> vm.skip(w, closeViewer = false) },
                             onUndoSkip = { vm.undo() },
                             onAddToList = { w, list -> onAddToList(w, list) },

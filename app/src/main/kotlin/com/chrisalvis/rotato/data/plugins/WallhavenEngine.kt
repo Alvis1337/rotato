@@ -108,8 +108,8 @@ object WallhavenEngine : PluginEngine() {
         return if (nsfw) {
             "${s[0]}${s[1]}1"
         } else {
-            val effective = "${s[0]}${s[1]}0"
-            if (effective == "000") "100" else effective
+            // Sketchy posts count as NSFW, so SFW asks for general only.
+            "100"
         }
     }
 }

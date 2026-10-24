@@ -213,7 +213,7 @@ class PluginRepository(private val context: Context) {
                     storeSource = url,
                     storeName = storeName,
                 )
-            }
+            }.distinctBy { it.id }  // a repeated id would crash the store's list
             storeName to entries
         }
     }

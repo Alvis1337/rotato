@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -415,6 +416,21 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     if (prefs.brainrotFilters.first().useMalFilter && !_noSources.value) loadMore(reset = true)
                 }
         }
+        // Content filter or NSFW mode flipped elsewhere (Settings): what's on screen and the
+        // cached queries were built for the old mode, so start over.
+        viewModelScope.launch {
+            prefs.nsfwMode.distinctUntilChanged().drop(1).collect {
+                if (!_noSources.value) loadMore(reset = true)
+            }
+        }
+        // Sources turned on or off, or re-keyed, from the Sources screen.
+        viewModelScope.launch {
+            sources.map { list -> list.filter { it.enabled } }
+                .filter { it.isNotEmpty() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { if (!_noSources.value) loadMore(reset = true) }
+        }
     }
 
     private suspend fun init() {
@@ -482,8 +498,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 val caps = cm.getNetworkCapabilities(cm.activeNetwork)
                 val onWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
                 if (!onWifi) {
-                    _noResultsReason.update { NoResultsReason.WIFI_ONLY }
-                    _noResults.update { true }
+                    // Keep what's already loaded on screen; just stop fetching more.
+                    if (_gridItems.value.isEmpty()) {
+                        _noResultsReason.update { NoResultsReason.WIFI_ONLY }
+                        _noResults.update { true }
+                    }
+                    _loading.update { false }
+                    _loadingMore.update { false }
                     return@launch
                 }
             }
@@ -603,22 +624,23 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 // Loved tags lean early and disliked ones late, but with enough jitter that a batch
                 // never turns into one block of the same tag followed by another.
                 val orderedItems = if (boostTags.isEmpty() && tierDemoteTags.isEmpty()) newItems.shuffled()
-                else newItems.sortedByDescending { wp ->
+                // Each score (jitter included) is drawn once: a sort whose keys change between
+                // comparisons breaks TimSort's contract and can throw.
+                else newItems.map { wp ->
                     val tags = wp.tags.map(::normalizeTag)
-                    (if (tags.any { it in boostTags }) 1f else 0f) -
+                    wp to (if (tags.any { it in boostTags }) 1f else 0f) -
                         (if (tags.any { it in tierDemoteTags }) 1f else 0f) +
                         kotlin.random.Random.nextFloat() * 1.6f
-                }.let { ordered ->
+                }.sortedByDescending { it.second }.map { it.first }.let { ordered ->
                     // "For you": rank each batch by learned taste and how well it'll work as a
                     // wallpaper here, with a little jitter so the feed doesn't feel sorted.
                     if (!learnedTaste.forYouEnabled.first() || explicitQuery.isNotBlank()) ordered
                     else {
                         val weights = learnedTaste.weights.first()
-                        val rank = ordered.withIndex().associate { (i, wp) -> wp to -i * 0.02f }
-                        ordered.sortedByDescending { wp ->
-                            com.chrisalvis.rotato.data.LearnedTaste.score(wp, weights, foldCanvasForRanking) +
-                                (rank[wp] ?: 0f) + kotlin.random.Random.nextFloat() * 0.8f
-                        }
+                        ordered.mapIndexed { i, wp ->
+                            wp to com.chrisalvis.rotato.data.LearnedTaste.score(wp, weights, foldCanvasForRanking) -
+                                i * 0.02f + kotlin.random.Random.nextFloat() * 0.8f
+                        }.sortedByDescending { it.second }.map { it.first }
                     }
                 }
                 if (generation != feedGeneration) return@launch
@@ -989,7 +1011,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             if (ok) {
                 // If this list drives rotation, download the file now so it appears immediately.
                 if (list?.useAsRotation == true) {
-                    val key = wp.id
+                    val key = "${wp.source}:${wp.id}"
                     if (!_downloadingIds.value.contains(key)) {
                         _downloadingIds.update { it + key }
                         try {
@@ -1024,7 +1046,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun removeFromGrid(wp: BrainrotWallpaper) {
-        _batchSelected.update { it - wp.id }
+        _batchSelected.update { it - "${wp.source}:${wp.id}" }
         _gridItems.update { items ->
             items.filter { it.source != wp.source || it.id != wp.id }
         }
@@ -1041,7 +1063,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun toggleBatchSelect(id: String) {
+    /** Selection is by source and id together: boorus reuse the same numeric ids. */
+    fun toggleBatchSelect(wp: BrainrotWallpaper) {
+        val id = "${wp.source}:${wp.id}"
         _batchSelected.update { selected ->
             if (id in selected) selected - id else selected + id
         }
@@ -1055,7 +1079,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         val selectedIds = _batchSelected.value
         if (selectedIds.isEmpty()) return
         _gridItems.value
-            .filter { it.id in selectedIds }
+            .filter { "${it.source}:${it.id}" in selectedIds }
             .forEach { addToList(listId, it) }
         clearBatchSelection()
     }
@@ -1198,7 +1222,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     .filterNotNull()
                     .filter { wp ->
                         val key = "${wp.source}:${wp.id}"
-                        key !in seenKeys &&
+                        key !in seenKeys && (nsfw || !wp.isNsfw) &&
                             (blacklist.isEmpty() || wp.tags.none { normalizeTag(it) in blacklist }) &&
                             (blockedUrls.isEmpty() || wp.fullUrl !in blockedUrls)
                     }
@@ -1378,6 +1402,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         tagSuggestionsJob?.cancel()
+        // Cancelling doesn't interrupt a blocking call, so a slow older answer checks it's still wanted.
+        val seq = ++tagSuggestionSeq
         tagSuggestionsJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val encodedToken = URLEncoder.encode(token, Charsets.UTF_8.name())
@@ -1395,15 +1421,18 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     val tags = (0 until arr.length()).mapNotNull { index ->
                         arr.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() }
                     }
-                    _tagSuggestions.update { tags }
+                    if (seq == tagSuggestionSeq) _tagSuggestions.update { tags }
                 }
             } catch (_: Exception) {
-                _tagSuggestions.update { emptyList() }
+                if (seq == tagSuggestionSeq) _tagSuggestions.update { emptyList() }
             }
         }
     }
 
+    @Volatile private var tagSuggestionSeq = 0
+
     fun clearTagSuggestions() {
+        tagSuggestionSeq++
         tagSuggestionsJob?.cancel()
         _tagSuggestions.update { emptyList() }
     }
@@ -1445,7 +1474,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             Toast.makeText(getApplication(), "Videos can't be set as a wallpaper", Toast.LENGTH_SHORT).show()
             return
         }
-        val key = wp.id
+        val key = "${wp.source}:${wp.id}"
         if (_downloadingIds.value.contains(key)) return
         viewModelScope.launch {
             _downloadingIds.update { it + key }
@@ -1469,7 +1498,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveToGallery(wp: BrainrotWallpaper) {
         learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.DOWNLOADED)
-        val key = "gallery:${wp.id}"
+        val key = "gallery:${wp.source}:${wp.id}"
         if (_downloadingIds.value.contains(key)) return
         viewModelScope.launch {
             _downloadingIds.update { it + key }

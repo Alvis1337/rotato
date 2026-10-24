@@ -312,6 +312,18 @@ fun VideoPlayerView(
             exoPlayer.volume = if (isMuted) 0f else 1f
         }
     }
+    // Stop (and go quiet) when the app leaves the screen; pick up again on return if it was playing.
+    val wasPlaying = remember(exoPlayer) { booleanArrayOf(false) }
+    androidx.lifecycle.compose.LifecycleStartEffect(exoPlayer) {
+        if (wasPlaying[0]) exoPlayer.play()
+        wasPlaying[0] = false
+        onStopOrDispose {
+            runCatching {
+                wasPlaying[0] = exoPlayer.playWhenReady
+                exoPlayer.pause()
+            }
+        }
+    }
     LaunchedEffect(exoPlayer) {
         // Full screen: give the grid previews a couple of frames to release their decoders first.
         if (fullscreen) repeat(2) { withFrameNanos { } }
