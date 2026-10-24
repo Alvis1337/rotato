@@ -1003,7 +1003,7 @@ fun BrainrotScreen(
                                                         showSearch = false
                                                     }
                                                 },
-                                                placeholder = { Text("e.g. blue_hair 1girl") },
+                                                placeholder = { Text("blue_hair 1girl, or cat, dog for either") },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                                 trailingIcon = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -587,21 +587,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 consecutiveEmptyFetches = 0
                 val boostTags = profileIncludes.ifEmpty { tierBoostTags }
-                val orderedItems = when {
-                    boostTags.isNotEmpty() && tierDemoteTags.isNotEmpty() -> {
-                        val (boosted, remaining) = newItems.partition { wp -> wp.tags.any { normalizeTag(it) in boostTags } }
-                        val (demoted, neutral) = remaining.partition { wp -> wp.tags.any { normalizeTag(it) in tierDemoteTags } }
-                        boosted + neutral + demoted
-                    }
-                    boostTags.isNotEmpty() -> {
-                        val (boosted, rest) = newItems.partition { wp -> wp.tags.any { normalizeTag(it) in boostTags } }
-                        boosted + rest
-                    }
-                    tierDemoteTags.isNotEmpty() -> {
-                        val (demoted, rest) = newItems.partition { wp -> wp.tags.any { normalizeTag(it) in tierDemoteTags } }
-                        rest + demoted
-                    }
-                    else -> newItems
+                // Loved tags lean early and disliked ones late, but with enough jitter that a batch
+                // never turns into one block of the same tag followed by another.
+                val orderedItems = if (boostTags.isEmpty() && tierDemoteTags.isEmpty()) newItems.shuffled()
+                else newItems.sortedByDescending { wp ->
+                    val tags = wp.tags.map(::normalizeTag)
+                    (if (tags.any { it in boostTags }) 1f else 0f) -
+                        (if (tags.any { it in tierDemoteTags }) 1f else 0f) +
+                        kotlin.random.Random.nextFloat() * 1.6f
                 }.let { ordered ->
                     // "For you": rank each batch by learned taste and how well it'll work as a
                     // wallpaper here, with a little jitter so the feed doesn't feel sorted.
@@ -639,7 +632,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private fun cacheKey(source: LocalSource, query: String) = "${source.pluginId}:${source.instanceId}:$query"
 
     private fun queriesFor(source: LocalSource, explicitQuery: String, malTitles: List<String>, tierBoostTags: Set<String> = emptySet()): List<String> = when {
-        explicitQuery.isNotBlank() -> listOf(explicitQuery)
+        // Commas mean "any of": each part is its own search and the results are mixed together.
+        // Spaces inside a part still mean "all of", as on the sites themselves.
+        explicitQuery.isNotBlank() -> explicitQuery.split(',', '|').map { it.trim() }.filter { it.isNotBlank() }.distinct().ifEmpty { listOf(explicitQuery) }
         source.tags.isNotBlank() -> listOf(source.tags)
         // Tier boost tags drive preferred queries; MAL titles (if available) or a general ""
         // query fill the rest so the feed isn't exclusively restricted to tier tags. The reorder
@@ -810,18 +805,21 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Pull one unseen item from the in-memory page caches (no network calls). */
+    /**
+     * Pull one unseen item from the in-memory page caches (no network calls). Each pick comes from
+     * a random (source, search) cache, so sites and tags are mixed through the feed instead of one
+     * search's whole page arriving before the next one starts.
+     */
     private fun drainOne(sourcesWithQueries: List<DiscoverRequest>): BrainrotWallpaper? {
-        for (request in sourcesWithQueries.shuffled()) {
-            for (q in request.queries) {
-                val cached = pageCache[cacheKey(request.source, q)] ?: continue
-                while (cached.isNotEmpty()) {
-                    val wp = cached.removeFirst()
-                    if ("${wp.source}:${wp.id}" !in displayedKeys) return wp
-                }
+        while (true) {
+            val caches = sourcesWithQueries.flatMap { request ->
+                request.queries.mapNotNull { q -> pageCache[cacheKey(request.source, q)]?.takeIf { it.isNotEmpty() } }
             }
+            if (caches.isEmpty()) return null
+            val cached = caches.random()
+            val wp = cached.removeFirst()
+            if ("${wp.source}:${wp.id}" !in displayedKeys) return wp
         }
-        return null
     }
 
     private fun loadLists() {
