@@ -134,6 +134,37 @@ object VideoCache {
 }
 
 /**
+ * Warms the video cache with the start of upcoming feed videos, so swiping to one starts
+ * playing from disk instead of waiting on the network.
+ */
+object VideoPrefetch {
+    private val inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    suspend fun warm(context: android.content.Context, url: String, bytes: Long = 3L * 1024 * 1024) {
+        if (url.isBlank() || url.startsWith("file:") || url.startsWith("/") || !inFlight.add(url)) return
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val http = DefaultHttpDataSource.Factory().apply {
+                    refererFor(url)?.let { referer -> setDefaultRequestProperties(mapOf("Referer" to referer)) }
+                }
+                val source = androidx.media3.datasource.cache.CacheDataSource.Factory()
+                    .setCache(VideoCache.get(context))
+                    .setUpstreamDataSourceFactory(http)
+                    .createDataSource()
+                val spec = androidx.media3.datasource.DataSpec.Builder()
+                    .setUri(android.net.Uri.parse(url))
+                    .setLength(bytes)
+                    .build()
+                // Short clips end before the byte budget; whatever was read stays cached.
+                runCatching { androidx.media3.datasource.cache.CacheWriter(source, spec, null, null).cache() }
+            }
+        } finally {
+            inFlight.remove(url)
+        }
+    }
+}
+
+/**
  * Counts full-screen players on screen. Phones have only a few hardware video decoders; when grid
  * previews kept theirs while the viewer opened, large videos (4K60 is common on Gelbooru) fell
  * through to the software decoder, which ran out of memory: "Couldn't load video".

@@ -515,7 +515,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             // Reuse stable queries for the session — MAL title shuffles / tier tag picks must not
             // change between loadMore calls or every scroll triggers cache misses + fresh fetches.
             val sourcesWithQueries = currentDiscoverRequests
-                ?: buildDiscoverRequests(nsfw, filters, explicitQuery, tierBoostTags).also { currentDiscoverRequests = it }
+                ?: buildDiscoverRequests(nsfw, filters, explicitQuery, tierBoostTags, trackCoverage = true).also { currentDiscoverRequests = it }
 
             // When a strict aspect-ratio filter is active most fetched items will be discarded
             // by the plugin-side matches() check. Fetch more candidates per call to compensate.
@@ -672,6 +672,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         filters: BrainrotFilters,
         explicitQuery: String,
         tierBoostTags: Set<String> = emptySet(),
+        trackCoverage: Boolean = false,
     ): List<DiscoverRequest> {
         val malTitles = if (explicitQuery.isBlank() && filters.useMalFilter) {
             malPrefs.animeList.first()
@@ -721,7 +722,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             .also { requests ->
-                _searchCoverage.update { _ ->
+                if (trackCoverage) _searchCoverage.update { _ ->
                     requests.map { SourceCoverage(sourceLabel(it.source), found = 0) } +
                         skipped.map { (name, why) -> SourceCoverage(name, found = 0, skipped = why) }
                 }
@@ -731,6 +732,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** API families whose sites carry video posts. */
         val VIDEO_PROTOCOLS = setOf(Protocol.GELBOORU, Protocol.DANBOORU, Protocol.REDDIT)
+
+        /** Tags on nearly every post, useless for finding similar ones. */
+        val GENERIC_TAGS = setOf(
+            "1girl", "1boy", "2girls", "solo", "highres", "absurdres", "commentary", "commentary_request",
+            "english_commentary", "translated", "animated", "video", "sound", "looking_at_viewer", "simple_background",
+            "white_background", "tagme", "original", "artist_request", "general", "safe", "questionable", "explicit",
+            "sensitive", "wallpaper", "anime", "mp4", "webm", "gif", "has_audio", "no_audio",
+        )
     }
 
     private fun sourceKey(source: LocalSource): String =
@@ -1088,6 +1097,63 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setViewMode(mode: DiscoverViewMode) {
         _gridMode.value = mode == DiscoverViewMode.COMPACT
         viewModelScope.launch { prefs.setDiscoverViewMode(mode.key) }
+    }
+
+    /**
+     * Fills the feed right after [wp] with posts sharing its most telling tags, from every
+     * source, without leaving the current search or losing the user's place.
+     */
+    fun moreLikeThis(wp: BrainrotWallpaper) {
+        val tags = wp.tags.map(::normalizeTag)
+            .filter { it.isNotBlank() && it !in GENERIC_TAGS && ':' !in it && !it.endsWith("_resolution") }
+            .take(3)
+        if (tags.isEmpty()) {
+            android.widget.Toast.makeText(getApplication(), "Not enough tags on this one to find more", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val generation = feedGeneration
+        android.widget.Toast.makeText(getApplication(), "Finding more like this", android.widget.Toast.LENGTH_SHORT).show()
+        viewModelScope.launch {
+            val nsfw = prefs.nsfwMode.first()
+            val filters = withMalAnimeOnly(prefs.brainrotFilters.first())
+            val blockedUrls = prefs.blockedUrls.first()
+            val requests = buildDiscoverRequests(nsfw, filters, tags.joinToString(", "))
+            val seenKeys = displayedKeys.toSet()
+            val found = requests.flatMap { request ->
+                request.queries.map { q ->
+                    async(Dispatchers.IO) {
+                        val sourceKey = request.source.pluginId.lowercase()
+                        val excludes = seenKeys.filter { it.startsWith("$sourceKey:") }.map { it.removePrefix("$sourceKey:") }
+                        fetchPageForSource(request.source, q, excludes, request.effectiveNsfw, filters, 30)
+                    }
+                }
+            }.awaitAll().flatten()
+                .filter { "${it.source}:${it.id}" !in seenKeys && (blockedUrls.isEmpty() || it.fullUrl !in blockedUrls) && (nsfw || !it.isNsfw) }
+                .distinctBy { "${it.source}:${it.id}" }
+                .shuffled()
+                .take(15)
+            if (generation != feedGeneration) return@launch
+            if (found.isEmpty()) {
+                android.widget.Toast.makeText(getApplication(), "Couldn't find more like this", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            found.forEach { displayedKeys.add("${it.source}:${it.id}") }
+            _gridItems.update { list ->
+                val at = list.indexOfFirst { it.id == wp.id && it.source == wp.source }.let { if (it < 0) list.size else it + 1 }
+                list.take(at) + found.notIn(list) + list.drop(at)
+            }
+        }
+    }
+
+    /**
+     * How long the feed stayed on [wp]: lingering reads as liking it, a quick flick past as a
+     * mild "not this", so For you sharpens without the user saving or skipping anything.
+     */
+    fun recordDwell(wp: BrainrotWallpaper, ms: Long) {
+        when {
+            ms >= 6_000 -> learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.LINGERED)
+            ms in 1..1_200 -> learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.FLICKED_PAST)
+        }
     }
 
     fun surpriseMe() {

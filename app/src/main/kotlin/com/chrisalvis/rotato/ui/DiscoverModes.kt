@@ -2,6 +2,8 @@ package com.chrisalvis.rotato.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.draw.blur
@@ -219,7 +221,7 @@ private fun LoadAhead(index: () -> Int, size: Int, ahead: Int, busy: Boolean, en
  * Feed: one image or video per screen, scrolled vertically. Nothing has to be decided; saving
  * is there if something catches your eye (the button, or double-tap on a picture).
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun DiscoverFeed(
     items: List<BrainrotWallpaper>,
@@ -233,11 +235,25 @@ internal fun DiscoverFeed(
     onSet: (BrainrotWallpaper) -> Unit,
     onSkip: (BrainrotWallpaper) -> Unit = {},
     onTag: (String) -> Unit = {},
+    onMoreLikeThis: (BrainrotWallpaper) -> Unit = {},
+    onDwell: (BrainrotWallpaper, Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val pager = rememberPagerState { items.size }
     LoadAhead({ pager.currentPage }, items.size, 4, loadingMore, endReached, onLoadMore)
+    // Load the start of the next two videos while this one plays, so a swipe starts instantly.
+    LaunchedEffect(pager.currentPage, items.size) {
+        (1..2).mapNotNull { items.getOrNull(pager.currentPage + it) }.filter { it.isVideo }.forEach { next ->
+            launch { VideoPrefetch.warm(context, next.fullUrl.ifBlank { next.sampleUrl }) }
+        }
+    }
+    // Time spent on each page is a quiet taste signal (lingering vs flicking past).
+    val currentItem = items.getOrNull(pager.currentPage)
+    androidx.compose.runtime.DisposableEffect(currentItem?.source, currentItem?.id) {
+        val shownAt = android.os.SystemClock.uptimeMillis()
+        onDispose { currentItem?.let { onDwell(it, android.os.SystemClock.uptimeMillis() - shownAt) } }
+    }
     VerticalPager(
         state = pager,
         modifier = modifier.fillMaxSize().background(Color.Black),
@@ -299,6 +315,7 @@ internal fun DiscoverFeed(
                     }
                     context.startActivity(android.content.Intent.createChooser(send, "Share"))
                 }
+                ReelAction(Icons.Default.AutoAwesome, "More like this") { onMoreLikeThis(wp) }
                 ReelAction(Icons.Default.ThumbDown, "Not for me") { onSkip(wp) }
                 ReelAction(Icons.Default.OpenInFull, "More") { onOpen(wp) }
             }
@@ -331,7 +348,10 @@ internal fun DiscoverFeed(
                             color = Color.White.copy(alpha = 0.9f),
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
-                            modifier = Modifier.clickable { onTag(tag) },
+                            modifier = Modifier.combinedClickable(
+                                onClick = { onTag(tag) },
+                                onLongClick = { onMoreLikeThis(wp) },
+                            ),
                         )
                     }
                 }

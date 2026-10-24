@@ -664,6 +664,8 @@ fun BrainrotScreen(
                         onSet = { vm.setWallpaperDirectly(it) },
                         onSkip = { vm.skip(it) },
                         onTag = { vm.searchByTag(it) },
+                        onMoreLikeThis = { vm.moreLikeThis(it) },
+                        onDwell = { wp, ms -> vm.recordDwell(wp, ms) },
                     )
                     viewMode == DiscoverViewMode.SWIPE -> SwipeDeck(
                         items = gridItems,

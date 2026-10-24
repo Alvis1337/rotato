@@ -20,7 +20,7 @@ import kotlin.math.sqrt
 class LearnedTaste(private val context: Context) {
 
     enum class Signal(val weight: Float) {
-        SET_WALLPAPER(3f), SAVED(2f), DOWNLOADED(1.5f), SKIPPED(-1f), BLOCKED(-3f)
+        SET_WALLPAPER(3f), SAVED(2f), DOWNLOADED(1.5f), LINGERED(0.6f), FLICKED_PAST(-0.25f), SKIPPED(-1f), BLOCKED(-3f)
     }
 
     val weights: Flow<Map<String, Float>> = context.dataStore.data
