@@ -61,6 +61,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,7 +121,7 @@ private fun sourceDisplayName(source: String): String = when (source.lowercase()
 }
 
 /** Parses "WxH" resolution string to aspect ratio. Falls back to 16:9 on any parse error. */
-private fun parseAspectRatio(resolution: String): Float {
+internal fun parseAspectRatio(resolution: String): Float {
     if (resolution.isBlank()) return 16f / 9f
     val parts = resolution.lowercase().split("x")
     if (parts.size != 2) return 16f / 9f
@@ -564,102 +565,56 @@ fun BrainrotScreen(
         }
     }
 
+        // Header and control pill float over the content and tuck away while scrolling down.
+        val chrome = remember { ChromeOnScroll() }
+        val density = LocalDensity.current
+        var topInset by remember { mutableStateOf(112.dp) }
+        // Everything that narrows the feed lives in one sheet; its icon carries a dot when any of it is on.
+        val filtersOn = (nsfwMode && !nsfwHidden) || brainrotFilters.videoOnly || brainrotFilters.isFoldFriendly ||
+            brainrotFilters.minResolution != MinResolution.ANY || brainrotFilters.aspectRatio != AspectRatio.ANY ||
+            allSources.any { !it.enabled }
+        val topItemUrl by remember(gridMode) {
+            derivedStateOf {
+                val index = if (gridMode) compactGridState.firstVisibleItemIndex else gridState.firstVisibleItemIndex
+                gridItems.getOrNull(index)?.let { wp ->
+                    if (wp.isVideo) wp.thumbUrl.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) } else wp.gridUrl.ifBlank { wp.thumbUrl }
+                }
+            }
+        }
+        val moodColour = rememberMoodColor(topItemUrl)
+        // Double-tap (or Save in the peek) puts it in the current collection without opening anything.
+        val quickSave: (BrainrotWallpaper) -> Unit = { wp ->
+            if (lists.isEmpty()) onAddToList(wp) else vm.addToList(selectedListId ?: lists.first().id, wp, leaveGrid = false)
+        }
+        var peekItem by remember { mutableStateOf<BrainrotWallpaper?>(null) }
+        peekItem?.let { wp ->
+            DiscoverPeek(
+                wallpaper = wp,
+                saved = "${wp.source}:${wp.id}" in savedSourceIds,
+                onDismiss = { peekItem = null },
+                onSave = { quickSave(wp); peekItem = null },
+                onSet = { vm.setWallpaperDirectly(wp); peekItem = null },
+                onSkip = { vm.skip(wp); peekItem = null },
+                onOpen = { vm.selectItem(wp); peekItem = null },
+                onSelect = { vm.toggleBatchSelect(wp.id); peekItem = null },
+            )
+        }
+
         // Unfolded with a grid layout: the grid stays on the left and the viewer opens on the right.
         val twoPane = viewerBesideGrid() &&
             (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT)
         val paneOpen = twoPane && selectedItem != null
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = if (paneOpen) Modifier.fillMaxHeight().fillMaxWidth(0.42f) else Modifier.fillMaxSize()) {
-                if (!noSources) {
-                    Surface(
-                        tonalElevation = 2.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .statusBarsPadding()
-                                .padding(top = 8.dp, bottom = 10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Discover",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { vm.surpriseMe() }, enabled = !busy) {
-                                    if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                    else Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                                }
-                                IconButton(onClick = { showSearch = true }) {
-                                    Icon(
-                                        Icons.Default.Search,
-                                        contentDescription = "Search",
-                                        tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                                    )
-                                }
-                                // Everything that narrows the feed lives in one sheet; the icon lights up when any of it is on.
-                                val filtersOn = (nsfwMode && !nsfwHidden) || brainrotFilters.videoOnly || brainrotFilters.isFoldFriendly ||
-                                    brainrotFilters.minResolution != MinResolution.ANY || brainrotFilters.aspectRatio != AspectRatio.ANY ||
-                                    allSources.any { !it.enabled }
-                                IconButton(onClick = { showSettings = true }) {
-                                    Icon(
-                                        Icons.Default.Tune,
-                                        contentDescription = "Filters and sources",
-                                        tint = if (filtersOn) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                                    )
-                                }
-                                DiscoverLayoutButton(mode = viewMode, onSelect = { vm.setViewMode(it) })
-                            }
-                            if (pinnedSearches.isNotEmpty() || searchQuery.isNotBlank()) {
-                                Spacer(Modifier.height(6.dp))
-                                SavedSearchTabs(
-                                    pinned = pinnedSearches,
-                                    current = searchQuery,
-                                    onSelect = { vm.setSearchQuery(it) },
-                                    onPinCurrent = { vm.pinCurrentSearch() },
-                                )
-                            }
-                        }
-                    }
-                }
-                    if (!discoverHintSeen) {
-                        ElevatedCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "Tips for Discover",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    IconButton(
-                                        onClick = { vm.dismissDiscoverHint() },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Dismiss", modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                                Text("• The sliders icon at the top holds sources and every filter", style = MaterialTheme.typography.bodySmall)
-                                Text("• The layout button (top right) switches between Grid, Swipe and a full-screen Feed", style = MaterialTheme.typography.bodySmall)
-                                Text("• Tap a card to preview · Long-press to batch-select", style = MaterialTheme.typography.bodySmall)
-                                Text("• Tap the bookmark icon on any image to save it", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
+            // A faint wash of whatever's at the top of the feed, over a plain dark page.
+            MoodBackdrop(moodColour, Modifier.then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier))
+            Column(
+                modifier = (if (paneOpen) Modifier.fillMaxHeight().fillMaxWidth(0.42f) else Modifier.fillMaxSize())
+                    .nestedScroll(chrome)
+            ) {
+                // Grids and the feed scroll under the floating header themselves; everything else starts below it.
+                val padsItself = !noSources && !noResults && !(loading && gridItems.isEmpty()) &&
+                    viewMode != DiscoverViewMode.SWIPE
+                Box(Modifier.fillMaxSize().padding(top = if (padsItself) 0.dp else topInset)) {
                     when {
                     noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
                     noResults -> NoResultsState(
@@ -730,9 +685,9 @@ fun BrainrotScreen(
                                     columns = GridCells.Adaptive(minSize = 100.dp),
                                     state = compactGridState,
                                     modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = topInset + 4.dp, bottom = 96.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     gridGridItems(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
                                         DiscoverThumbnailGridItem(
@@ -747,7 +702,8 @@ fun BrainrotScreen(
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
-                                            onLongPress = { vm.toggleBatchSelect(wp.id) }
+                                            onLongPress = { if (batchMode) vm.toggleBatchSelect(wp.id) else peekItem = wp },
+                                            onDoubleTap = { quickSave(wp) },
                                         )
                                     }
                                     if (loadingMore) {
@@ -796,9 +752,9 @@ fun BrainrotScreen(
                                     columns = StaggeredGridCells.Adaptive(minSize = 150.dp),
                                     state = gridState,
                                     modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalItemSpacing = 8.dp
+                                    contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = topInset + 4.dp, bottom = 96.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalItemSpacing = 5.dp
                                 ) {
                                     items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
                                         DiscoverGridItem(
@@ -814,7 +770,8 @@ fun BrainrotScreen(
                                             onClick = {
                                                 if (batchMode) vm.toggleBatchSelect(wp.id) else vm.selectItem(wp)
                                             },
-                                            onLongPress = { vm.toggleBatchSelect(wp.id) }
+                                            onLongPress = { if (batchMode) vm.toggleBatchSelect(wp.id) else peekItem = wp },
+                                            onDoubleTap = { quickSave(wp) },
                                         )
                                     }
                                     if (loadingMore) {
@@ -854,7 +811,25 @@ fun BrainrotScreen(
                         }
                     }
                 }
+                } // closes padded Box
             } // closes Column
+            if (!noSources) {
+                Box(Modifier.align(Alignment.TopStart).then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth())) {
+                    DiscoverTopBar(
+                        visible = chrome.visible || selectedItem != null,
+                        query = searchQuery,
+                        pinned = pinnedSearches,
+                        onOpenSearch = { showSearch = true },
+                        onClearSearch = { vm.setSearchQuery("") },
+                        onSelectPinned = { vm.setSearchQuery(it) },
+                        onPinCurrent = { vm.pinCurrentSearch() },
+                        modifier = Modifier.onGloballyPositioned {
+                            val h = with(density) { it.size.height.toDp() }
+                            if (h > 0.dp) topInset = h
+                        },
+                    )
+                }
+            }
             if (!noSources) {
                 if (batchMode) {
                     Surface(
@@ -907,29 +882,29 @@ fun BrainrotScreen(
                             }
                         }
                     }
-                } else if (viewMode != DiscoverViewMode.FEED && viewMode != DiscoverViewMode.SWIPE) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding()
-                            .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                } else {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth()),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        if (showScrollTop) {
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
-                                    }
-                                },
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
-                            }
-                            Spacer(Modifier.width(8.dp))
-                        }
+                        DiscoverControlPill(
+                            visible = chrome.visible || viewMode == DiscoverViewMode.SWIPE,
+                            busy = busy,
+                            filtersOn = filtersOn,
+                            viewMode = viewMode,
+                            showTop = showScrollTop && (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT),
+                            onShuffle = { vm.surpriseMe() },
+                            onFilters = { showSettings = true },
+                            onLayout = { vm.setViewMode(it) },
+                            onTop = {
+                                coroutineScope.launch {
+                                    if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
+                                }
+                                chrome.visible = true
+                            },
+                        )
                     }
                 }
                                 if (showSearch) {
@@ -1194,10 +1169,12 @@ private fun DiscoverThumbnailGridItem(
     isVisible: Boolean,
     nsfwBlurEnabled: Boolean,
     onClick: () -> Unit,
-    onLongPress: () -> Unit
+    onLongPress: () -> Unit,
+    onDoubleTap: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var revealed by rememberNsfwRevealed(wallpaper.id)
+    var burst by remember { mutableIntStateOf(0) }
     val isBlurred = wallpaper.isNsfw && nsfwBlurEnabled && !revealed
     val hasStaticThumb = wallpaper.thumbUrl.isNotBlank() && !MediaType.isVideoUrl(wallpaper.thumbUrl)
     // No usable static thumbnail from the API for a video post — fall back to decoding a frame
@@ -1212,11 +1189,15 @@ private fun DiscoverThumbnailGridItem(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(MaterialTheme.shapes.medium)
-            .pointerInput(wallpaper.id, selectionMode, isSelected, isBlurred) {
+            .clip(RoundedCornerShape(16.dp))
+            .pointerInput(wallpaper.id, selectionMode, isSelected, isBlurred, onDoubleTap != null) {
                 detectTapGestures(
                     onTap = { if (isBlurred) revealed = true else onClick() },
-                    onLongPress = { onLongPress() }
+                    onLongPress = { onLongPress() },
+                    // Double-tap saves, like a like; a bookmark pops to confirm it.
+                    onDoubleTap = if (onDoubleTap != null && !selectionMode && !isBlurred) {
+                        { onDoubleTap(); burst++ }
+                    } else null,
                 )
             }
     ) {
@@ -1262,21 +1243,7 @@ private fun DiscoverThumbnailGridItem(
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
         }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(4.dp)
-                .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-        ) {
-            Text(
-                sourceDisplayName(wallpaper.source),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                maxLines = 1
-            )
-        }
+        SaveBurst(burst, Modifier.align(Alignment.Center))
 
         if (wallpaper.isVideo) {
             if (previewSlot) {
@@ -1347,8 +1314,10 @@ private fun DiscoverGridItem(
     nsfwBlurEnabled: Boolean,
     dataSaver: Boolean = false,
     onClick: () -> Unit,
-    onLongPress: () -> Unit
+    onLongPress: () -> Unit,
+    onDoubleTap: (() -> Unit)? = null,
 ) {
+    var burst by remember { mutableIntStateOf(0) }
     val ratio = parseAspectRatio(wallpaper.resolution)
         .coerceIn(0.25f, 4f)
         .let { if (it == 16f / 9f && wallpaper.resolution.isBlank()) 0.75f else it }
@@ -1371,11 +1340,15 @@ private fun DiscoverGridItem(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(MaterialTheme.shapes.medium)
-            .pointerInput(wallpaper.id, selectionMode, isSelected, isBlurred) {
+            .clip(RoundedCornerShape(16.dp))
+            .pointerInput(wallpaper.id, selectionMode, isSelected, isBlurred, onDoubleTap != null) {
                 detectTapGestures(
                     onTap = { if (isBlurred) revealed = true else onClick() },
-                    onLongPress = { onLongPress() }
+                    onLongPress = { onLongPress() },
+                    // Double-tap saves, like a like; a bookmark pops to confirm it.
+                    onDoubleTap = if (onDoubleTap != null && !selectionMode && !isBlurred) {
+                        { onDoubleTap(); burst++ }
+                    } else null,
                 )
             }
     ) {
@@ -1456,18 +1429,7 @@ private fun DiscoverGridItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .background(sourceColor(wallpaper.source).copy(alpha = 0.88f), MaterialTheme.shapes.small)
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    sourceDisplayName(wallpaper.source),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
+            // The source lives in the viewer's info pills; tiles stay clean.
             if (foldFriendly) FoldBadge()
         }
 
@@ -1481,13 +1443,20 @@ private fun DiscoverGridItem(
                 )
             } else {
                 Icon(
-                    Icons.Default.PlayCircle,
+                    Icons.Default.PlayArrow,
                     contentDescription = "Video",
                     tint = Color.White,
-                    modifier = Modifier.align(Alignment.Center).size(40.dp)
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .size(22.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                        .padding(3.dp)
                 )
             }
         }
+
+        SaveBurst(burst, Modifier.align(Alignment.Center))
 
         if (isSaved) {
             Icon(
