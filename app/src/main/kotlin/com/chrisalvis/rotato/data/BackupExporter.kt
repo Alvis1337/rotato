@@ -60,6 +60,17 @@ suspend fun buildBackupJson(context: Context): String {
                 put("createdAt", l.createdAt)
                 put("useAsRotation", l.useAsRotation)
                 put("isLocked", l.isLocked)
+                put("rotationTarget", l.rotationTarget.name)
+                put("coverUrl", l.coverUrl)
+                put("blurExempt", l.blurExempt)
+                l.rotationIntervalMinutes?.let { put("rotationIntervalMinutes", it) }
+                l.smartRule?.takeIf { !it.isEmpty }?.let { rule ->
+                    put("smartRule", JSONObject().apply {
+                        put("requireAll", JSONArray(rule.requireAll))
+                        put("requireAny", JSONArray(rule.requireAny))
+                        put("excludeAny", JSONArray(rule.excludeAny))
+                    })
+                }
                 l.malConfig?.let { config ->
                     put("malConfig", JSONObject().apply {
                         put("animeTitle", config.animeTitle)
@@ -93,6 +104,8 @@ suspend fun buildBackupJson(context: Context): String {
                 put("pageUrl", e.pageUrl)
                 put("tags", JSONArray(e.tags))
                 put("addedAt", e.addedAt)
+                put("isVideo", e.isVideo)
+                put("isNsfw", e.isNsfw)
             })
         }
     }
@@ -123,4 +136,24 @@ suspend fun buildBackupJson(context: Context): String {
             installedPlugins.forEach { m -> arr.put(m.toJson()) }
         })
     }.toString(2)
+}
+
+/**
+ * [this] with the collection settings a backup entry [o] carries beyond name, lock and MAL config.
+ * Older backups don't have them, so anything missing keeps its current value.
+ */
+fun LocalList.withBackupSettings(o: JSONObject): LocalList {
+    fun strings(rule: JSONObject, key: String): List<String> =
+        rule.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
+    val rule = o.optJSONObject("smartRule")?.let { r ->
+        SmartRule(requireAll = strings(r, "requireAll"), requireAny = strings(r, "requireAny"), excludeAny = strings(r, "excludeAny"))
+    }?.takeIf { !it.isEmpty }
+    return copy(
+        rotationTarget = runCatching { ScreenRotationTarget.valueOf(o.optString("rotationTarget", rotationTarget.name)) }
+            .getOrDefault(rotationTarget),
+        coverUrl = o.optString("coverUrl", coverUrl),
+        blurExempt = o.optBoolean("blurExempt", blurExempt),
+        smartRule = rule ?: smartRule,
+        rotationIntervalMinutes = if (o.has("rotationIntervalMinutes")) o.optInt("rotationIntervalMinutes") else rotationIntervalMinutes,
+    )
 }

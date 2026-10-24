@@ -66,10 +66,19 @@ class WallpaperWorker(
     override suspend fun doWork(): Result {
         val result = rotate()
         // Keep a sub-15-minute self-chain alive even when this run was skipped (auto-pause,
-        // empty pool) or failed; previously only a successful set re-armed the chain.
-        val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, 0L)
-        if (intervalMinutes in 1..14 && RotatoPreferences(applicationContext).settings.first().isEnabled) {
-            scheduleNextRun(intervalMinutes)
+        // empty pool) or failed; previously only a successful set re-armed the chain. Only chain
+        // links re-arm, and with the interval as it is now: the one baked into inputData goes
+        // stale once the user picks a different interval.
+        // Keeps the charge trigger armed even if it was turned on some other way (backup restore).
+        runCatching {
+            ChargingTriggerWorker.sync(applicationContext, RotatoPreferences(applicationContext).chargingTriggerEnabled.first())
+        }
+        if (inputData.getLong(KEY_INTERVAL_MINUTES, 0L) > 0L) {
+            val settings = RotatoPreferences(applicationContext).settings.first()
+            val intervalMinutes = settings.intervalMinutes.toLong()
+            if (settings.isEnabled && intervalMinutes in 1..14) {
+                scheduleNextRun(intervalMinutes)
+            }
         }
         return result
     }
@@ -84,7 +93,7 @@ class WallpaperWorker(
         val imageDir = File(applicationContext.filesDir, "rotato_images").also { it.mkdirs() }
         val feedRepository = FeedRepository(imageDir)
 
-        val (settings, autoPause, history, allWallpapers, scheduleEntries, lists,
+        val (settings, autoPause, _, allWallpapers, scheduleEntries, lists,
              autoFavoriteEnabled, autoFavoriteMinutes,
              lastWallpaperThumbUrl, lastWallpaperFullUrl, lastWallpaperSource, lastWallpaperSetMs) = coroutineScope {
             val sDeferred  = async { prefs.settings.first() }
@@ -147,11 +156,13 @@ class WallpaperWorker(
 
         val allRotationLists = lists.filter { it.useAsRotation }
         val now = System.currentTimeMillis()
-        val rotationLists = allRotationLists.filter { list ->
-            val intervalMs = list.rotationIntervalMinutes?.let { it * 60_000L } ?: return@filter true
-            now - list.lastRotationMs >= intervalMs
-        }.ifEmpty { allRotationLists } // fallback: never stall rotation if all lists are on cooldown
-        val hasPerScreen = rotationLists.any { it.rotationTarget != ScreenRotationTarget.BOTH }
+        // Lists still inside their own rotation interval. Screen membership comes from every
+        // rotation list; the cooldown only narrows the pool on top of that (see below).
+        val coolingListIds = allRotationLists.filter { list ->
+            val intervalMs = list.rotationIntervalMinutes?.let { it * 60_000L } ?: return@filter false
+            now - list.lastRotationMs < intervalMs
+        }.mapTo(HashSet()) { it.id }
+        val hasPerScreen = allRotationLists.any { it.rotationTarget != ScreenRotationTarget.BOTH }
         // Content filter on: locked collections and NSFW images never come up, scheduled or not.
         val nsfwHiddenNow = prefs.nsfwHidden.first()
         val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, if (nsfwHiddenNow) lists.filter { !it.isLocked } else lists)
@@ -159,7 +170,7 @@ class WallpaperWorker(
             .takeIf { it.isNotEmpty() && !(hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH) }
             ?.let { listIds ->
                 val wallpapers = allWallpapers.filter { it.listId in listIds && !(nsfwHiddenNow && it.isNsfw) }
-                selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs)
+                selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs, lastWallpaperFullUrl)
             }
 
         val allSources = LocalSourcesPreferences(applicationContext).sources.first()
@@ -170,32 +181,59 @@ class WallpaperWorker(
         }
 
         // Stealth mode: while active, rotation draws exclusively from the designated stealth
-        // collection, overriding schedules and normal per-screen pools — a "panic button" leanback.
+        // collection, overriding schedules, Up Next and normal per-screen pools — a "panic button".
+        // Entries not in the pool yet are fetched like a scheduled pick; if none can be had, the
+        // wallpaper is left as it is rather than falling back to the normal pool.
         val stealthActive = prefs.stealthActive.first()
         val stealthCollectionId = if (stealthActive) prefs.stealthCollectionId.first() else ""
         val stealthWallpapers = if (stealthCollectionId.isNotBlank())
             allWallpapers.filter { it.listId == stealthCollectionId } else emptyList()
-        val stealthFiles = stealthWallpapers.mapNotNull { entry -> allImages.findPoolFile(entry.source, entry.sourceId) }
-        val effectiveScheduledEntry = if (stealthFiles.isNotEmpty()) null else scheduledEntry
+        val stealthFiles: List<File> = if (!stealthActive) emptyList() else {
+            val inPool = stealthWallpapers.mapNotNull { entry -> allImages.findPoolFile(entry.source, entry.sourceId) }
+            if (inPool.isNotEmpty()) inPool else {
+                var fetched: File? = null
+                for (entry in stealthWallpapers.shuffled().take(3)) {
+                    fetched = resolveScheduledTargetFile(entry, feedRepository, imageDir, prefs, danbooruAuthHeader(entry, allSources))
+                    if (fetched != null) break
+                }
+                listOfNotNull(fetched)
+            }
+        }
+        if (stealthActive && stealthFiles.isEmpty()) {
+            prefs.addRotationError(RotationError(
+                RotationErrorType.POOL_EMPTY,
+                "Stealth mode is on but its collection has nothing available — wallpaper left unchanged"
+            ))
+            return Result.success()
+        }
+        val effectiveScheduledEntry = if (stealthActive) null else scheduledEntry
 
         // Build per-screen file sets when per-screen pools are configured and target is BOTH.
         val homeFiles: List<File>
         val lockFiles: List<File>
-        if (stealthFiles.isNotEmpty()) {
+        if (stealthActive) {
             homeFiles = stealthFiles
             lockFiles = stealthFiles
         } else if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
-            val homeListIds = rotationLists
-                .filter { it.rotationTarget == ScreenRotationTarget.HOME_ONLY || it.rotationTarget == ScreenRotationTarget.BOTH }
-                .map { it.id }.toSet()
-            val lockListIds = rotationLists
-                .filter { it.rotationTarget == ScreenRotationTarget.LOCK_ONLY || it.rotationTarget == ScreenRotationTarget.BOTH }
-                .map { it.id }.toSet()
-            fun entriesForLists(ids: Set<String>) = allWallpapers
+            fun listIdsFor(screen: ScreenRotationTarget) = allRotationLists
+                .filter { it.rotationTarget == screen || it.rotationTarget == ScreenRotationTarget.BOTH }
+                .mapTo(HashSet()) { it.id }
+            val homeListIds = listIdsFor(ScreenRotationTarget.HOME_ONLY)
+            val lockListIds = listIdsFor(ScreenRotationTarget.LOCK_ONLY)
+            fun filesForLists(ids: Set<String>) = allWallpapers
                 .filter { it.listId in ids }
                 .mapNotNull { entry -> allImages.findPoolFile(entry.source, entry.sourceId) }
-            homeFiles = entriesForLists(homeListIds).ifEmpty { allImages }
-            lockFiles = entriesForLists(lockListIds).ifEmpty { allImages }
+                .distinct()
+            fun screenPool(ids: Set<String>, otherIds: Set<String>): List<File> {
+                // Lists on cooldown sit out, unless that would leave this screen with nothing.
+                val linked = filesForLists(ids - coolingListIds).ifEmpty { filesForLists(ids) }
+                if (linked.isNotEmpty()) return linked
+                // Nothing linked to this screen: use the library, but never the other screen's own files.
+                val otherOnly = filesForLists(otherIds - ids).mapTo(HashSet()) { it.absolutePath }
+                return allImages.filter { it.absolutePath !in otherOnly }
+            }
+            homeFiles = screenPool(homeListIds, lockListIds)
+            lockFiles = screenPool(lockListIds, homeListIds)
         } else {
             homeFiles = allImages
             lockFiles = allImages
@@ -214,15 +252,19 @@ class WallpaperWorker(
 
         var mainQueueCount: Int? = null
         // Lined up from the Now screen: shown first, in order (stealth mode still wins).
-        val queued = if (stealthFiles.isEmpty()) {
+        val queued = if (!stealthActive) {
             // A queued video can only play through the live wallpaper; without it, pass over it.
             val liveActive = LiveWallpaper.isActive(applicationContext)
             prefs.popUpNext { path ->
                 File(path).let { it.exists() && it.name !in filterOut && (liveActive || !LiveWallpaper.isVideoFile(it)) }
             }?.let(::File)
         } else null
+        // Kept apart so the scheduled entry is credited only when it really supplied the file.
+        val scheduledFile = if (queued == null) {
+            resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
+        } else null
         val targetFile = queued
-            ?: resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
+            ?: scheduledFile
             ?: run {
                 mainQueueCount = homePool.size
                 if (homePool.isEmpty()) {
@@ -234,7 +276,7 @@ class WallpaperWorker(
                     }
                     return Result.success()
                 }
-                selectMainQueueFile(homePool, settings.shuffleMode, settings.currentIndex, history, prefs)
+                selectMainQueueFile(homePool, settings.shuffleMode, settings.currentIndex, prefs)
             }
 
         // For per-screen mode, pick a separate lock file (different from home when possible).
@@ -309,7 +351,7 @@ class WallpaperWorker(
                 prefs.recordRotationAndIncrement()
                 prefs.pushAppliedWallpaper(targetFile.absolutePath)
 
-                val matchingEntry = effectiveScheduledEntry
+                val matchingEntry = effectiveScheduledEntry?.takeIf { scheduledFile != null && targetFile == scheduledFile }
                     ?: allWallpapers.find { poolKey(it.source, it.sourceId) == targetFile.nameWithoutExtension }
                     ?: allWallpapers.find { sanitizeFilename(it.sourceId) == targetFile.nameWithoutExtension }
 
@@ -399,10 +441,15 @@ class WallpaperWorker(
         shuffleMode: Boolean,
         currentIndex: Int,
         prefs: RotatoPreferences,
+        currentFullUrl: String,
     ): LocalWallpaperEntry? {
         if (wallpapers.isEmpty()) return null
         return if (shuffleMode) {
-            wallpapers.random()
+            // Don't draw what's showing now (or the last few) again while there is anything else.
+            val recentStems = recentAppliedPaths(prefs, wallpapers.size).mapTo(HashSet()) { File(it).nameWithoutExtension }
+            wallpapers.filter { entry ->
+                (currentFullUrl.isBlank() || entry.fullUrl != currentFullUrl) && poolKeys(entry.source, entry.sourceId).none { it in recentStems }
+            }.ifEmpty { wallpapers }.random()
         } else {
             val nextIndex = currentIndex % wallpapers.size
             prefs.setCurrentIndex((nextIndex + 1) % wallpapers.size)
@@ -453,12 +500,14 @@ class WallpaperWorker(
         images: List<File>,
         shuffleMode: Boolean,
         currentIndex: Int,
-        history: List<WallpaperHistoryItem>,
         prefs: RotatoPreferences,
     ): File {
         return if (shuffleMode) {
             val wallpaperRatings = prefs.wallpaperRatings.first()
-            val pool = if (prefs.matchTimeOfDay.first()) timeOfDayPool(images) else images
+            val matched = if (prefs.matchTimeOfDay.first()) timeOfDayPool(images) else images
+            // Don't draw what's showing now (or the last few) again while there is anything else.
+            val recent = recentAppliedPaths(prefs, matched.size).toHashSet()
+            val pool = matched.filter { it.absolutePath !in recent }.ifEmpty { matched }
             val weightedImages = buildList {
                 pool.forEach { file ->
                     val weight = when ((wallpaperRatings[file.name] ?: 0).coerceIn(0, 5)) {
@@ -478,6 +527,13 @@ class WallpaperWorker(
             prefs.setCurrentIndex((nextIndex + 1) % images.size)
             images[nextIndex]
         }
+    }
+
+    /** The latest applied wallpaper paths, newest first, capped so at least one of [poolSize] stays free. */
+    private suspend fun recentAppliedPaths(prefs: RotatoPreferences, poolSize: Int): List<String> {
+        val count = (poolSize - 1).coerceIn(0, RECENT_AVOID_COUNT)
+        if (count == 0) return emptyList()
+        return prefs.appliedWallpaperPaths.first().asReversed().distinct().take(count)
     }
 
     /**
@@ -623,6 +679,8 @@ class WallpaperWorker(
         private const val NOTIF_THUMB_H = 128
         private const val NOTIF_BIG_W = 1024
         private const val NOTIF_BIG_H = 512
+        /** How many recent wallpapers shuffle steers away from. */
+        private const val RECENT_AVOID_COUNT = 5
 
         // Only notify once per distinct count so we don't fire every rotation while queue is low.
         @Volatile private var lastLowQueueNotifCount = Int.MAX_VALUE

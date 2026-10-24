@@ -96,6 +96,8 @@ class RotatoPreferences(private val context: Context) {
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
         val UP_NEXT_PATHS = stringPreferencesKey("up_next_paths_json")
         val BROKEN_ENTRY_IDS = stringPreferencesKey("broken_entry_ids_json")
+        val LIBRARY_REMOVED_KEYS = stringPreferencesKey("library_removed_keys_json")
+        val SMART_EXCLUDED_IDS = stringPreferencesKey("smart_excluded_ids_json")
         val DISCOVER_VIEW_MODE = stringPreferencesKey("discover_view_mode")
     }
 
@@ -169,6 +171,11 @@ class RotatoPreferences(private val context: Context) {
         .catch { emit(emptyPreferences()) }
         .map { parsePaths(it[APPLIED_WALLPAPER_PATHS]).size >= 2 }
 
+    /** Paths of the last applied wallpapers, oldest first; the last one is showing now. */
+    val appliedWallpaperPaths: Flow<List<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parsePaths(it[APPLIED_WALLPAPER_PATHS]).toList() }
+
     /** Records [path] as the wallpaper now showing, keeping the last 20. */
     suspend fun pushAppliedWallpaper(path: String) {
         context.dataStore.edit { prefs ->
@@ -193,6 +200,48 @@ class RotatoPreferences(private val context: Context) {
         }
         return previous
     }
+
+    /**
+     * Pool file names (without extension) the user deleted from the Library, so collections
+     * linked to the Library don't download them straight back. Cleared when re-added on purpose.
+     */
+    val libraryRemovedKeys: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parsePaths(it[LIBRARY_REMOVED_KEYS]).toSet() }
+
+    suspend fun addLibraryRemovedKeys(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        context.dataStore.edit { it[LIBRARY_REMOVED_KEYS] = JSONArray((parsePaths(it[LIBRARY_REMOVED_KEYS]) + keys).distinct()).toString() }
+    }
+
+    suspend fun clearLibraryRemovedKeys(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = parsePaths(prefs[LIBRARY_REMOVED_KEYS])
+            if (current.removeAll(keys.toSet())) prefs[LIBRARY_REMOVED_KEYS] = JSONArray(current).toString()
+        }
+    }
+
+    /** Per smart collection id, the source ids the user removed from it; its rule won't re-add them. */
+    val smartExcludedIds: Flow<Map<String, Set<String>>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parseSmartExcluded(it[SMART_EXCLUDED_IDS]) }
+
+    suspend fun addSmartExcludedIds(listId: String, sourceIds: Collection<String>) {
+        if (sourceIds.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val all = parseSmartExcluded(prefs[SMART_EXCLUDED_IDS]).toMutableMap()
+            all[listId] = all[listId].orEmpty() + sourceIds
+            prefs[SMART_EXCLUDED_IDS] = JSONObject().apply {
+                all.forEach { (id, ids) -> put(id, JSONArray(ids.toList())) }
+            }.toString()
+        }
+    }
+
+    private fun parseSmartExcluded(json: String?): Map<String, Set<String>> = runCatching {
+        val obj = JSONObject(json ?: "{}")
+        obj.keys().asSequence().associateWith { id -> parsePaths(obj.optJSONArray(id)?.toString()).toSet() }
+    }.getOrDefault(emptyMap())
 
     /** Collection entries the last doctor check found gone from their site, so cards can flag them. */
     val brokenEntryIds: Flow<Set<String>> = context.dataStore.data

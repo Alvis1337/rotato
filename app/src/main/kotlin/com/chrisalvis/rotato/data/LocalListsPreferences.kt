@@ -128,7 +128,9 @@ class LocalListsPreferences(private val context: Context) {
             val urls = inTarget.mapNotNullTo(HashSet()) { it.fullUrl.ifBlank { null } }
             val drop = mutableListOf<String>()
             var moved = 0
-            for (e in dao.entriesById(entryIds.toList()).mapNotNull { it.toEntry() }) {
+            // SQLite caps bound parameters per statement (999 before API 31); look up in chunks.
+            val moving = entryIds.chunked(500).flatMap { dao.entriesById(it) }.mapNotNull { it.toEntry() }
+            for (e in moving) {
                 if (e.listId == targetListId) continue
                 if (e.sourceId in ids || (e.fullUrl.isNotBlank() && e.fullUrl in urls)) {
                     drop += e.id
@@ -140,7 +142,7 @@ class LocalListsPreferences(private val context: Context) {
                 dao.moveEntry(m.id, targetListId, entryJson(m))
                 moved++
             }
-            if (drop.isNotEmpty()) dao.deleteEntries(drop)
+            drop.chunked(500).forEach { dao.deleteEntries(it) }
             moved
         }
     }
@@ -198,7 +200,7 @@ class LocalListsPreferences(private val context: Context) {
 
     suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
         ensureMigrated()
-        return db.withTransaction {
+        val added = db.withTransaction {
             if (dao.countMatching(listId, wallpaper.id, wallpaper.fullUrl) > 0) return@withTransaction false
             val entry = LocalWallpaperEntry(
                 listId = listId,
@@ -216,6 +218,9 @@ class LocalListsPreferences(private val context: Context) {
             dao.insertEntries(listOf(entry.toRow()))
             true
         }
+        // Saving an image again is an explicit add: let a Library-linked collection bring it back.
+        if (added) RotatoPreferences(context).clearLibraryRemovedKeys(poolKeys(wallpaper.source, wallpaper.id))
+        return added
     }
 
     suspend fun addLocalImage(listId: String, relativePath: String) {

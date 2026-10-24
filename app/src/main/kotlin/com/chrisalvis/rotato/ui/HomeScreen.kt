@@ -382,7 +382,7 @@ private fun LibraryContent(
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     var looksLoading by remember { mutableStateOf(false) }
     // Match a photo: pick any picture and the Library shows what goes with it, best match first.
-    var matchLook by remember { mutableStateOf<com.chrisalvis.rotato.data.ImageLook?>(null) }
+    var matchLook by rememberSaveable(stateSaver = ImageLookSaver) { mutableStateOf<com.chrisalvis.rotato.data.ImageLook?>(null) }
     var matchLoading by remember { mutableStateOf(false) }
     // Rainbow order: lay the Library out by each image's main colour, like a bookshelf sorted by spine.
     var rainbow by rememberSaveable { mutableStateOf(false) }
@@ -423,7 +423,7 @@ private fun LibraryContent(
         looksLoading = false
     }
     // Type, fold, NSFW and rating chips plus sort order, applied on top of colour and tag search.
-    var libraryFilter by remember { mutableStateOf(LibraryFilter()) }
+    var libraryFilter by rememberSaveable(stateSaver = LibraryFilterSaver) { mutableStateOf(LibraryFilter()) }
     val foldCanvas = rememberFoldCanvas()
     val foldNames by produceState<Set<String>?>(null, images, libraryFilter.foldOnly, foldCanvas) {
         val canvas = foldCanvas
@@ -547,9 +547,10 @@ private fun LibraryContent(
         // Unfolded: the picture opens in a pane beside the grid instead of over it.
         val libraryTwoPane = viewerBesideGrid()
         val preview: @Composable (Boolean, Modifier) -> Unit = { inline, paneModifier ->
-        selectedFile?.takeIf { images.isNotEmpty() }?.let { file ->
+        // Pages through the grid as filtered and sorted, starting at the tapped image.
+        selectedFile?.takeIf { gridImages.isNotEmpty() }?.let { file ->
             ImagePreviewDialog(
-                images = images,
+                images = gridImages,
                 initialFile = file,
                 onDismiss = { selectedFile = null },
                 onSetWallpaper = { currentFile ->
@@ -558,7 +559,7 @@ private fun LibraryContent(
                 },
                 onRemove = { currentFile ->
                     viewModel.removeImage(currentFile)
-                    if (images.size == 1) selectedFile = null
+                    if (gridImages.size == 1) selectedFile = null
                 },
                 onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) },
                 onPlayNext = { currentFile -> viewModel.queueUpNext(currentFile, first = true) },

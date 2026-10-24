@@ -28,7 +28,11 @@ import android.view.SurfaceHolder
 import android.view.animation.DecelerateInterpolator
 import com.chrisalvis.rotato.data.findFocusPoint
 import com.chrisalvis.rotato.data.focusedCrop
+import com.chrisalvis.rotato.data.loadScaledBitmap
+import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.worker.AutomationReceiver
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.time.LocalTime
 import kotlin.math.abs
@@ -244,22 +248,28 @@ class RotatoWallpaperService : WallpaperService() {
         /** Loads the published image or video; images decode off the main thread. */
         private fun load(fade: Boolean) {
             val token = ++loadToken
-            val path = prefs.getString(LiveWallpaper.KEY_PATH, null) ?: fallbackPath()
-            if (path == null) {
-                scheduleFrame()
-                return
-            }
-            if (prefs.getBoolean(LiveWallpaper.KEY_VIDEO, false)) {
+            val published = prefs.getString(LiveWallpaper.KEY_PATH, null)
+            if (published != null && prefs.getBoolean(LiveWallpaper.KEY_VIDEO, false)) {
                 // A new video gets its own retry.
-                if (videoPath != path) videoRetries = 0
-                videoPath = path
-                playVideo(path)
+                if (videoPath != published) videoRetries = 0
+                videoPath = published
+                playVideo(published)
                 return
             }
             videoPath = null
             val crops = LiveWallpaper.parseCrops(prefs.getString(LiveWallpaper.KEY_CROPS, null))
             loader.post {
-                val bmp = BitmapFactory.decodeFile(path) ?: return@post
+                // The published image is already fitted to the screen (its crops are in its
+                // pixels); the fallback is a raw pool file, so it's sampled down and EXIF-rotated.
+                val bmp = if (published != null) {
+                    runCatching { BitmapFactory.decodeFile(published) }.getOrNull()
+                } else {
+                    fallbackPath()?.let { path -> runCatching { loadScaledBitmap(this@RotatoWallpaperService, path) }.getOrNull() }
+                }
+                if (bmp == null) {
+                    main.post { if (token == loadToken) scheduleFrame() }
+                    return@post
+                }
                 val focus = runCatching { findFocusPoint(bmp) }.getOrDefault(PointF(0.5f, 0.5f))
                 main.post {
                     if (token != loadToken) {
@@ -277,10 +287,21 @@ class RotatoWallpaperService : WallpaperService() {
             }
         }
 
-        /** Before anything is published, show the newest image in the rotation pool. */
-        private fun fallbackPath(): String? =
-            File(filesDir, "rotato_images").listFiles()?.filter { !LiveWallpaper.isVideoFile(it) }
+        /**
+         * Before anything is published, show the newest image in the rotation pool, leaving out
+         * NSFW ones while the content filter is on. Runs on the loader thread (it reads DataStore).
+         */
+        private fun fallbackPath(): String? {
+            val hidden = runCatching {
+                runBlocking {
+                    val rotatoPrefs = RotatoPreferences(this@RotatoWallpaperService)
+                    if (rotatoPrefs.nsfwHidden.first()) rotatoPrefs.nsfwFileNames.first() else emptySet()
+                }
+            }.getOrNull() ?: return null
+            return File(filesDir, "rotato_images").listFiles()
+                ?.filter { !LiveWallpaper.isVideoFile(it) && it.name !in hidden }
                 ?.maxByOrNull { it.lastModified() }?.absolutePath
+        }
 
         private fun playVideo(path: String) {
             main.removeCallbacks(frameCallback)
@@ -299,34 +320,39 @@ class RotatoWallpaperService : WallpaperService() {
                 main.postDelayed({ if (videoPath == path && player == null && surfaceReady) playVideo(path) }, 350)
                 return
             }
+            surfaceHeldVideo = true
+            // Kept local until it's set up: a bad file throws midway, and that player must be
+            // released here since it never became [player].
+            val mp = MediaPlayer()
             try {
-                surfaceHeldVideo = true
-                player = MediaPlayer().apply {
-                    setSurface(surfaceHolder.surface)
-                    setDataSource(path)
-                    isLooping = true
-                    setVolume(0f, 0f)
-                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-                    // While saving power, show the first frame and hold it.
-                    setOnPreparedListener { if (visible && !saving) it.start() else it.seekTo(0) }
-                    // A decoder error (e.g. both screens' players competing for it) leaves a dead
-                    // player; drop it so the next time this screen shows, it starts again.
-                    setOnErrorListener { _, _, _ ->
-                        main.post {
+                mp.setSurface(surfaceHolder.surface)
+                mp.setDataSource(path)
+                mp.isLooping = true
+                mp.setVolume(0f, 0f)
+                mp.setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+                // While saving power, show the first frame and hold it.
+                mp.setOnPreparedListener { if (visible && !saving) it.start() else it.seekTo(0) }
+                // A decoder error (e.g. both screens' players competing for it) leaves a dead
+                // player; drop it so the next time this screen shows, it starts again. Only if
+                // it's still the current one: a newer player must not be released in its place.
+                mp.setOnErrorListener { _, _, _ ->
+                    main.post {
+                        if (player === mp) {
                             releasePlayer()
                             // A surface that still couldn't take the decoder: swap it once more and retry.
                             if (videoPath == path && videoRetries++ < 1) flipSurfaceFormat()
                         }
-                        true
                     }
-                    setOnInfoListener { _, what, _ ->
-                        if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) videoRetries = 0
-                        false
-                    }
-                    prepareAsync()
+                    true
                 }
+                mp.setOnInfoListener { _, what, _ ->
+                    if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) videoRetries = 0
+                    false
+                }
+                mp.prepareAsync()
+                player = mp
             } catch (e: Exception) {
-                releasePlayer()
+                runCatching { mp.release() }
             }
         }
 

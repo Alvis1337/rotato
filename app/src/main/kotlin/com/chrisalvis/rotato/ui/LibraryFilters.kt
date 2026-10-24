@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +69,34 @@ data class LibraryFilter(
         }
     }
 }
+
+/** Keeps the Library chips and sort across rotation and fold/unfold. */
+val LibraryFilterSaver: Saver<LibraryFilter, Any> = listSaver<LibraryFilter, Any>(
+    save = { listOf(it.kind.name, it.foldOnly, it.nsfwOnly, it.unratedOnly, it.sort.name) },
+    restore = { v ->
+        LibraryFilter(
+            kind = LibraryKind.entries.find { it.name == v.getOrNull(0) } ?: LibraryKind.ALL,
+            foldOnly = v.getOrNull(1) == true,
+            nsfwOnly = v.getOrNull(2) == true,
+            unratedOnly = v.getOrNull(3) == true,
+            sort = LibrarySort.entries.find { it.name == v.getOrNull(4) } ?: LibrarySort.NAME,
+        )
+    },
+)
+
+/** Keeps a "Match a photo" result across rotation and fold/unfold, as "brightness,COLOUR,…". */
+val ImageLookSaver: Saver<com.chrisalvis.rotato.data.ImageLook?, String> = Saver(
+    save = { look -> look?.let { l -> (listOf(l.brightness.toString()) + l.colours.map { it.name }).joinToString(",") } },
+    restore = { saved ->
+        val parts = saved.split(",")
+        parts.firstOrNull()?.toIntOrNull()?.let { brightness ->
+            com.chrisalvis.rotato.data.ImageLook(
+                brightness,
+                parts.drop(1).mapNotNullTo(HashSet()) { n -> com.chrisalvis.rotato.data.ImageColour.entries.find { it.name == n } },
+            )
+        }
+    },
+)
 
 /** Names of the [files] big enough to fill both Fold screens without blurring. */
 fun foldFriendlyNames(files: List<File>, canvas: WallpaperCanvas): Set<String> =

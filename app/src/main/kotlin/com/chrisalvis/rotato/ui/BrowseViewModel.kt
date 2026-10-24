@@ -68,6 +68,7 @@ import com.chrisalvis.rotato.data.poolKey
 import com.chrisalvis.rotato.data.poolKeys
 import com.chrisalvis.rotato.data.findPoolFile
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.withBackupSettings
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.data.plugins.normalizeBooruQuery
@@ -502,14 +503,14 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         // We only watch non-smart entries so adding to smart collections doesn't re-trigger.
         // Use Eagerly so the observer stays hot even when no UI subscribers are active.
         viewModelScope.launch {
-            combine(localLists.allWallpapers, localLists.lists) { allEntries, lists ->
-                allEntries to lists
-            }.collect { (allEntries, lists) ->
+            combine(localLists.allWallpapers, localLists.lists, prefs.smartExcludedIds) { allEntries, lists, excluded ->
+                Triple(allEntries, lists, excluded)
+            }.collect { (allEntries, lists, excluded) ->
                 val smartLists = lists.filter { it.isSmartCollection }
                 if (smartLists.isEmpty()) return@collect
                 for (smartList in smartLists) {
                     val rule = smartList.smartRule ?: continue
-                    val toAdd = smartCandidates(smartList, rule, allEntries, lists)
+                    val toAdd = smartCandidates(smartList, rule, allEntries, lists, excluded[smartList.id].orEmpty())
                     // One write per smart collection; adding entry by entry re-fired this observer
                     // for every single image.
                     if (toAdd.isNotEmpty()) localLists.addWallpaperEntries(toAdd)
@@ -521,17 +522,20 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Entries a smart collection should pick up. Images from locked collections only flow into a
      * smart collection that is itself locked, so a rule can't surface them in an unlocked one.
+     * [excludedSourceIds] are images the user removed from this smart collection.
      */
     private fun smartCandidates(
         smartList: LocalList,
         rule: SmartRule,
         allEntries: List<LocalWallpaperEntry>,
         lists: List<LocalList>,
+        excludedSourceIds: Set<String>,
         limit: Int = Int.MAX_VALUE,
     ): List<LocalWallpaperEntry> {
         val excludedListIds = lists.filter { it.isSmartCollection || (it.isLocked && !smartList.isLocked) }
             .mapTo(HashSet()) { it.id }
         val seen = allEntries.filter { it.listId == smartList.id }.mapTo(HashSet()) { it.sourceId }
+        seen += excludedSourceIds
         return allEntries.asSequence()
             .filter { it.listId !in excludedListIds && rule.matches(it) && seen.add(it.sourceId) }
             .take(limit)
@@ -698,7 +702,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun populateSmartCollection(listId: String, rule: SmartRule, limit: Int = Int.MAX_VALUE): Int {
         val lists = localLists.lists.first()
         val smartList = lists.firstOrNull { it.id == listId } ?: return 0
-        val toAdd = smartCandidates(smartList, rule, localLists.allWallpapers.first(), lists, limit)
+        val excluded = prefs.smartExcludedIds.first()[listId].orEmpty()
+        val toAdd = smartCandidates(smartList, rule, localLists.allWallpapers.first(), lists, excluded, limit)
         localLists.addWallpaperEntries(toAdd)
         return toAdd.size
     }
@@ -1076,6 +1081,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun removeEntries(entryIds: Set<String>) {
         val all = localLists.allWallpapers.first()
+        // Remember removals from smart collections first, or the rule would put them right back.
+        val smartIds = _allLists.value.filter { it.isSmartCollection }.mapTo(HashSet()) { it.id }
+        all.filter { it.id in entryIds && it.listId in smartIds }
+            .groupBy { it.listId }
+            .forEach { (listId, entries) -> prefs.addSmartExcludedIds(listId, entries.map { it.sourceId }) }
         localLists.removeWallpapers(entryIds)
         deleteOwnedDeviceFiles(all.filter { it.id in entryIds }, remaining = all.filter { it.id !in entryIds })
     }
@@ -1351,6 +1361,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         if (item.optBoolean("isLocked", false)) {
                             localLists.setLocked(created.id, true)
                         }
+                        // Settings older backups don't carry keep their defaults.
+                        val restored = created.withBackupSettings(item)
+                        if (restored.rotationTarget != created.rotationTarget) localLists.setRotationTarget(created.id, restored.rotationTarget)
+                        if (restored.coverUrl != created.coverUrl) localLists.setCoverImage(created.id, restored.coverUrl)
+                        if (restored.blurExempt) localLists.setBlurExempt(created.id, true)
+                        if (restored.rotationIntervalMinutes != null) localLists.setRotationInterval(created.id, restored.rotationIntervalMinutes)
+                        if (restored.smartRule != null) localLists.setSmartRule(created.id, restored.smartRule)
                     } ?: existingByName[name.lowercase()] ?: continue
                     listIdMap[oldId] = target.id
                 }
@@ -1422,12 +1439,17 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         if (_downloading.value.contains(wallpaper.sourceId)) return
         val presentKeys = poolKeys(wallpaper.source, wallpaper.sourceId).filter { it in _inRotation.value }
         if (presentKeys.isNotEmpty()) {
-            imageDir.listFiles()?.filter { it.nameWithoutExtension in presentKeys }?.forEach { it.delete() }
             _inRotation.update { it - presentKeys.toSet() }
+            viewModelScope.launch(Dispatchers.IO) {
+                // Remembered so a Library-linked collection doesn't download it straight back.
+                prefs.addLibraryRemovedKeys(presentKeys)
+                imageDir.listFiles()?.filter { it.nameWithoutExtension in presentKeys }?.forEach { it.delete() }
+            }
             return
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _downloading.update { it + wallpaper.sourceId }
+            prefs.clearLibraryRemovedKeys(poolKeys(wallpaper.source, wallpaper.sourceId))
             try {
                 val ok = if (wallpaper.source == "device") {
                     copyLocalToRotation(wallpaper.fullUrl, key)
@@ -1446,15 +1468,18 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun downloadAllToRotation(listId: String) {
         if (_downloadAllProgress.value != null) return
         val ctx = app.applicationContext
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val pending = localLists.wallpapersForList(listId).first()
                 .filterNot { e -> e.isVideo || poolKeys(e.source, e.sourceId).any { it in _inRotation.value } }
             if (pending.isEmpty()) {
-                Toast.makeText(ctx, "Downloaded 0 images to rotation", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) { Toast.makeText(ctx, "Downloaded 0 images to rotation", Toast.LENGTH_SHORT).show() }
                 return@launch
             }
+            // Asked for explicitly, so earlier Library deletes of these no longer apply.
+            prefs.clearLibraryRemovedKeys(pending.flatMap { poolKeys(it.source, it.sourceId) })
 
             var downloaded = 0
+            val poolFiles = poolFilesByStem(app.filesDir)
             _downloadAllProgress.update { 0 to pending.size }
             try {
                 pending.forEachIndexed { index, entry ->
@@ -1463,7 +1488,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         return@forEachIndexed
                     }
                     val key = poolKey(entry.source, entry.sourceId)
-                    val wallpaper = entry.toBrowseWallpaper(app.filesDir)
+                    val wallpaper = entry.toBrowseWallpaper(app.filesDir, poolFiles)
                     _downloading.update { it + entry.sourceId }
                     val ok = try {
                         if (entry.source == "device") {
@@ -1491,7 +1516,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                 _downloadAllProgress.update { null }
             }
 
-            Toast.makeText(ctx, "Downloaded $downloaded images to rotation", Toast.LENGTH_SHORT).show()
+            withContext(Dispatchers.Main) { Toast.makeText(ctx, "Downloaded $downloaded images to rotation", Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -1536,7 +1561,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                             poolFiles,
                         )
                         // For local file:// URIs, just check existence — no HTTP needed
-                        if (urlToCheck.startsWith("file://")) {
+                        if (urlToCheck.startsWith("file:")) {
                             val exists = try { java.io.File(java.net.URI(urlToCheck)).exists() } catch (_: Exception) { false }
                             if (!exists) synchronized(broken) { broken.add(entry.id) }
                             return@async
@@ -1588,9 +1613,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     fun importFromRotation(listName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val list = localLists.createList(listName) ?: return@launch
-            val files = imageDir.listFiles() ?: return@launch
+            // Only finished pictures and videos; skips half-downloaded .part files and the like.
+            val files = com.chrisalvis.rotato.data.ImageRepository(app).getMedia()
+            val nsfwNames = prefs.nsfwFileNames.first()
             // One write for the whole Library instead of re-parsing the store per image.
-            localLists.addWallpaperEntries(files.sortedBy { it.name }.map { file ->
+            localLists.addWallpaperEntries(files.map { file ->
                     com.chrisalvis.rotato.data.LocalWallpaperEntry(
                         listId = list.id,
                         sourceId = file.nameWithoutExtension,
@@ -1600,6 +1627,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
                         resolution = "",
                         pageUrl = "",
                         tags = emptyList(),
+                        isVideo = com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file),
+                        isNsfw = file.name in nsfwNames,
                     )
             })
             withContext(Dispatchers.Main) {
@@ -1712,7 +1741,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val listId = _selectedListId.value ?: return
         if (_exportProgress.value != null) return
         val ctx = app.applicationContext
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val items = localLists.wallpapersForList(listId).first()
             if (items.isEmpty()) {
                 _exportCompletion.emit(0)
@@ -1720,10 +1749,11 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             }
             var exported = 0
             _exportProgress.update { 0 to items.size }
+            val poolFiles = poolFilesByStem(app.filesDir)
             try {
                 items.forEachIndexed { index, entry ->
-                    val wallpaper = entry.toBrowseWallpaper(app.filesDir)
-                    val ok = if (wallpaper.fullUrl.startsWith("file://") || wallpaper.fullUrl.startsWith("/")) {
+                    val wallpaper = entry.toBrowseWallpaper(app.filesDir, poolFiles)
+                    val ok = if (wallpaper.fullUrl.startsWith("file:") || wallpaper.fullUrl.startsWith("/")) {
                         saveLocalFileToGallery(ctx, File(Uri.parse(wallpaper.fullUrl).path ?: wallpaper.fullUrl))
                     } else {
                         _downloading.update { it + wallpaper.sourceId }
@@ -1743,6 +1773,12 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleCollectionRotation(list: LocalList) {
         viewModelScope.launch {
+            // Linking a collection to the Library is an explicit add of everything in it.
+            if (!list.useAsRotation) {
+                prefs.clearLibraryRemovedKeys(
+                    localLists.wallpapersForList(list.id).first().flatMap { poolKeys(it.source, it.sourceId) }
+                )
+            }
             localLists.setUseAsRotation(list.id, !list.useAsRotation)
         }
     }
@@ -1853,7 +1889,7 @@ private fun resolveEntryUrl(
     poolFiles: Map<String, File>,
 ): String {
     if (url.startsWith("list_images/")) return File(filesDir, url).toURI().toString()
-    if (url.startsWith("file://")) return url
+    if (url.startsWith("file:")) return url
     if (sourceId.isNotBlank()) {
         val localFile = poolKeys(source, sourceId).firstNotNullOfOrNull { poolFiles[it] }
         if (localFile != null) return localFile.toURI().toString()

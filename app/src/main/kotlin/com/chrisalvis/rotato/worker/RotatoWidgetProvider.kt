@@ -265,12 +265,19 @@ class RotatoWidgetProvider : AppWidgetProvider() {
             return sampleSize
         }
 
-        private fun loadCurrentWallpaperBitmap(context: Context): Bitmap? {
+        private suspend fun loadCurrentWallpaperBitmap(context: Context): Bitmap? {
             if (LiveWallpaper.isActive(context)) {
                 val sp = context.getSharedPreferences(LiveWallpaper.PREFS, Context.MODE_PRIVATE)
                 val path = sp.getString(LiveWallpaper.KEY_PATH, null)
                 if (path != null && !sp.getBoolean(LiveWallpaper.KEY_VIDEO, false)) return decodeSampledFile(path)
                 return null
+            }
+            // WallpaperManager.getDrawable needs a privileged permission on Android 13+ and fails
+            // for apps, so show the file Rotato last applied; the drawable is only a last resort.
+            val applied = runCatching { RotatoPreferences(context).appliedWallpaperPaths.first() }
+                .getOrNull()?.lastOrNull()?.let(::File)
+            if (applied != null && applied.isFile && !LiveWallpaper.isVideoFile(applied)) {
+                runCatching { decodeSampledFile(applied.absolutePath) }.getOrNull()?.let { return it }
             }
             return try {
                 val drawable = WallpaperManager.getInstance(context).drawable ?: return null

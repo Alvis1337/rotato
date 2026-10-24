@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +64,7 @@ fun RotationWallpaperSettingsScreen(
     val autoFavoriteMinutes by viewModel.autoFavoriteMinutes.collectAsStateWithLifecycle()
     val autoRefillEnabled by viewModel.autoRefillEnabled.collectAsStateWithLifecycle()
     val autoRefillMinCount by viewModel.autoRefillMinCount.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -254,7 +256,10 @@ fun RotationWallpaperSettingsScreen(
                             autoFavoriteMinutes = autoFavoriteMinutes,
                             autoRefillEnabled = autoRefillEnabled,
                             autoRefillMinCount = autoRefillMinCount,
-                            onChargingTriggerToggle = { viewModel.setChargingTriggerEnabled(it) },
+                            onChargingTriggerToggle = {
+                                viewModel.setChargingTriggerEnabled(it)
+                                com.chrisalvis.rotato.worker.ChargingTriggerWorker.sync(context.applicationContext, it)
+                            },
                             onAutoFavoriteToggle = { viewModel.setAutoFavoriteEnabled(it) },
                             onAutoFavoriteMinutesChange = { viewModel.setAutoFavoriteMinutes(it) },
                             onAutoRefillToggle = { viewModel.setAutoRefillEnabled(it) },

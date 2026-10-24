@@ -33,6 +33,7 @@ import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.data.AspectRatio
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.historyFromJson
+import com.chrisalvis.rotato.data.withBackupSettings
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import kotlinx.coroutines.flow.combine
 import com.chrisalvis.rotato.worker.RotatoWidgetProvider
@@ -314,7 +315,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshFromFeeds() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _images.update { repository.getMedia() }
         }
     }
@@ -330,10 +331,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }.collect { toSync ->
                 var changed = false
                 val stemsOnDisk = imageDir.listFiles()?.mapTo(HashSet()) { it.nameWithoutExtension } ?: hashSetOf()
+                // Images the user deleted from the Library stay deleted.
+                val removedKeys = preferences.libraryRemovedKeys.first()
                 toSync.forEach { entry ->
                     if (entry.fullUrl.isBlank()) return@forEach
                     val key = poolKey(entry.source, entry.sourceId)
-                    val onDisk = poolKeys(entry.source, entry.sourceId).any { it in stemsOnDisk }
+                    val keys = poolKeys(entry.source, entry.sourceId)
+                    if (keys.any { it in removedKeys }) return@forEach
+                    val onDisk = keys.any { it in stemsOnDisk }
                     if (!onDisk) {
                         if (entry.source == "device" && entry.fullUrl.startsWith("list_images/")) {
                             // Local image — copy from list_images/ to rotation pool
@@ -365,6 +370,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleCollectionAsRotation(list: LocalList) {
         viewModelScope.launch {
+            // Linking a collection to the Library is an explicit add of everything in it.
+            if (!list.useAsRotation) {
+                preferences.clearLibraryRemovedKeys(
+                    localLists.wallpapersForList(list.id).first().flatMap { poolKeys(it.source, it.sourceId) }
+                )
+            }
             localLists.setUseAsRotation(list.id, !list.useAsRotation)
         }
     }
@@ -402,15 +413,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun removeImage(file: File) {
-        viewModelScope.launch {
-            repository.removeImage(file)
-            _images.update { repository.getMedia() }
-            // Auto-disable rotation if the pool is now empty
-            if (_images.value.isEmpty() && settings.value.isEnabled) {
-                setRotationEnabled(false)
-            }
-        }
+    fun removeImage(file: File) = deleteSelected(setOf(file))
+
+    /**
+     * Deletes [files] from the Library. Their names are remembered so collections linked to the
+     * Library don't download them again, and collection entries that pointed straight at these
+     * files ("Save library as collection") go too instead of being left as broken tiles.
+     */
+    private suspend fun deleteFromLibrary(files: Set<File>) = withContext(Dispatchers.IO) {
+        if (files.isEmpty()) return@withContext
+        preferences.addLibraryRemovedKeys(files.map { it.nameWithoutExtension })
+        val uris = files.mapTo(HashSet()) { it.toURI().toString() }
+        val stale = localLists.allWallpapers.first()
+            .filter { it.source == "device" && it.fullUrl in uris }
+            .mapTo(HashSet()) { it.id }
+        localLists.removeWallpapers(stale)
+        files.forEach { repository.removeImage(it) }
+        _images.update { repository.getMedia() }
     }
 
     fun setRating(file: File, rating: Int) {
@@ -633,8 +652,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteSelected(files: Set<File>) {
         viewModelScope.launch {
-            files.forEach { repository.removeImage(it) }
-            _images.update { repository.getMedia() }
+            deleteFromLibrary(files)
+            // Auto-disable rotation if the pool is now empty
             if (_images.value.isEmpty() && settings.value.isEnabled) {
                 setRotationEnabled(false)
             }
@@ -917,12 +936,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Restore collections (v2+)
                 val collectionsArr = json.optJSONArray("collections")
+                // Backup collection id -> id here, for one that already exists under the same name.
+                val listIdMap = mutableMapOf<String, String>()
                 if (collectionsArr != null) {
-                    val existingIds = localLists.lists.first().map { it.id }.toSet()
+                    val existingLists = localLists.lists.first()
+                    val existingIds = existingLists.map { it.id }.toSet()
+                    val idsByName = existingLists.associate { it.name.trim().lowercase() to it.id }.toMutableMap()
                     for (i in 0 until collectionsArr.length()) {
                         val o = collectionsArr.getJSONObject(i)
-                        val id = o.optString("id") ?: continue
-                        if (id !in existingIds) {
+                        val id = o.optString("id").ifBlank { null } ?: continue
+                        val sameName = idsByName[o.optString("name", "Imported").trim().lowercase()]
+                        if (id !in existingIds && sameName != null) {
+                            listIdMap[id] = sameName
+                        } else if (id !in existingIds) {
                             val malConfigObj = o.optJSONObject("malConfig")
                             val list = LocalList(
                                 id = id,
@@ -952,8 +978,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                         useMalFilter = obj.optBoolean("useMalFilter", false),
                                     ).takeIf { it.animeTitle.isNotBlank() }
                                 },
-                            )
+                            ).withBackupSettings(o)
                             localLists.createListWithId(list)
+                            idsByName[list.name.trim().lowercase()] = list.id
                         }
                     }
                 }
@@ -962,12 +989,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     val existing = localLists.allWallpapers.first().map { it.id }.toSet()
                     for (i in 0 until wallpapersArr.length()) {
                         val o = wallpapersArr.getJSONObject(i)
-                        val id = o.optString("id") ?: continue
+                        val id = o.optString("id").ifBlank { null } ?: continue
                         if (id in existing) continue
                         val tagsArr = o.optJSONArray("tags")
+                        val backupListId = o.optString("listId", "")
                         val entry = LocalWallpaperEntry(
                             id = id,
-                            listId = o.optString("listId", ""),
+                            listId = listIdMap[backupListId] ?: backupListId,
                             sourceId = o.optString("sourceId", ""),
                             source = o.optString("source", ""),
                             thumbUrl = o.optString("thumbUrl", ""),
@@ -977,6 +1005,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             pageUrl = o.optString("pageUrl", ""),
                             tags = if (tagsArr != null) (0 until tagsArr.length()).map { tagsArr.getString(it) } else emptyList(),
                             addedAt = o.optLong("addedAt", System.currentTimeMillis()),
+                            isVideo = o.optBoolean("isVideo", false),
+                            isNsfw = o.optBoolean("isNsfw", false),
                         )
                         if (entry.listId.isNotBlank() && entry.sourceId.isNotBlank()) {
                             localLists.addWallpaperEntry(entry)
