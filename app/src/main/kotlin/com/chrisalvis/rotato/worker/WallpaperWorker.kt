@@ -184,8 +184,10 @@ class WallpaperWorker(
         // collection, overriding schedules, Up Next and normal per-screen pools — a "panic button".
         // Entries not in the pool yet are fetched like a scheduled pick; if none can be had, the
         // wallpaper is left as it is rather than falling back to the normal pool.
-        val stealthActive = prefs.stealthActive.first()
-        val stealthCollectionId = if (stealthActive) prefs.stealthCollectionId.first() else ""
+        // Stealth with no collection set (or one since deleted) counts as off, so it can't freeze rotation.
+        val stealthCollectionId = if (prefs.stealthActive.first()) prefs.stealthCollectionId.first()
+            .takeIf { id -> id.isNotBlank() && lists.any { it.id == id } }.orEmpty() else ""
+        val stealthActive = stealthCollectionId.isNotBlank()
         val stealthWallpapers = if (stealthCollectionId.isNotBlank())
             allWallpapers.filter { it.listId == stealthCollectionId } else emptyList()
         val stealthFiles: List<File> = if (!stealthActive) emptyList() else {
@@ -253,11 +255,13 @@ class WallpaperWorker(
         var mainQueueCount: Int? = null
         // Lined up from the Now screen: shown first, in order (stealth mode still wins).
         val queued = if (!stealthActive) {
-            // A queued video can only play through the live wallpaper; without it, pass over it.
+            // A queued video can only play through the live wallpaper, and filtered images sit out;
+            // both are passed over but stay queued for when they can be shown.
             val liveActive = LiveWallpaper.isActive(applicationContext)
-            prefs.popUpNext { path ->
-                File(path).let { it.exists() && it.name !in filterOut && (liveActive || !LiveWallpaper.isVideoFile(it)) }
-            }?.let(::File)
+            prefs.popUpNext(
+                exists = { path -> File(path).exists() },
+                eligible = { path -> File(path).let { it.name !in filterOut && (liveActive || !LiveWallpaper.isVideoFile(it)) } },
+            )?.let(::File)
         } else null
         // Kept apart so the scheduled entry is credited only when it really supplied the file.
         val scheduledFile = if (queued == null) {

@@ -211,7 +211,8 @@ class RotatoPreferences(private val context: Context) {
 
     suspend fun addLibraryRemovedKeys(keys: Collection<String>) {
         if (keys.isEmpty()) return
-        context.dataStore.edit { it[LIBRARY_REMOVED_KEYS] = JSONArray((parsePaths(it[LIBRARY_REMOVED_KEYS]) + keys).distinct()).toString() }
+        // Newest last; the oldest fall off so the set can't grow forever.
+        context.dataStore.edit { it[LIBRARY_REMOVED_KEYS] = JSONArray((parsePaths(it[LIBRARY_REMOVED_KEYS]) + keys).distinct().takeLast(3000)).toString() }
     }
 
     suspend fun clearLibraryRemovedKeys(keys: Collection<String>) {
@@ -234,6 +235,17 @@ class RotatoPreferences(private val context: Context) {
             all[listId] = all[listId].orEmpty() + sourceIds
             prefs[SMART_EXCLUDED_IDS] = JSONObject().apply {
                 all.forEach { (id, ids) -> put(id, JSONArray(ids.toList())) }
+            }.toString()
+        }
+    }
+
+    /** Forgets a smart collection's removals, once the collection itself is deleted. */
+    suspend fun clearSmartExcludedIds(listId: String) {
+        context.dataStore.edit { prefs ->
+            val all = parseSmartExcluded(prefs[SMART_EXCLUDED_IDS])
+            if (listId !in all) return@edit
+            prefs[SMART_EXCLUDED_IDS] = JSONObject().apply {
+                (all - listId).forEach { (id, ids) -> put(id, JSONArray(ids.toList())) }
             }.toString()
         }
     }
@@ -270,15 +282,16 @@ class RotatoPreferences(private val context: Context) {
         }
     }
 
-    /** Takes the first queued wallpaper that still exists; ones that don't are dropped. */
-    suspend fun popUpNext(exists: (String) -> Boolean): String? {
+    /**
+     * Takes the first queued wallpaper that still exists and is [eligible] now. Missing ones are
+     * dropped; ones that exist but aren't eligible yet stay in the queue.
+     */
+    suspend fun popUpNext(exists: (String) -> Boolean, eligible: (String) -> Boolean = { true }): String? {
         var next: String? = null
         context.dataStore.edit { prefs ->
-            val paths = parsePaths(prefs[UP_NEXT_PATHS])
-            while (paths.isNotEmpty() && next == null) {
-                val p = paths.removeAt(0)
-                if (exists(p)) next = p
-            }
+            val paths = parsePaths(prefs[UP_NEXT_PATHS]).filter(exists).toMutableList()
+            val index = paths.indexOfFirst(eligible)
+            if (index >= 0) next = paths.removeAt(index)
             prefs[UP_NEXT_PATHS] = JSONArray(paths).toString()
         }
         return next

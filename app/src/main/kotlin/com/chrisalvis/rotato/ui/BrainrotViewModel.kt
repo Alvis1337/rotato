@@ -420,7 +420,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         // cached queries were built for the old mode, so start over.
         viewModelScope.launch {
             prefs.nsfwMode.distinctUntilChanged().drop(1).collect {
-                if (!_noSources.value) loadMore(reset = true)
+                if (!_noSources.value && !justReset()) loadMore(reset = true)
             }
         }
         // Sources turned on or off, or re-keyed, from the Sources screen.
@@ -429,7 +429,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 .filter { it.isNotEmpty() }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { if (!_noSources.value) loadMore(reset = true) }
+                .collect { if (!_noSources.value && !justReset()) loadMore(reset = true) }
         }
     }
 
@@ -467,8 +467,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
      *  3. Drain from the in-memory caches — no network during drain.
      *  4. Batch-update the grid with all new items in a single state emission.
      */
+    private var lastResetAt = 0L
+
+    /** True right after a reset, so a settings change the screen already reset for doesn't reset twice. */
+    private fun justReset() = android.os.SystemClock.uptimeMillis() - lastResetAt < 2_000
+
     fun loadMore(reset: Boolean = false) {
         if (reset) {
+            lastResetAt = android.os.SystemClock.uptimeMillis()
             fetchJob?.cancel()
             fetchJob = null
             _gridItems.update { emptyList() }

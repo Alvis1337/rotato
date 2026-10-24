@@ -200,6 +200,9 @@ class LocalListsPreferences(private val context: Context) {
 
     suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
         ensureMigrated()
+        // Saving an image again is an explicit add: let a Library-linked collection bring it back.
+        // Cleared first (and even if it's already saved) so the Library sync never sees a stale block.
+        RotatoPreferences(context).clearLibraryRemovedKeys(poolKeys(wallpaper.source, wallpaper.id))
         val added = db.withTransaction {
             if (dao.countMatching(listId, wallpaper.id, wallpaper.fullUrl) > 0) return@withTransaction false
             val entry = LocalWallpaperEntry(
@@ -218,8 +221,6 @@ class LocalListsPreferences(private val context: Context) {
             dao.insertEntries(listOf(entry.toRow()))
             true
         }
-        // Saving an image again is an explicit add: let a Library-linked collection bring it back.
-        if (added) RotatoPreferences(context).clearLibraryRemovedKeys(poolKeys(wallpaper.source, wallpaper.id))
         return added
     }
 

@@ -37,6 +37,8 @@ class StealthTileService : TileService() {
             val prefs = RotatoPreferences(applicationContext)
             val collectionId = prefs.stealthCollectionId.first()
             if (collectionId.isBlank()) {
+                // Nothing to hide behind, but a stealth left on must still be switchable off.
+                prefs.setStealthActive(false)
                 updateTile(active = false, configured = false)
                 return@launch
             }

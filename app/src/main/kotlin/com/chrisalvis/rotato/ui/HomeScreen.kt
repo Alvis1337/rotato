@@ -546,11 +546,16 @@ private fun LibraryContent(
 
         // Unfolded: the picture opens in a pane beside the grid instead of over it.
         val libraryTwoPane = viewerBesideGrid()
+        // The viewer keeps the order it opened with: rating an image under "Top rated" or
+        // "Unrated" would otherwise re-sort the pages and slide a different one under the finger.
+        // Deleted images still drop out.
+        val openedOrder = remember(selectedFile) { gridImages }
+        val viewerImages = remember(openedOrder, images) { val live = images.toHashSet(); openedOrder.filter { it in live } }
         val preview: @Composable (Boolean, Modifier) -> Unit = { inline, paneModifier ->
         // Pages through the grid as filtered and sorted, starting at the tapped image.
-        selectedFile?.takeIf { gridImages.isNotEmpty() }?.let { file ->
+        selectedFile?.takeIf { viewerImages.isNotEmpty() }?.let { file ->
             ImagePreviewDialog(
-                images = gridImages,
+                images = viewerImages,
                 initialFile = file,
                 onDismiss = { selectedFile = null },
                 onSetWallpaper = { currentFile ->
@@ -559,7 +564,7 @@ private fun LibraryContent(
                 },
                 onRemove = { currentFile ->
                     viewModel.removeImage(currentFile)
-                    if (gridImages.size == 1) selectedFile = null
+                    if (viewerImages.size == 1) selectedFile = null
                 },
                 onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) },
                 onPlayNext = { currentFile -> viewModel.queueUpNext(currentFile, first = true) },

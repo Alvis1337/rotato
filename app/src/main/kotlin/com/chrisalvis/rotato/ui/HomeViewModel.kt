@@ -36,6 +36,7 @@ import com.chrisalvis.rotato.data.historyFromJson
 import com.chrisalvis.rotato.data.withBackupSettings
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.chrisalvis.rotato.worker.RotatoWidgetProvider
 import com.chrisalvis.rotato.worker.WallpaperWorker
 import com.chrisalvis.rotato.worker.WallpaperWorker.Companion.CHAIN_WORK_NAME
@@ -325,14 +326,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Directory scans, file copies and downloads below must stay off the main thread;
         // large rotation collections froze the UI here.
         viewModelScope.launch(Dispatchers.IO) {
-            localLists.lists.combine(localLists.allWallpapers) { lists, wallpapers ->
+            // Also re-runs when an image is un-blocked, so saving it again brings it back.
+            kotlinx.coroutines.flow.combine(
+                localLists.lists, localLists.allWallpapers, preferences.libraryRemovedKeys.distinctUntilChanged(),
+            ) { lists, wallpapers, removed ->
                 val rotationIds = lists.filter { it.useAsRotation }.map { it.id }.toSet()
-                wallpapers.filter { it.listId in rotationIds }
-            }.collect { toSync ->
+                wallpapers.filter { it.listId in rotationIds } to removed
+            }.collect { (toSync, removedKeys) ->
                 var changed = false
                 val stemsOnDisk = imageDir.listFiles()?.mapTo(HashSet()) { it.nameWithoutExtension } ?: hashSetOf()
-                // Images the user deleted from the Library stay deleted.
-                val removedKeys = preferences.libraryRemovedKeys.first()
+                // Images the user deleted from the Library stay deleted (removedKeys).
                 toSync.forEach { entry ->
                     if (entry.fullUrl.isBlank()) return@forEach
                     val key = poolKey(entry.source, entry.sourceId)
