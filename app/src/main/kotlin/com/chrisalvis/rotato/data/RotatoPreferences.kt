@@ -94,6 +94,9 @@ class RotatoPreferences(private val context: Context) {
         val DISCOVER_VIDEO_ONLY = booleanPreferencesKey("discover_video_only")
         val FOLD_PAIRS = stringPreferencesKey("fold_pairs_json")
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
+        val UP_NEXT_PATHS = stringPreferencesKey("up_next_paths_json")
+        val DISCOVER_VIEW_MODE = stringPreferencesKey("discover_view_mode")
+        val SAVED_SEARCHES = stringPreferencesKey("saved_searches_json")
     }
 
     val settings: Flow<RotatoSettings> = context.dataStore.data
@@ -189,6 +192,56 @@ class RotatoPreferences(private val context: Context) {
             prefs[APPLIED_WALLPAPER_PATHS] = JSONArray(paths).toString()
         }
         return previous
+    }
+
+    /** Wallpapers the user lined up to show next, in order, ahead of the normal rotation. */
+    val upNext: Flow<List<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parsePaths(it[UP_NEXT_PATHS]) }
+
+    suspend fun setUpNext(paths: List<String>) {
+        context.dataStore.edit { it[UP_NEXT_PATHS] = JSONArray(paths.distinct().take(50)).toString() }
+    }
+
+    /** Adds [path] to the front of the queue ([first]) or its end. */
+    suspend fun queueUpNext(path: String, first: Boolean = false) {
+        context.dataStore.edit { prefs ->
+            val paths = parsePaths(prefs[UP_NEXT_PATHS]).filter { it != path }.toMutableList()
+            if (first) paths.add(0, path) else paths.add(path)
+            prefs[UP_NEXT_PATHS] = JSONArray(paths.take(50)).toString()
+        }
+    }
+
+    /** Takes the first queued wallpaper that still exists; ones that don't are dropped. */
+    suspend fun popUpNext(exists: (String) -> Boolean): String? {
+        var next: String? = null
+        context.dataStore.edit { prefs ->
+            val paths = parsePaths(prefs[UP_NEXT_PATHS])
+            while (paths.isNotEmpty() && next == null) {
+                val p = paths.removeAt(0)
+                if (exists(p)) next = p
+            }
+            prefs[UP_NEXT_PATHS] = JSONArray(paths).toString()
+        }
+        return next
+    }
+
+    /** Discover's layout: "grid", "swipe" or "feed". */
+    val discoverViewMode: Flow<String> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[DISCOVER_VIEW_MODE] ?: "grid" }
+
+    suspend fun setDiscoverViewMode(mode: String) {
+        context.dataStore.edit { it[DISCOVER_VIEW_MODE] = mode }
+    }
+
+    /** Searches pinned as Discover tabs, in order. */
+    val savedSearches: Flow<List<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parsePaths(it[SAVED_SEARCHES]) }
+
+    suspend fun setSavedSearches(searches: List<String>) {
+        context.dataStore.edit { it[SAVED_SEARCHES] = JSONArray(searches.distinct().take(12)).toString() }
     }
 
     val lastRotationMs: Flow<Long> = context.dataStore.data

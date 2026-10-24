@@ -213,7 +213,12 @@ class WallpaperWorker(
         val lockPool = if (filterOut.isEmpty()) lockFiles else lockFiles.filter { it.name !in filterOut }
 
         var mainQueueCount: Int? = null
-        val targetFile = resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
+        // Lined up from the Now screen: shown first, in order (stealth mode still wins).
+        val queued = if (stealthFiles.isEmpty()) {
+            prefs.popUpNext { path -> File(path).let { it.exists() && it.name !in filterOut } }?.let(::File)
+        } else null
+        val targetFile = queued
+            ?: resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
             ?: run {
                 mainQueueCount = homePool.size
                 if (homePool.isEmpty()) {

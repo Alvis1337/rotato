@@ -41,6 +41,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.PlayArrow
@@ -162,7 +163,9 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onBrowseFeed: () -> Unit = {}
+    onBrowseFeed: () -> Unit = {},
+    /** The Collections shelf, shown as the Library's second tab. */
+    collectionsContent: @Composable () -> Unit = {},
 ) {
     val allImages by viewModel.images.collectAsStateWithLifecycle()
     // With the content filter on, NSFW images in the library aren't shown.
@@ -252,24 +255,19 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
+            // Rotation status and History live on the Now tab; Stats in Settings › About & data.
+            if (!inSelectionMode) PrimaryTabRow(selectedTabIndex = selectedTab.coerceAtMost(1)) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Default.Wallpaper, contentDescription = null) },
-                    text = { Text("Library") }
+                    text = { Text("In rotation") }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.History, contentDescription = null) },
-                    text = { Text("History") }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
-                    text = { Text("Stats") }
+                    icon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null) },
+                    text = { Text("Collections") }
                 )
             }
 
@@ -292,8 +290,7 @@ fun HomeScreen(
                         },
                         onGoToDiscover = onBrowseFeed
                 )
-                1 -> HistoryScreen(modifier = Modifier.fillMaxSize())
-                2 -> StatsContent(stats = stats, modifier = Modifier.fillMaxSize())
+                else -> Box(Modifier.fillMaxSize()) { collectionsContent() }
             }
         }
     }
@@ -398,23 +395,7 @@ private fun LibraryContent(
         )
     }
     Column(modifier = Modifier.fillMaxSize()) {
-        RotationStatusCard(
-            isEnabled = settings.isEnabled,
-            imageCount = images.size,
-            intervalMinutes = settings.intervalMinutes,
-            lastRotationMs = lastRotationMs,
-            linkedCollections = linkedCollections,
-            onToggle = { viewModel.setRotationEnabled(!settings.isEnabled) },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
-        if (rotationErrors.isNotEmpty()) {
-            RotationErrorPane(
-                errors = rotationErrors,
-                onClearAll = { viewModel.clearRotationErrors() },
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)
-            )
-        }
+        // Rotation status and errors moved to the Now tab.
 
         if (isLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -485,6 +466,7 @@ private fun LibraryContent(
                     if (images.size == 1) selectedFile = null
                 },
                 onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) },
+                onPlayNext = { currentFile -> viewModel.queueUpNext(currentFile, first = true) },
                 wallpaperRatings = wallpaperRatings,
                 onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) }
             )
@@ -727,7 +709,7 @@ private fun SaveToCollectionDialog(
 }
 
 @Composable
-private fun RotationStatusCard(
+internal fun RotationStatusCard(
     isEnabled: Boolean,
     imageCount: Int,
     intervalMinutes: Int,
@@ -1083,6 +1065,7 @@ private fun ImagePreviewDialog(
     onSetWallpaper: (File) -> Unit,
     onRemove: (File) -> Unit,
     onSaveToGallery: (File) -> Unit = {},
+    onPlayNext: (File) -> Unit = {},
     wallpaperRatings: Map<String, Int> = emptyMap(),
     onSetRating: (File, Int) -> Unit = { _, _ -> }
 ) {
@@ -1361,6 +1344,19 @@ private fun ImagePreviewDialog(
                             )
                         }
 
+                        OutlinedIconButton(
+                            onClick = { onPlayNext(file) },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.PlaylistAdd,
+                                contentDescription = "Play next",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
                         Spacer(Modifier.weight(1f))
 
                         OutlinedIconButton(
@@ -1624,7 +1620,7 @@ private fun formatAgo(epochMs: Long): String {
 }
 
 @Composable
-private fun RotationErrorPane(
+internal fun RotationErrorPane(
     errors: List<RotationError>,
     onClearAll: () -> Unit,
     modifier: Modifier = Modifier

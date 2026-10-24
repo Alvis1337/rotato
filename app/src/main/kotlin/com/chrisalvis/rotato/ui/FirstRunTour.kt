@@ -71,9 +71,13 @@ object FirstRunTour {
             if (supportsFoldPairs(context)) add("On your foldable, Pair sets one image for the cover screen and another for the inside.")
         }
         "home" -> listOf(
-            "This is your Library: everything Rotato rotates through.",
+            "This is your Library: everything Rotato rotates through. Your collections are on the second tab.",
             "Tap a colour swatch to show only wallpapers in that colour, or Match a photo to find ones that go with any picture.",
             "Settings › Rotation has the Rotato live wallpaper: crossfades, video wallpapers and double-tap for next.",
+        )
+        "now" -> listOf(
+            "Now shows what's on your screen, with next, back, save and never-again one tap away.",
+            "Line wallpapers up from the Library with Play next; they show before anything else.",
         )
         "browse" -> listOf(
             "Collections hold the images you save from Discover.",

@@ -118,6 +118,58 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val lastRotationMs: StateFlow<Long> = preferences.lastRotationMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
+    /** The wallpaper on screen now (the newest history entry). */
+    val nowShowing: StateFlow<com.chrisalvis.rotato.data.WallpaperHistoryItem?> = preferences.historyJson
+        .map { historyFromJson(it).maxByOrNull { h -> h.timestamp } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Wallpapers lined up to show next, oldest first; missing files drop out. */
+    val upNext: StateFlow<List<File>> = preferences.upNext
+        .map { paths -> paths.map(::File).filter { it.exists() } }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Lines [file] up to show next ([first]) or after everything already queued. */
+    fun queueUpNext(file: File, first: Boolean = false) {
+        viewModelScope.launch {
+            preferences.queueUpNext(file.absolutePath, first)
+            android.widget.Toast.makeText(getApplication(), if (first) "Playing next" else "Added to Up next", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun removeFromUpNext(file: File) {
+        viewModelScope.launch { preferences.setUpNext(upNext.value.filter { it != file }.map { it.absolutePath }) }
+    }
+
+    fun moveUpNext(from: Int, to: Int) {
+        val list = upNext.value.toMutableList()
+        if (from !in list.indices || to !in list.indices) return
+        list.add(to, list.removeAt(from))
+        viewModelScope.launch { preferences.setUpNext(list.map { it.absolutePath }) }
+    }
+
+    fun clearUpNext() {
+        viewModelScope.launch { preferences.setUpNext(emptyList()) }
+    }
+
+    /** Runs a remote-style action (next, previous, save) right away. */
+    fun automation(action: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.chrisalvis.rotato.worker.AutomationReceiver.handle(getApplication(), android.content.Intent(action))
+        }
+    }
+
+    /** Never show the current wallpaper again and move on. */
+    fun dislikeCurrent() {
+        val app = getApplication<Application>()
+        app.sendBroadcast(android.content.Intent(app, com.chrisalvis.rotato.worker.DislikeWallpaperReceiver::class.java))
+        viewModelScope.launch {
+            // Let the receiver block and remove it first, so the next pick can't be the same one.
+            kotlinx.coroutines.delay(1_500)
+            automation(com.chrisalvis.rotato.worker.AutomationReceiver.ACTION_NEXT)
+        }
+    }
+
     val lastSkipReason: StateFlow<String?> = preferences.lastSkipReason
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -77,6 +78,7 @@ fun SettingsScreen(
     onNavigateToIntegrations: () -> Unit = {},
     onNavigateToAboutData: () -> Unit = {},
     onNavigateToTools: () -> Unit = {},
+    onNavigateToTaste: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -229,6 +231,13 @@ fun SettingsScreen(
                         title = "Tools",
                         subtitle = "Storage cleaner, collection doctor, HD upgrade, photo tags, offline pack, place rules",
                         onClick = onNavigateToTools,
+                    )
+                    HorizontalDivider()
+                    SettingsCategoryRow(
+                        icon = Icons.Default.ThumbUp,
+                        title = "Taste",
+                        subtitle = "What Discover shows you: profiles, liked and blocked tags",
+                        onClick = onNavigateToTaste,
                     )
                     HorizontalDivider()
                     SettingsCategoryRow(

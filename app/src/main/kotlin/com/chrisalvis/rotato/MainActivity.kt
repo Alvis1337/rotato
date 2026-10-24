@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wallpaper
@@ -168,13 +169,12 @@ class MainActivity : AppCompatActivity() {
                 val currentRoute = navBackStackEntry?.destination?.route
 
                 val selectedTab = when (currentRoute) {
-                    "discover" -> 0
-                    "home" -> 1
-                    "browse" -> 2
-                    "taste" -> 3
+                    "discover", "taste" -> 0
+                    "home", "browse" -> 1
+                    "now" -> 2
                     "settings", "sources", "schedule", "stats", "source_health",
                     "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
-                    "settings_integrations", "settings_about_data", "settings_tools" -> 4
+                    "settings_integrations", "settings_about_data", "settings_tools" -> 3
                     else -> 0
                 }
 
@@ -198,8 +198,7 @@ class MainActivity : AppCompatActivity() {
                 val navTabs = listOf(
                     NavTab("discover", "Discover", Icons.Default.AutoAwesome),
                     NavTab("home", "Library", Icons.Default.Wallpaper),
-                    NavTab("browse", "Collections", Icons.Default.BookmarkBorder),
-                    NavTab("taste", "Taste", Icons.Default.Tune),
+                    NavTab("now", "Now", Icons.Default.PlayCircleOutline),
                     NavTab("settings", "Settings", Icons.Default.Settings),
                 )
                 val onTabSelected: (Int) -> Unit = { index ->
@@ -236,6 +235,7 @@ class MainActivity : AppCompatActivity() {
                         onNavigateToIntegrations = { openSettingsCategory("settings_integrations") },
                         onNavigateToAboutData = { openSettingsCategory("settings_about_data") },
                         onNavigateToTools = { openSettingsCategory("settings_tools") },
+                        onNavigateToTaste = { navController.navigate("taste") },
                         modifier = paneModifier,
                     )
                 }
@@ -317,11 +317,26 @@ class MainActivity : AppCompatActivity() {
                                     onNavigateToSources = { navController.navigate("sources") }
                                 )
                             }
+                            // Library: what's in rotation, with Collections as its second tab.
+                            val collectionsShelf: @Composable () -> Unit = {
+                                BrowseScreen(
+                                    onGoToDiscover = { navController.navigate("discover") },
+                                    onSearchDiscover = { tag ->
+                                        brainrotViewModel.searchByTag(tag)
+                                        navController.navigate("discover") { launchSingleTop = true }
+                                    },
+                                )
+                            }
                             composable("home") {
                                 HomeScreen(
                                     viewModel = homeViewModel,
-                                    onBrowseFeed = { navController.navigate("browse") }
+                                    onBrowseFeed = { navController.navigate("browse") },
+                                    collectionsContent = collectionsShelf,
                                 )
+                            }
+                            composable("now") {
+                                val lists by homeViewModel.collections.collectAsStateWithLifecycle()
+                                NowScreen(viewModel = homeViewModel, collections = lists)
                             }
                             composable("settings") {
                                 if (settingsTwoPane) {
