@@ -100,6 +100,21 @@ object DanbooruEngine : PluginEngine() {
         else getText(url)?.let(::parseTagListing).orEmpty()
     }
 
+    override fun lookupPost(manifest: PluginManifest, source: LocalSource, id: String): PostLookup {
+        val base = baseUrl(manifest, source)
+        val auth = authHeader(source)
+        val url = "$base/posts/${id.urlEncode()}.json"
+        val (code, body) = (if (auth != null) getResponse(url, "Authorization" to auth) else getResponse(url))
+            ?: return PostLookup.Unknown
+        if (code == 404) return PostLookup.Gone
+        if (code !in 200..299) return PostLookup.Unknown
+        val post = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return PostLookup.Unknown
+        val rating = post.optString("rating")
+        // Restricted posts come back without a file link for this account; that isn't "gone".
+        return buildWallpaper(post, base, manifest, nsfw = rating == "q" || rating == "e")
+            ?.takeIf { it.fullUrl.isNotBlank() }?.let { PostLookup.Found(it) } ?: PostLookup.Unknown
+    }
+
     private fun authHeader(source: LocalSource): String? =
         if (source.apiKey.isNotBlank() && source.apiUser.isNotBlank())
             "Basic ${android.util.Base64.encodeToString(

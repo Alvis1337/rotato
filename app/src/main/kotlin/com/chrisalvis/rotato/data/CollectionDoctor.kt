@@ -3,7 +3,7 @@ package com.chrisalvis.rotato.data
 import android.content.Context
 import com.chrisalvis.rotato.data.plugins.PluginExecutor
 import com.chrisalvis.rotato.data.plugins.PluginRepository
-import com.chrisalvis.rotato.data.plugins.Protocol
+import com.chrisalvis.rotato.data.plugins.PostLookup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -23,6 +23,8 @@ data class DoctorReport(
     val checked: Int,
     val dead: List<LocalWallpaperEntry>,
     val unchecked: Int,
+    /** Entries whose post had moved to a new link; already saved with the new one. */
+    val repaired: Int = 0,
 )
 
 /**
@@ -56,8 +58,8 @@ object CollectionDoctor {
             var code = 0
             var type: String? = null
             http.newCall(request(head = true)).execute().use { code = it.code; type = it.header("Content-Type") }
-            // Some image hosts don't answer HEAD; ask for the first byte instead.
-            if (code == 405 || code == 403 || code == 400) {
+            // Some image hosts don't answer HEAD (or answer it wrongly); ask for the first byte instead.
+            if (code !in 200..299) {
                 http.newCall(request(head = false)).execute().use { code = it.code; type = it.header("Content-Type") }
             }
             when {
@@ -97,7 +99,63 @@ object CollectionDoctor {
                 }
             }.awaitAll().filterNotNull().toSet()
         }
-        DoctorReport(total, entries.filter { it.fullUrl in deadUrls }, unknown.get())
+        // An image link that looks dead isn't proof the post is: hosts block probes, and boorus
+        // move files. Each booru post is asked for on its site before it's called broken.
+        val suspects = entries.filter { it.fullUrl in deadUrls }
+        val verdicts = confirm(context, suspects)
+        // No verdict (not a booru post): the probe's word stands.
+        val stillDead = suspects.filter { verdicts[it.id].let { v -> v == null || v == Verdict.Gone } }
+        val unconfirmed = suspects.count { verdicts[it.id] == Verdict.Unknown }
+        val moved = suspects.mapNotNull { e ->
+            val p = (verdicts[e.id] as? Verdict.Moved)?.post ?: return@mapNotNull null
+            e.copy(
+                fullUrl = p.fullUrl,
+                sampleUrl = p.sampleUrl,
+                thumbUrl = p.thumbUrl,
+                resolution = p.resolution.ifBlank { e.resolution },
+                pageUrl = p.pageUrl.ifBlank { e.pageUrl },
+            )
+        }
+        if (moved.isNotEmpty()) LocalListsPreferences(context).updateEntries(moved)
+        DoctorReport(total, stillDead, unknown.get() + unconfirmed, repaired = moved.size)
+    }
+
+    private sealed interface Verdict {
+        /** The post and its image are fine; the probe was wrong. */
+        data object Fine : Verdict
+        data class Moved(val post: com.chrisalvis.rotato.data.BrainrotWallpaper) : Verdict
+        data object Gone : Verdict
+        data object Unknown : Verdict
+    }
+
+    /**
+     * Asks each suspect's site about its post. Entries that aren't booru posts get no verdict
+     * (their probe result stands).
+     */
+    private suspend fun confirm(context: Context, suspects: List<LocalWallpaperEntry>): Map<String, Verdict> = coroutineScope {
+        if (suspects.isEmpty()) return@coroutineScope emptyMap()
+        val manifests = PluginRepository(context).manifests.first()
+        val sources = LocalSourcesPreferences(context).sources.first()
+        val gate = Semaphore(3)
+        // One question per post, however many collections hold it.
+        suspects.filter { it.fullUrl.startsWith("http") && it.sourceId.isNotBlank() }
+            .groupBy { it.source.lowercase() to it.sourceId }
+            .map { (key, group) ->
+                async {
+                    val manifest = manifests.firstOrNull { it.id.equals(key.first, ignoreCase = true) }
+                        ?: return@async emptyList<Pair<String, Verdict>>()
+                    val engine = PluginExecutor.engineFor(manifest) ?: return@async emptyList<Pair<String, Verdict>>()
+                    val source = sources.firstOrNull { it.pluginId.equals(manifest.id, ignoreCase = true) } ?: LocalSource(pluginId = manifest.id)
+                    val verdict = gate.withPermit {
+                        when (val r = runCatching { engine.lookupPost(manifest, source, key.second) }.getOrDefault(PostLookup.Unknown)) {
+                            is PostLookup.Found -> if (r.post.fullUrl == group.first().fullUrl) Verdict.Fine else Verdict.Moved(r.post)
+                            PostLookup.Gone -> Verdict.Gone
+                            PostLookup.Unknown -> Verdict.Unknown
+                        }
+                    }
+                    group.map { it.id to verdict }
+                }
+            }.awaitAll().flatten().toMap()
     }
 
     /**
@@ -111,12 +169,11 @@ object CollectionDoctor {
         for (entry in dead) {
             if (!entry.fullUrl.startsWith("http") || entry.sourceId.isBlank()) continue
             val manifest = manifests.firstOrNull { it.id.equals(entry.source, ignoreCase = true) } ?: continue
-            if (manifest.protocol !in setOf(Protocol.DANBOORU, Protocol.GELBOORU, Protocol.MOEBOORU)) continue
+            val engine = PluginExecutor.engineFor(manifest) ?: continue
             val source = sources.firstOrNull { it.pluginId.equals(manifest.id, ignoreCase = true) } ?: LocalSource(pluginId = manifest.id)
-            val nsfw = entry.isNsfw || manifest.adultOnly
-            val post = runCatching {
-                PluginExecutor.fetchPage(manifest, source, "id:${entry.sourceId}", emptyList(), nsfw, BrainrotFilters(), 5)
-            }.getOrDefault(emptyList()).firstOrNull { it.id == entry.sourceId } ?: continue
+            // Looked up by id with no rating filter: the old search-based lookup only found posts
+            // rated the way the entry was flagged, so most repairs found nothing.
+            val post = (runCatching { engine.lookupPost(manifest, source, entry.sourceId) }.getOrNull() as? PostLookup.Found)?.post ?: continue
             fixed += entry.copy(
                 fullUrl = post.fullUrl,
                 sampleUrl = post.sampleUrl,

@@ -77,11 +77,12 @@ class ToolsViewModel(application: Application) : AndroidViewModel(application) {
             val report = CollectionDoctor.check(app) { done, total -> _doctor.update { it.copy(done = done, total = total) } }
             _doctorReport.update { report }
             _doctor.update {
+                val fixedNote = if (report.repaired > 0) " Updated ${report.repaired} links that had moved." else ""
                 ToolProgress(message = when {
-                    report.dead.isEmpty() && report.unchecked == 0 -> "All ${report.checked} saved wallpapers are fine"
-                    report.dead.isEmpty() -> "Nothing broken found. ${report.unchecked} couldn't be reached, so check again online"
-                    else -> "${report.dead.size} of ${report.checked} are broken" +
-                        (if (report.unchecked > 0) ", ${report.unchecked} couldn't be reached" else "")
+                    report.dead.isEmpty() && report.unchecked == 0 -> "All ${report.checked} saved wallpapers are fine.$fixedNote"
+                    report.dead.isEmpty() -> "Nothing broken found. ${report.unchecked} couldn't be checked; their site didn't answer.$fixedNote"
+                    else -> "${report.dead.size} of ${report.checked} are gone from their site" +
+                        (if (report.unchecked > 0) ", ${report.unchecked} couldn't be checked" else "") + ".$fixedNote"
                 })
             }
         }

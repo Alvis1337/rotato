@@ -38,6 +38,12 @@ abstract class PluginEngine {
      */
     open fun lookupTags(manifest: PluginManifest, source: LocalSource, token: String): List<Pair<String, Int>> = emptyList()
 
+    /**
+     * Post [id] as the site has it now, whatever its rating: [PostLookup.Gone] when the site
+     * says it doesn't exist, [PostLookup.Unknown] when it couldn't be asked. Blocking.
+     */
+    open fun lookupPost(manifest: PluginManifest, source: LocalSource, id: String): PostLookup = PostLookup.Unknown
+
     /** Resolved base URL: user override wins over manifest default. */
     protected fun baseUrl(manifest: PluginManifest, source: LocalSource): String =
         source.baseUrl.ifBlank { manifest.defaultBaseUrl }.trimEnd('/')
@@ -50,4 +56,10 @@ abstract class PluginEngine {
         if (!nsfw && manifest.adultOnly) return false
         return !(nsfw && manifest.safeContent)
     }
+}
+
+sealed interface PostLookup {
+    data class Found(val post: BrainrotWallpaper) : PostLookup
+    data object Gone : PostLookup
+    data object Unknown : PostLookup
 }

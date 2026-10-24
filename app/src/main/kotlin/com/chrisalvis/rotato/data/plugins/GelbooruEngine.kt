@@ -121,6 +121,28 @@ object GelbooruEngine : PluginEngine() {
         return getText(url)?.let(::parseTagListing).orEmpty()
     }
 
+    override fun lookupPost(manifest: PluginManifest, source: LocalSource, id: String): PostLookup {
+        val base = baseUrl(manifest, source)
+        val extras = manifest.extras
+        // No rating tag: the post is wanted whatever it's rated.
+        val url = "$base/index.php?page=dapi&s=post&q=index&json=1&limit=1&tags=${"id:$id".urlEncode()}${buildAuthSuffix(source)}"
+        val (code, body) = getResponse(url) ?: return PostLookup.Unknown
+        if (code !in 200..299) return PostLookup.Unknown
+        val text = body.trim()
+        // Gelbooru answers {"@attributes":{"count":0}}; Rule34-style sites an empty body or [].
+        val arr = when {
+            text.isEmpty() || text == "[]" -> return PostLookup.Gone
+            text.startsWith("[") -> runCatching { JSONArray(text) }.getOrNull()
+            text.startsWith("{") -> runCatching { JSONObject(text) }.getOrNull()?.let { it.optJSONArray("post") ?: JSONArray() }
+            else -> null
+        } ?: return PostLookup.Unknown
+        val post = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.firstOrNull { postId(it) == id }
+            ?: return if (arr.length() == 0) PostLookup.Gone else PostLookup.Unknown
+        val rating = post.optString("rating").lowercase()
+        val wp = buildWallpaper(post, base, manifest, extras, nsfw = rating.isNotBlank() && !rating.startsWith("g") && !rating.startsWith("s"))
+        return wp?.let { PostLookup.Found(it) } ?: PostLookup.Unknown
+    }
+
     private fun buildAuthSuffix(source: LocalSource): String {
         // Also fixes credentials saved before pasting the site's "&api_key=…&user_id=…" was understood.
         val (key, user) = com.chrisalvis.rotato.data.normalizeCredentials(source.apiKey, source.apiUser)

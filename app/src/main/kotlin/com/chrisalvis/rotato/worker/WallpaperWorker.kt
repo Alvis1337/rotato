@@ -46,6 +46,8 @@ import com.chrisalvis.rotato.data.poolKey
 import com.chrisalvis.rotato.data.poolKeys
 import com.chrisalvis.rotato.data.findPoolFile
 import com.chrisalvis.rotato.data.toJson
+import com.chrisalvis.rotato.data.applyWallpaperFile
+import com.chrisalvis.rotato.live.LiveWallpaper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -162,7 +164,10 @@ class WallpaperWorker(
 
         val allSources = LocalSourcesPreferences(applicationContext).sources.first()
 
-        val allImages = withContext(Dispatchers.IO) { repository.getImages() }
+        // Library videos join the rotation only while Rotato's live wallpaper is on to play them.
+        val allImages = withContext(Dispatchers.IO) {
+            if (LiveWallpaper.isActive(applicationContext)) repository.getMedia() else repository.getImages()
+        }
 
         // Stealth mode: while active, rotation draws exclusively from the designated stealth
         // collection, overriding schedules and normal per-screen pools — a "panic button" leanback.
@@ -224,8 +229,19 @@ class WallpaperWorker(
             }
 
         // For per-screen mode, pick a separate lock file (different from home when possible).
+        // A video plays on both screens through the live wallpaper; nothing else to pick.
+        if (LiveWallpaper.isVideoFile(targetFile)) {
+            val error = applyWallpaperFile(applicationContext, targetFile)
+            if (error != null) {
+                prefs.addRotationError(RotationError(RotationErrorType.SET_FAILED, error))
+                return Result.failure()
+            }
+            prefs.recordRotationAndIncrement()
+            return Result.success()
+        }
+
         val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
-            val candidates = lockPool.filter { it.absolutePath != targetFile.absolutePath }
+            val candidates = lockPool.filter { it.absolutePath != targetFile.absolutePath && !LiveWallpaper.isVideoFile(it) }
             candidates.ifEmpty { lockPool }.randomOrNull() ?: targetFile
         } else targetFile
 

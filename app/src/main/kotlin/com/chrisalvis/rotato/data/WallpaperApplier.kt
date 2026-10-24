@@ -2,6 +2,7 @@ package com.chrisalvis.rotato.data
 
 import android.app.WallpaperManager
 import android.content.Context
+import com.chrisalvis.rotato.live.LiveWallpaper
 import kotlinx.coroutines.flow.first
 import java.io.File
 
@@ -12,6 +13,12 @@ import java.io.File
  */
 suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Boolean = true): String? {
     val prefs = RotatoPreferences(context)
+    if (LiveWallpaper.isVideoFile(file)) {
+        playVideoFile(context, file)?.let { return it }
+        if (recordAsCurrent) prefs.pushAppliedWallpaper(file.absolutePath)
+        recordShown(context, prefs, file)
+        return null
+    }
     val settings = prefs.settings.first()
     val pair = foldPairWallpaperFor(context, file, settings.wallpaperFit)
     val isNsfwHomeOnly = prefs.nsfwHomeOnly.first() && prefs.nsfwFileNames.first().contains(file.name)
@@ -36,6 +43,31 @@ suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Bo
         screenBitmap.recycle()
     }
     if (recordAsCurrent) prefs.pushAppliedWallpaper(file.absolutePath)
+    recordShown(context, prefs, file)
+    return null
+}
+
+/**
+ * Plays a video from the Library through Rotato's live wallpaper, which has to be on. A copy
+ * plays, so removing it from the Library doesn't blank the screen. Null on success.
+ */
+internal fun playVideoFile(context: Context, file: File): String? {
+    if (!LiveWallpaper.isActive(context)) return "Turn on the Rotato live wallpaper (Settings › Rotation) to use videos"
+    if (!file.exists()) return "Video is missing"
+    val dir = File(context.filesDir, "live").apply { mkdirs() }
+    val copy = File(dir, "video_${System.currentTimeMillis()}.${file.extension.lowercase()}")
+    try {
+        file.copyTo(copy, overwrite = true)
+    } catch (e: Exception) {
+        copy.delete()
+        return "Couldn't play the video"
+    }
+    dir.listFiles { f -> f.name.startsWith("video_") && f != copy }?.forEach { it.delete() }
+    LiveWallpaper.showVideo(context, copy)
+    return null
+}
+
+private suspend fun recordShown(context: Context, prefs: RotatoPreferences, file: File) {
     val entry = LocalListsPreferences(context).allWallpapers.first()
         .let { all -> all.firstOrNull { poolKey(it.source, it.sourceId) == file.nameWithoutExtension } ?: all.firstOrNull { sanitizeFilename(it.sourceId) == file.nameWithoutExtension } }
     prefs.recordWallpaperShown(
@@ -49,7 +81,6 @@ suspend fun applyWallpaperFile(context: Context, file: File, recordAsCurrent: Bo
             pageUrl = entry?.pageUrl ?: "",
         )
     )
-    return null
 }
 
 /** Goes back to the wallpaper shown before the current one. Returns an error message or null. */

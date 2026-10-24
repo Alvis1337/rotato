@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
@@ -286,7 +287,7 @@ fun HomeScreen(
                     inSelectionMode = inSelectionMode,
                     onPhotoPick = {
                         photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                         )
                         },
                         onGoToDiscover = onBrowseFeed
@@ -887,6 +888,19 @@ private fun ImageThumbnail(
 
         NsfwBlurLayer(isNsfw, nsfwBlurEnabled, revealed, compact = true)
 
+        if (badgeInfo?.isVideo == true && !isBlurred) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "Video",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    .padding(6.dp)
+                    .size(22.dp)
+            )
+        }
+
         if (foldFriendly) {
             FoldBadge(Modifier.align(Alignment.TopStart).padding(6.dp))
         }
@@ -1016,10 +1030,12 @@ private fun WallpaperRatingDialog(
 private data class ImageBadgeInfo(
     val width: Int,
     val height: Int,
-    val fileSizeText: String
+    val fileSizeText: String,
+    val isVideo: Boolean = false,
 )
 
 private fun readImageBadgeInfo(file: File): ImageBadgeInfo? {
+    if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) return readVideoBadgeInfo(file)
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, options)
     if (options.outWidth <= 0 || options.outHeight <= 0) return null
@@ -1028,6 +1044,24 @@ private fun readImageBadgeInfo(file: File): ImageBadgeInfo? {
         height = options.outHeight,
         fileSizeText = formatFileSize(file.length())
     )
+}
+
+/** Size of a Library video, turned the way it plays. */
+private fun readVideoBadgeInfo(file: File): ImageBadgeInfo? {
+    val retriever = android.media.MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(file.absolutePath)
+        val w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+        val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+        val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        if (w <= 0 || h <= 0) return null
+        val (width, height) = if (rotation % 180 != 0) h to w else w to h
+        ImageBadgeInfo(width, height, formatFileSize(file.length()), isVideo = true)
+    } catch (e: Exception) {
+        null
+    } finally {
+        runCatching { retriever.release() }
+    }
 }
 
 private fun formatFileSize(bytes: Long): String {
@@ -1169,6 +1203,20 @@ private fun ImagePreviewDialog(
                 beyondViewportPageCount = 1
             ) { page ->
                 val pageFile = images.getOrNull(page) ?: return@HorizontalPager
+                if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(pageFile)) {
+                    // Only the page in view plays; neighbours show their first frame.
+                    if (page == pagerState.currentPage) {
+                        VideoPlayerView(
+                            url = android.net.Uri.fromFile(pageFile).toString(),
+                            modifier = Modifier.fillMaxSize(),
+                            allowTapToToggle = true,
+                            showMuteButton = true,
+                        )
+                    } else {
+                        AsyncImage(model = pageFile, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                    }
+                    return@HorizontalPager
+                }
                 AsyncImage(
                     model = pageFile,
                     contentDescription = null,
@@ -1212,6 +1260,9 @@ private fun ImagePreviewDialog(
             currentFile?.let { file ->
                 val fileSize = remember(file) { "%.1f MB".format(file.length() / 1_048_576.0) }
                 val imageDimens = remember(file) {
+                    if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) {
+                        return@remember readVideoBadgeInfo(file)?.let { "${it.width}×${it.height} · video" }
+                    }
                     try {
                         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeFile(file.absolutePath, opts)

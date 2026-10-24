@@ -196,7 +196,11 @@ fun VideoPlayerView(
         val httpFactory = DefaultHttpDataSource.Factory().apply {
             refererFor(url)?.let { referer -> setDefaultRequestProperties(mapOf("Referer" to referer)) }
         }
-        val dataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+        // Library videos are files already on the phone: play them directly, not through the cache.
+        val isLocal = url.startsWith("file:") || url.startsWith("content:") || url.startsWith("/")
+        val dataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (isLocal) {
+            androidx.media3.datasource.DefaultDataSource.Factory(context)
+        } else androidx.media3.datasource.cache.CacheDataSource.Factory()
             .setCache(VideoCache.get(context))
             .setUpstreamDataSourceFactory(httpFactory)
             .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)

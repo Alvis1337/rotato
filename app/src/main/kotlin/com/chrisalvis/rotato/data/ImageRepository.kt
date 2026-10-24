@@ -18,25 +18,37 @@ import java.util.UUID
 
 class ImageRepository(private val context: Context) {
 
+    companion object {
+        val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "webp", "gif")
+        val VIDEO_EXTS = setOf("mp4", "webm", "mkv", "mov", "m4v")
+    }
+
     private val imageDir: File
         get() = File(context.filesDir, "rotato_images").also { it.mkdirs() }
 
-    fun getImages(): List<File> {
-        val imageExts = setOf("jpg", "jpeg", "png", "webp", "gif")
-        return imageDir.listFiles()
-            ?.filter { it.isFile && it.extension.lowercase() in imageExts }
+    /** The pool's still images: what static wallpapers, the screensaver and photo tags use. */
+    fun getImages(): List<File> = list(IMAGE_EXTS)
+
+    /** Videos in the pool. They play through Rotato's live wallpaper. */
+    fun getVideos(): List<File> = list(VIDEO_EXTS)
+
+    /** Everything the Library shows: images and videos. */
+    fun getMedia(): List<File> = list(IMAGE_EXTS + VIDEO_EXTS)
+
+    private fun list(exts: Set<String>): List<File> =
+        imageDir.listFiles()
+            ?.filter { it.isFile && it.extension.lowercase() in exts }
             ?.sortedBy { it.name }
             ?: emptyList()
-    }
 
     /**
      * The pool's images, re-read whenever a file lands in or leaves the directory (downloads,
      * imports, deletes, the worker's temp-file renames). It used to poll every two seconds for
      * as long as the Library was open.
      */
-    fun imagesFlow(): Flow<List<File>> = callbackFlow {
+    fun mediaFlow(): Flow<List<File>> = callbackFlow {
         val dir = imageDir
-        trySend(getImages())
+        trySend(getMedia())
         // No CREATE: it fires while a copied file is still empty, and the CLOSE_WRITE that follows
         // produces the same file list, so the grid was left showing a broken thumbnail.
         val mask = FileObserver.DELETE or FileObserver.MOVED_TO or
@@ -47,7 +59,7 @@ class ImageRepository(private val context: Context) {
             override fun onEvent(event: Int, path: String?) {
                 // Half-written downloads end in .part; the rename to the real name is what counts.
                 if (path == null || path.endsWith(".part")) return
-                trySend(getImages())
+                trySend(getMedia())
             }
         }
         observer.startWatching()
@@ -55,6 +67,8 @@ class ImageRepository(private val context: Context) {
     }.conflate().distinctUntilChanged().flowOn(Dispatchers.IO)
 
     suspend fun addImage(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        val mime = context.contentResolver.getType(uri).orEmpty()
+        if (mime.startsWith("video/")) return@withContext addVideo(uri, mime)
         try {
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: return@withContext false
@@ -86,6 +100,27 @@ class ImageRepository(private val context: Context) {
             true
         } catch (e: Exception) {
             false
+        }
+    }
+
+    /** Copies a video in as it is (decoding it as a picture is what used to leave a broken file). */
+    private fun addVideo(uri: Uri, mime: String): Boolean {
+        val ext = when {
+            "webm" in mime -> "webm"
+            "matroska" in mime -> "mkv"
+            "quicktime" in mime -> "mov"
+            else -> "mp4"
+        }
+        val name = UUID.randomUUID().toString()
+        val tmp = File(imageDir, "$name.part")
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return false
+            input.use { src -> tmp.outputStream().use { src.copyTo(it) } }
+            tmp.length() > 0 && tmp.renameTo(File(imageDir, "$name.$ext"))
+        } catch (e: Exception) {
+            false
+        } finally {
+            tmp.delete()
         }
     }
 

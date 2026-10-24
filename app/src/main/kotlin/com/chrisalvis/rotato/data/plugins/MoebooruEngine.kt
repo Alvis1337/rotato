@@ -65,6 +65,18 @@ object MoebooruEngine : PluginEngine() {
             .filter { (name, _) -> name.startsWith(token) }
     }
 
+    override fun lookupPost(manifest: PluginManifest, source: LocalSource, id: String): PostLookup {
+        val base = baseUrl(manifest, source)
+        val (code, body) = getResponse("$base/post.json?tags=${"id:$id".urlEncode()}&limit=1") ?: return PostLookup.Unknown
+        if (code !in 200..299) return PostLookup.Unknown
+        val arr = runCatching { org.json.JSONArray(body.trim()) }.getOrNull() ?: return PostLookup.Unknown
+        if (arr.length() == 0) return PostLookup.Gone
+        val post = arr.optJSONObject(0) ?: return PostLookup.Unknown
+        val rating = post.optString("rating")
+        return buildWallpaper(post, base, manifest, nsfw = rating == "q" || rating == "e")
+            ?.let { PostLookup.Found(it) } ?: PostLookup.Unknown
+    }
+
     private fun buildTagQuery(query: String, nsfw: Boolean, filters: BrainrotFilters = BrainrotFilters()): String = buildString {
         val normalized = normalizeUserQuery(query)
         val tokens = if (normalized.isNotBlank()) normalized.split(' ').filter { it.isNotBlank() } else emptyList()

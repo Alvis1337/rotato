@@ -71,6 +71,15 @@ internal fun normalizeUserQuery(q: String): String =
         .filter { it.isNotBlank() && it != "-" && it != "~" }
         .joinToString(" ")
 
+/** Status code and body, or null when the site couldn't be reached at all. */
+internal fun getResponse(url: String, vararg headers: Pair<String, String>): Pair<Int, String>? = try {
+    val req = Request.Builder().url(url)
+        .header("User-Agent", BROWSER_UA)
+        .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
+        .build()
+    http.newCall(req).execute().use { resp -> resp.code to resp.body?.string().orEmpty() }
+} catch (e: Exception) { null }
+
 internal fun getText(url: String, vararg headers: Pair<String, String>): String? = try {
     val req = Request.Builder().url(url)
         .header("User-Agent", BROWSER_UA)

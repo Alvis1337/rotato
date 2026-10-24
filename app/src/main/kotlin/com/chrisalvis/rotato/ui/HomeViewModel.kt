@@ -231,7 +231,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Pushes rotato_images/ changes into [_images] as files come and go. */
     private fun observeImageDir() {
         viewModelScope.launch {
-            repository.imagesFlow().collect { files ->
+            repository.mediaFlow().collect { files ->
                 _images.update { files }
             }
         }
@@ -241,7 +241,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.update { true }
             try {
-                _images.update { repository.getImages() }
+                _images.update { repository.getMedia() }
             } finally {
                 _isLoading.update { false }
             }
@@ -250,7 +250,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshFromFeeds() {
         viewModelScope.launch {
-            _images.update { repository.getImages() }
+            _images.update { repository.getMedia() }
         }
     }
 
@@ -293,7 +293,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
-                if (changed) _images.update { repository.getImages() }
+                if (changed) _images.update { repository.getMedia() }
             }
         }
     }
@@ -330,7 +330,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.update { true }
             try {
                 uris.forEach { repository.addImage(it) }
-                _images.update { repository.getImages() }
+                _images.update { repository.getMedia() }
             } finally {
                 _isLoading.update { false }
             }
@@ -340,7 +340,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun removeImage(file: File) {
         viewModelScope.launch {
             repository.removeImage(file)
-            _images.update { repository.getImages() }
+            _images.update { repository.getMedia() }
             // Auto-disable rotation if the pool is now empty
             if (_images.value.isEmpty() && settings.value.isEnabled) {
                 setRotationEnabled(false)
@@ -532,7 +532,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _duplicateScan.update { DuplicateScan.Scanning }
             val groups = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                com.chrisalvis.rotato.data.findDuplicateImages(_images.value)
+                com.chrisalvis.rotato.data.findDuplicateImages(_images.value.filterNot { com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(it) })
             }
             _duplicateScan.update { DuplicateScan.Done(groups) }
         }
@@ -569,7 +569,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteSelected(files: Set<File>) {
         viewModelScope.launch {
             files.forEach { repository.removeImage(it) }
-            _images.update { repository.getImages() }
+            _images.update { repository.getMedia() }
             if (_images.value.isEmpty() && settings.value.isEnabled) {
                 setRotationEnabled(false)
             }
@@ -660,7 +660,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val ok = feedRepo.saveFileToGallery(app, file)
             android.widget.Toast.makeText(
                 app,
-                if (ok) "Saved to Pictures/Rotato" else "Save failed",
+                when {
+                    !ok -> "Save failed"
+                    com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file) -> "Saved to Movies/Rotato"
+                    else -> "Saved to Pictures/Rotato"
+                },
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         }
