@@ -35,6 +35,7 @@ class BootReceiver : BroadcastReceiver() {
                 val schedEntries = SchedulePreferences(context).entries.first()
                 ScheduleManager.scheduleAll(context, schedEntries)
                 UnfoldWatcherService.sync(context, prefs.rotateOnUnfold.first())
+                com.chrisalvis.rotato.data.PlaceRules.register(context)
 
                 val settings = prefs.settings.first()
                 if (!settings.isEnabled) return@launch

@@ -118,6 +118,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.mlkit.subject.segmentation)
+    implementation(libs.mlkit.image.labeling)
     implementation(libs.androidx.media3.ui)
     implementation(libs.okhttp)
     implementation(libs.androidx.window)

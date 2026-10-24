@@ -83,6 +83,9 @@ interface CollectionsDao {
     @Query("UPDATE entries SET listId = :listId, json = :json WHERE id = :id")
     suspend fun moveEntry(id: String, listId: String, json: String)
 
+    @Query("UPDATE entries SET sourceId = :sourceId, source = :source, fullUrl = :fullUrl, json = :json WHERE id = :id")
+    suspend fun updateEntry(id: String, sourceId: String, source: String, fullUrl: String, json: String)
+
     @Query("DELETE FROM entries WHERE id IN (:ids)")
     suspend fun deleteEntries(ids: List<String>)
 

@@ -27,6 +27,10 @@ object LiveWallpaper {
     internal const val KEY_PARALLAX = "parallax"
     internal const val KEY_DOUBLE_TAP = "double_tap"
     internal const val KEY_SUN = "follow_sun"
+    internal const val KEY_BATTERY = "battery_hold"
+
+    /** Battery level at or below which, unplugged, motion pauses when [batteryAware] is on. */
+    const val LOW_BATTERY_PERCENT = 20
 
     private val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "m4v")
 
@@ -114,6 +118,10 @@ object LiveWallpaper {
     /** Double-tap an empty spot on the home screen for the next wallpaper. */
     fun doubleTap(context: Context) = sp(context).getBoolean(KEY_DOUBLE_TAP, true)
     fun setDoubleTap(context: Context, on: Boolean) = sp(context).edit().putBoolean(KEY_DOUBLE_TAP, on).apply()
+
+    /** In Battery Saver or low on battery, videos hold a still frame and stills stop drifting. */
+    fun batteryAware(context: Context) = sp(context).getBoolean(KEY_BATTERY, true)
+    fun setBatteryAware(context: Context, on: Boolean) = sp(context).edit().putBoolean(KEY_BATTERY, on).apply()
 
     /** Warm golden-hour glow in the evening, a gentle dim and cool tint at night. */
     fun followSun(context: Context) = sp(context).getBoolean(KEY_SUN, false)

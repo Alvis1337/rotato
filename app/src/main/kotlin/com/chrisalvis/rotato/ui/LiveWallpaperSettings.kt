@@ -36,6 +36,7 @@ internal fun LiveWallpaperSection() {
     var parallax by remember { mutableStateOf(LiveWallpaper.parallax(context)) }
     var doubleTap by remember { mutableStateOf(LiveWallpaper.doubleTap(context)) }
     var followSun by remember { mutableStateOf(LiveWallpaper.followSun(context)) }
+    var batteryAware by remember { mutableStateOf(LiveWallpaper.batteryAware(context)) }
 
     SettingsSection(title = "Live Wallpaper") {
         Text(
@@ -88,6 +89,12 @@ internal fun LiveWallpaperSection() {
             subtitle = "A warm golden-hour glow around sunrise and sunset, and a soft dim blue tint at night that's easier on the eyes",
             checked = followSun,
             onCheckedChange = { followSun = it; LiveWallpaper.setFollowSun(context, it) },
+        )
+        SettingsToggleRow(
+            title = "Save battery",
+            subtitle = "In Battery Saver, or under ${LiveWallpaper.LOW_BATTERY_PERCENT}% and unplugged, videos hold a still frame and stills stop moving. Back to normal when you charge",
+            checked = batteryAware,
+            onCheckedChange = { batteryAware = it; LiveWallpaper.setBatteryAware(context, it) },
         )
     }
 }

@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Place rules: Android only gives apps the Wi-Fi network's name with location access. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- Legacy external storage write access required for gallery saves on API 26-28 -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -32,10 +38,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Rotato">
-        <!-- Smart crop: have Play services fetch the subject segmentation model at install. -->
+        <!-- Smart crop and photo tagging: have Play services fetch their models at install. -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="subject_segment" />
+            android:value="subject_segment,ica" />
 
 
         <activity
@@ -190,6 +196,10 @@
                 android:name="android.service.wallpaper"
                 android:resource="@xml/rotato_wallpaper" />
         </service>
+
+        <receiver
+            android:name=".data.PlaceRulesReceiver"
+            android:exported="false" />
 
         <service
             android:name=".live.RotatoDreamService"

@@ -91,6 +91,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
         appScope.launch {
             runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
             UnfoldWatcherService.sync(this@RotatoApp, RotatoPreferences(this@RotatoApp).rotateOnUnfold.first())
+            com.chrisalvis.rotato.data.PlaceRules.register(this@RotatoApp)
         }
     }
 

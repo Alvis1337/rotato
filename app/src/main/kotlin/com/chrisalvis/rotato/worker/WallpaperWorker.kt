@@ -73,6 +73,8 @@ class WallpaperWorker(
     }
 
     private suspend fun rotate(): Result {
+        // Place rules first, so this rotation already draws from the collection for where you are.
+        runCatching { com.chrisalvis.rotato.data.PlaceRules.apply(applicationContext, rotate = false) }
         val repository = ImageRepository(applicationContext)
         val prefs = RotatoPreferences(applicationContext)
         val listPrefs = LocalListsPreferences(applicationContext)
@@ -397,6 +399,9 @@ class WallpaperWorker(
                     File(applicationContext.filesDir, entry.fullUrl).takeIf { it.exists() }
                 }
                 entry.fullUrl.isBlank() -> null
+                // Saved ahead on Wi-Fi by the offline pack: works with no signal.
+                com.chrisalvis.rotato.data.OfflinePack.fileFor(applicationContext, entry) != null ->
+                    com.chrisalvis.rotato.data.OfflinePack.fileFor(applicationContext, entry)
                 else -> {
                     val fileName = feedRepository.downloadWallpaper(entry.sourceId, entry.fullUrl, entry.sampleUrl.ifBlank { entry.thumbUrl }, authHeader, source = entry.source)
                         ?: return@withContext null

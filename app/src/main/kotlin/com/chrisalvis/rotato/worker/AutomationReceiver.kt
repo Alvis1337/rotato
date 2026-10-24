@@ -83,13 +83,21 @@ class AutomationReceiver : BroadcastReceiver() {
                 }
                 return
             }
-            lists.filter { it.useAsRotation && it.id != target.id }.forEach { other ->
+            useOnlyCollection(context, target.id, rotate = true)
+        }
+
+        /** Makes [listId] the only rotation collection, fills the pool from it, and optionally rotates. */
+        internal suspend fun useOnlyCollection(context: Context, listId: String, rotate: Boolean) {
+            val listPrefs = LocalListsPreferences(context)
+            val lists = listPrefs.lists.first()
+            if (lists.none { it.id == listId }) return
+            lists.filter { it.useAsRotation && it.id != listId }.forEach { other ->
                 listPrefs.setUseAsRotation(other.id, false)
                 ScheduleReceiver.removeRotationFiles(context, other.id, listPrefs)
             }
-            listPrefs.setUseAsRotation(target.id, true)
-            ScheduleReceiver.syncRotationPool(context, setOf(target.id), listPrefs)
-            rotateNow(context)
+            listPrefs.setUseAsRotation(listId, true)
+            ScheduleReceiver.syncRotationPool(context, setOf(listId), listPrefs)
+            if (rotate) rotateNow(context)
         }
     }
 }

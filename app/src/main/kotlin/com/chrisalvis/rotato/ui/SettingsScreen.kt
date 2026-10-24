@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
@@ -75,6 +76,7 @@ fun SettingsScreen(
     onNavigateToDiscoverSources: () -> Unit = {},
     onNavigateToIntegrations: () -> Unit = {},
     onNavigateToAboutData: () -> Unit = {},
+    onNavigateToTools: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -220,6 +222,13 @@ fun SettingsScreen(
                         title = "Integrations",
                         subtitle = "MyAnimeList",
                         onClick = onNavigateToIntegrations,
+                    )
+                    HorizontalDivider()
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Build,
+                        title = "Tools",
+                        subtitle = "Storage cleaner, collection doctor, HD upgrade, photo tags, offline pack, place rules",
+                        onClick = onNavigateToTools,
                     )
                     HorizontalDivider()
                     SettingsCategoryRow(

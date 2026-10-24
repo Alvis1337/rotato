@@ -47,6 +47,7 @@ import com.chrisalvis.rotato.ui.BrainrotScreen
 import com.chrisalvis.rotato.ui.BrainrotViewModel
 import com.chrisalvis.rotato.ui.AboutDataSettingsScreen
 import com.chrisalvis.rotato.ui.BrowseScreen
+import com.chrisalvis.rotato.ui.ToolsScreen
 import com.chrisalvis.rotato.ui.FirstRunTourOverlay
 import com.chrisalvis.rotato.ui.DiscoverSourcesSettingsScreen
 import com.chrisalvis.rotato.ui.IntegrationsSettingsScreen
@@ -173,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                     "taste" -> 3
                     "settings", "sources", "schedule", "stats", "source_health",
                     "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
-                    "settings_integrations", "settings_about_data" -> 4
+                    "settings_integrations", "settings_about_data", "settings_tools" -> 4
                     else -> 0
                 }
 
@@ -234,6 +235,7 @@ class MainActivity : AppCompatActivity() {
                         onNavigateToDiscoverSources = { openSettingsCategory("settings_discover_sources") },
                         onNavigateToIntegrations = { openSettingsCategory("settings_integrations") },
                         onNavigateToAboutData = { openSettingsCategory("settings_about_data") },
+                        onNavigateToTools = { openSettingsCategory("settings_tools") },
                         modifier = paneModifier,
                     )
                 }
@@ -368,6 +370,11 @@ class MainActivity : AppCompatActivity() {
                                         malViewModel = malViewModel,
                                         onNavigateBack = { navController.popBackStack() },
                                     )
+                                }
+                            }
+                            composable("settings_tools") {
+                                SettingsPanes(settingsTwoPane, settingsList) {
+                                    ToolsScreen(onNavigateBack = { navController.popBackStack() })
                                 }
                             }
                             composable("settings_about_data") {

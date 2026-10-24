@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -333,6 +334,17 @@ private fun LibraryContent(
     var matchLoading by remember { mutableStateOf(false) }
     // Rainbow order: lay the Library out by each image's main colour, like a bookshelf sorted by spine.
     var rainbow by rememberSaveable { mutableStateOf(false) }
+    // Photo tags (Settings › Tools › Tag my photos): search the Library by what's in each picture.
+    var tagQuery by rememberSaveable { mutableStateOf("") }
+    // Re-read on return to the Library, since tagging happens on the Tools screen.
+    var resumeTick by remember { mutableStateOf(0) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        resumeTick++
+        onPauseOrDispose { }
+    }
+    val photoTags by produceState(emptyMap<String, List<String>>(), images, resumeTick) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.chrisalvis.rotato.data.PhotoTagger.libraryTags(appContext) }
+    }
     val matchScope = rememberCoroutineScope()
     val matchPicker = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -358,7 +370,7 @@ private fun LibraryContent(
         }
         looksLoading = false
     }
-    val gridImages = remember(images, selectedColour, looks, matchLook, rainbow) {
+    val gridImages = remember(images, selectedColour, looks, matchLook, rainbow, tagQuery, photoTags) {
         val target = matchLook
         val filtered = when {
             target != null -> images
@@ -368,7 +380,10 @@ private fun LibraryContent(
             selectedColour == null -> images
             else -> images.filter { looks[it.name]?.colours?.contains(selectedColour) == true }
         }
-        if (rainbow && target == null) com.chrisalvis.rotato.data.ImageAnalysis.rainbowOrder(filtered, looks) else filtered
+        val sorted = if (rainbow && target == null) com.chrisalvis.rotato.data.ImageAnalysis.rainbowOrder(filtered, looks) else filtered
+        val words = tagQuery.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }.map { it.replace(' ', '_') }
+        if (words.isEmpty()) sorted
+        else sorted.filter { f -> val tags = photoTags[f.name].orEmpty(); words.all { w -> tags.any { it.contains(w) } } }
     }
 
     if (showSaveToListDialog) {
@@ -506,6 +521,21 @@ private fun LibraryContent(
                                 Text("Find duplicates", style = MaterialTheme.typography.labelMedium)
                             }
                         }
+                    }
+                    if (photoTags.values.any { it.isNotEmpty() }) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = tagQuery,
+                            onValueChange = { tagQuery = it },
+                            placeholder = { Text("Search your photos: beach, sunset, cat…") },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (tagQuery.isNotEmpty()) IconButton(onClick = { tagQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
                     }
                     if (images.size > 1) {
                         ColourFilterRow(

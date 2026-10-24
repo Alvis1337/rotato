@@ -258,6 +258,15 @@ class LocalListsPreferences(private val context: Context) {
 
     suspend fun removeWallpaper(entryId: String) = removeWallpapers(setOf(entryId))
 
+    /** Rewrites entries in place (same id, collection and position), e.g. a refreshed link or new tags. */
+    suspend fun updateEntries(entries: List<LocalWallpaperEntry>) {
+        if (entries.isEmpty()) return
+        ensureMigrated()
+        db.withTransaction {
+            entries.forEach { e -> dao.updateEntry(e.id, e.sourceId, e.source, e.fullUrl, entryJson(e)) }
+        }
+    }
+
     // --- rows ---
 
     private fun LocalList.toRow(position: Int) = CollectionRow(id = id, position = position, json = listJson(this))

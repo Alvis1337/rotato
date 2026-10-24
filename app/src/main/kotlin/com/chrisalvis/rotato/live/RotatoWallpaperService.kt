@@ -77,6 +77,12 @@ class RotatoWallpaperService : WallpaperService() {
         private var parallax = false
         private var doubleTap = true
         private var followSun = false
+        private var batteryAware = true
+        /** Battery Saver is on, or the battery is low and unplugged: hold still to save power. */
+        private var saving = false
+        private val powerReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) = updatePower(intent.takeIf { it.action == Intent.ACTION_BATTERY_CHANGED })
+        }
         private var tiltX = 0f
         private var tiltY = 0f
         private var baseRoll: Float? = null
@@ -94,10 +100,36 @@ class RotatoWallpaperService : WallpaperService() {
             setTouchEventsEnabled(false)
             readOptions()
             prefs.registerOnSharedPreferenceChangeListener(this)
+            val filter = android.content.IntentFilter().apply {
+                addAction(Intent.ACTION_BATTERY_CHANGED)
+                addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            }
+            val sticky = androidx.core.content.ContextCompat.registerReceiver(
+                this@RotatoWallpaperService, powerReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            updatePower(sticky)
+        }
+
+        private var batteryLow = false
+
+        private fun updatePower(battery: Intent?) {
+            if (battery != null) {
+                val level = battery.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+                val scale = battery.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+                val plugged = battery.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+                batteryLow = !plugged && level >= 0 && level * 100 / scale <= LiveWallpaper.LOW_BATTERY_PERCENT
+            }
+            val powerSave = getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true
+            val now = batteryAware && (powerSave || batteryLow)
+            if (now == saving) return
+            saving = now
+            if (saving) player?.pause() else if (visible) player?.start()
+            scheduleFrame()
         }
 
         override fun onDestroy() {
             prefs.unregisterOnSharedPreferenceChangeListener(this)
+            runCatching { unregisterReceiver(powerReceiver) }
             main.removeCallbacks(frameCallback)
             stopSensors()
             releasePlayer()
@@ -140,7 +172,7 @@ class RotatoWallpaperService : WallpaperService() {
             if (isVisible) {
                 val video = videoPath
                 // A new player starts itself once prepared; starting it earlier is an error.
-                if (video != null && player == null && surfaceReady) playVideo(video) else player?.start()
+                if (video != null && player == null && surfaceReady) playVideo(video) else if (!saving) player?.start()
                 if (parallax) startSensors()
                 scheduleFrame()
             } else {
@@ -157,6 +189,7 @@ class RotatoWallpaperService : WallpaperService() {
                 LiveWallpaper.KEY_STAMP -> load(fade = true)
                 else -> {
                     readOptions()
+                    updatePower(null)
                     if (visible && parallax) startSensors() else stopSensors()
                     scheduleFrame()
                 }
@@ -185,6 +218,7 @@ class RotatoWallpaperService : WallpaperService() {
             parallax = prefs.getBoolean(LiveWallpaper.KEY_PARALLAX, false)
             doubleTap = prefs.getBoolean(LiveWallpaper.KEY_DOUBLE_TAP, true)
             followSun = prefs.getBoolean(LiveWallpaper.KEY_SUN, false)
+            batteryAware = prefs.getBoolean(LiveWallpaper.KEY_BATTERY, true)
         }
 
         /** Loads the published image or video; images decode off the main thread. */
@@ -241,7 +275,8 @@ class RotatoWallpaperService : WallpaperService() {
                     isLooping = true
                     setVolume(0f, 0f)
                     setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-                    setOnPreparedListener { if (visible) it.start() }
+                    // While saving power, show the first frame and hold it.
+                    setOnPreparedListener { if (visible && !saving) it.start() else it.seekTo(0) }
                     // A decoder error (e.g. both screens' players competing for it) leaves a dead
                     // player; drop it so the next time this screen shows, it starts again.
                     setOnErrorListener { _, _, _ -> main.post { releasePlayer() }; true }
@@ -299,7 +334,7 @@ class RotatoWallpaperService : WallpaperService() {
                     prev.bitmap.recycle()
                     previous = null
                 }
-                animating = fadeT < 1f || revealT < 1f || (visible && (drift || parallax))
+                animating = fadeT < 1f || revealT < 1f || (visible && !saving && (drift || parallax))
             } finally {
                 runCatching { holder.unlockCanvasAndPost(canvas) }
             }
