@@ -58,6 +58,7 @@ import com.chrisalvis.rotato.ui.PluginStoreScreen
 import com.chrisalvis.rotato.ui.RotationWallpaperSettingsScreen
 import com.chrisalvis.rotato.ui.HomeScreen
 import com.chrisalvis.rotato.ui.HomeViewModel
+import com.chrisalvis.rotato.ui.NowScreen
 import com.chrisalvis.rotato.ui.MalViewModel
 import com.chrisalvis.rotato.ui.SettingsScreen
 import com.chrisalvis.rotato.ui.ScheduleScreen
