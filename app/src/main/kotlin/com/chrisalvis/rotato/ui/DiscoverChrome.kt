@@ -105,6 +105,8 @@ internal fun DiscoverTopBar(
     onClearSearch: () -> Unit,
     onSelectPinned: (String) -> Unit,
     onPinCurrent: () -> Unit,
+    /** While searching: what each source returned, or why it sat out. */
+    coverage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -154,6 +156,16 @@ internal fun DiscoverTopBar(
                         IconButton(onClick = onClearSearch) { Icon(Icons.Default.Close, contentDescription = "Clear search") }
                     }
                 }
+            }
+            if (!coverage.isNullOrBlank()) {
+                Text(
+                    coverage,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
             }
             SavedSearchTabs(pinned = pinned, current = query, onSelect = onSelectPinned, onPinCurrent = onPinCurrent)
         }

@@ -216,6 +216,7 @@ fun BrainrotScreen(
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
+    val searchCoverage by vm.searchCoverage.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
     val gridState = rememberLazyStaggeredGridState()
@@ -825,6 +826,13 @@ fun BrainrotScreen(
                         onClearSearch = { vm.setSearchQuery("") },
                         onSelectPinned = { vm.setSearchQuery(it) },
                         onPinCurrent = { vm.pinCurrentSearch() },
+                        coverage = searchCoverage.takeIf { searchQuery.isNotBlank() && it.isNotEmpty() }?.joinToString(" · ") { c ->
+                            when {
+                                c.skipped != null -> "${c.name}: ${c.skipped}"
+                                !c.asked -> "${c.name}…"
+                                else -> "${c.name} ${c.found}"
+                            }
+                        },
                         modifier = Modifier.onGloballyPositioned {
                             val h = with(density) { it.size.height.toDp() }
                             if (h > 0.dp) topInset = h

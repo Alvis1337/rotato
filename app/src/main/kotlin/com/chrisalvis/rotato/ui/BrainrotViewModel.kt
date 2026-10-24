@@ -379,6 +379,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _blockEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val blockEvent: SharedFlow<Unit> = _blockEvent
 
+    /** Per source: what the current feed or search got from it, or why it sat out. */
+    data class SourceCoverage(val name: String, val found: Int, val skipped: String? = null, val asked: Boolean = false)
+    private val _searchCoverage = MutableStateFlow<List<SourceCoverage>>(emptyList())
+    val searchCoverage: StateFlow<List<SourceCoverage>> = _searchCoverage.asStateFlow()
+
     private var fetchJob: Job? = null
     private var tagSuggestionsJob: Job? = null
 
@@ -538,6 +543,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                         val page = fetchPageForSource(source, q, excludes, request.effectiveNsfw, filters, fetchLimit)
                         Log.d("DiscoverFetch", "${source.pluginId} q=$q → ${page.size} items after filter (r${round+1})")
                         if (page.isNotEmpty() && generation == feedGeneration) pageCache[ck] = ArrayDeque(page.shuffled())
+                        if (generation == feedGeneration) {
+                            val name = sourceLabel(source)
+                            _searchCoverage.update { list -> list.map { if (it.name == name && it.skipped == null) it.copy(found = it.found + page.size, asked = true) else it } }
+                        }
                     }
                 }
             }.awaitAll()
@@ -669,12 +678,15 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             emptyList()
         }
+        val skipped = mutableListOf<Pair<String, String>>()
         return sources.first()
             .mapNotNull { source ->
                 val manifest: PluginManifest = pluginRepository.getManifest(source.pluginId) ?: return@mapNotNull null
+                val label = sourceLabel(source)
                 if (manifest.requiresCredentials &&
                     (source.apiKey.isBlank() || (manifest.needsApiUser && source.apiUser.isBlank()))
                 ) {
+                    skipped += label to "needs its API key"
                     return@mapNotNull null
                 }
                 // The global toggle is a ceiling: a per-source override can force a source to stay
@@ -682,15 +694,22 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 // toggle is off — otherwise a stale per-source override outlives the user turning
                 // NSFW off globally, with no visible way to notice or undo it.
                 val effectiveNsfw = nsfw && source.nsfwEnabled != false
-                if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) return@mapNotNull null
+                if (!PluginExecutor.canServe(manifest, effectiveNsfw, source)) {
+                    skipped += label to if (effectiveNsfw) "SFW only" else "NSFW only"
+                    return@mapNotNull null
+                }
                 // Videos only: sites that never carry video sit out; boorus search their video tag
                 // (last, so a free Danbooru account's single tag stays the user's own).
-                if (filters.videoOnly && manifest.protocol !in VIDEO_PROTOCOLS) return@mapNotNull null
+                if (filters.videoOnly && manifest.protocol !in VIDEO_PROTOCOLS) {
+                    skipped += label to "has no videos"
+                    return@mapNotNull null
+                }
                 // The site's tag limit applies to what was searched; the "video" tag added below
                 // for videos-only mode used to push a two-tag search over it and drop the site.
                 val searched = queriesFor(source, explicitQuery, malTitles, tierBoostTags).let { qs ->
+                    // Over the limit, search the first tags the site allows rather than leaving it out.
                     if (manifest.maxTagCount == Int.MAX_VALUE) qs
-                    else qs.filter { q -> q.trim().split(Regex("\\s+")).count { it.isNotBlank() } <= manifest.maxTagCount }
+                    else qs.map { q -> q.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(manifest.maxTagCount).joinToString(" ") }.distinct()
                 }
                 val queries = if (!filters.videoOnly || manifest.protocol == Protocol.REDDIT) searched
                     else searched.map { q -> if (manifest.protocol == Protocol.DANBOORU && q.isNotBlank()) q else "$q video".trim() }.distinct()
@@ -700,6 +719,12 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     queries = queries,
                     effectiveNsfw = effectiveNsfw,
                 )
+            }
+            .also { requests ->
+                _searchCoverage.update { _ ->
+                    requests.map { SourceCoverage(sourceLabel(it.source), found = 0) } +
+                        skipped.map { (name, why) -> SourceCoverage(name, found = 0, skipped = why) }
+                }
             }
     }
 
