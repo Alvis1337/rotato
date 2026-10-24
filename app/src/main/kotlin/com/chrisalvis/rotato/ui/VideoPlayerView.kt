@@ -185,6 +185,8 @@ fun VideoPlayerView(
     seekBarBottomInset: Dp = 0.dp,
     /** Still shown (fitted) until the first video frame is on screen at its proper shape. */
     posterUrl: String? = null,
+    /** A hairline of playback progress along the bottom edge, for the full-screen feed. */
+    progressLine: Boolean = false,
 ) {
     val context = LocalContext.current
     var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
@@ -270,7 +272,7 @@ fun VideoPlayerView(
         }
     }
 
-    if (showSeekBar) {
+    if (showSeekBar || progressLine) {
         LaunchedEffect(exoPlayer) {
             while (true) {
                 if (!userSeeking) positionMs = exoPlayer.currentPosition
@@ -449,6 +451,16 @@ fun VideoPlayerView(
             )
         }
 
+        if (progressLine && !showSeekBar && durationMs > 0) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.2f),
+                drawStopIndicator = {},
+                gapSize = 0.dp,
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp),
+            )
+        }
         if (showSeekBar && durationMs > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

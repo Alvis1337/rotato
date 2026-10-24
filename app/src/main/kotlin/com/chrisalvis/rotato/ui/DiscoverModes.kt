@@ -2,6 +2,11 @@ package com.chrisalvis.rotato.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -214,6 +219,7 @@ private fun LoadAhead(index: () -> Int, size: Int, ahead: Int, busy: Boolean, en
  * Feed: one image or video per screen, scrolled vertically. Nothing has to be decided; saving
  * is there if something catches your eye (the button, or double-tap on a picture).
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun DiscoverFeed(
     items: List<BrainrotWallpaper>,
@@ -225,67 +231,178 @@ internal fun DiscoverFeed(
     onSave: (BrainrotWallpaper) -> Unit,
     onOpen: (BrainrotWallpaper) -> Unit,
     onSet: (BrainrotWallpaper) -> Unit,
+    onSkip: (BrainrotWallpaper) -> Unit = {},
+    onTag: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val pager = rememberPagerState { items.size }
     LoadAhead({ pager.currentPage }, items.size, 4, loadingMore, endReached, onLoadMore)
-    VerticalPager(state = pager, modifier = modifier.fillMaxSize().background(Color.Black), beyondViewportPageCount = 1, key = { "${items.getOrNull(it)?.source}:${items.getOrNull(it)?.id}:$it" }) { page ->
+    VerticalPager(
+        state = pager,
+        modifier = modifier.fillMaxSize().background(Color.Black),
+        beyondViewportPageCount = 1,
+        key = { "${items.getOrNull(it)?.source}:${items.getOrNull(it)?.id}:$it" },
+    ) { page ->
         val wp = items.getOrNull(page) ?: return@VerticalPager
         var revealed by rememberNsfwRevealed("${wp.source}:${wp.id}")
         val blurred = wp.isNsfw && nsfwBlurEnabled && !revealed
+        var burst by remember { mutableStateOf(0) }
+        val saved = isSaved(wp)
+        val save = { if (!saved) onSave(wp); burst++ }
         Box(Modifier.fillMaxSize()) {
-            MediaPage(
+            ReelMedia(
                 wp = wp,
                 playing = page == pager.currentPage && !blurred,
                 modifier = Modifier
                     .fillMaxSize()
                     .nsfwContentBlur(wp.isNsfw, nsfwBlurEnabled, revealed)
-                    .pointerInput(wp.id, blurred) {
+                    .pointerInput(wp.id, blurred, saved) {
                         detectTapGestures(
                             onTap = { if (blurred) revealed = true },
-                            onDoubleTap = { if (!blurred && !isSaved(wp)) onSave(wp) },
+                            onDoubleTap = { if (!blurred) save() },
                             onLongPress = { onOpen(wp) },
                         )
                     },
             )
             NsfwBlurLayer(wp.isNsfw, nsfwBlurEnabled, revealed)
+            // Shade top and bottom so white text and icons read on any picture.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.35f),
+                            0.18f to Color.Transparent,
+                            0.62f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.6f),
+                        )
+                    )
+            )
+            SaveBurst(burst, Modifier.align(Alignment.Center))
+
+            // Action rail, right side.
             Column(
-                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 8.dp, bottom = 92.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                val saved = isSaved(wp)
-                FeedButton(if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, if (saved) "Saved" else "Save") { if (!saved) onSave(wp) }
-                if (!wp.isVideo) FeedButton(Icons.Default.Wallpaper, "Set") { onSet(wp) }
-                FeedButton(Icons.Default.OpenInFull, "Open") { onOpen(wp) }
+                ReelAction(if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, if (saved) "Saved" else "Save", tint = if (saved) MaterialTheme.colorScheme.primary else Color.White) { save() }
+                ReelAction(Icons.Default.Wallpaper, "Set") { onSet(wp) }
+                ReelAction(Icons.Default.Share, "Share") {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, wp.pageUrl.takeIf { it.startsWith("http") } ?: wp.fullUrl)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(send, "Share"))
+                }
+                ReelAction(Icons.Default.ThumbDown, "Not for me") { onSkip(wp) }
+                ReelAction(Icons.Default.OpenInFull, "More") { onOpen(wp) }
             }
-            Text(
-                wp.tags.take(5).joinToString("  ") { "#" + it },
-                color = Color.White,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
+
+            // Caption, bottom left: where it's from, then its tags (tap one to search it).
+            Column(
+                Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, end = 88.dp, bottom = 24.dp)
-                    .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            )
+                    .navigationBarsPadding()
+                    .padding(start = 14.dp, end = 84.dp, bottom = 92.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    buildString {
+                        append(sourceDisplayName(wp.source))
+                        if (wp.resolution.isNotBlank()) append(" · ").append(wp.resolution.replace("x", "×"))
+                    },
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    maxLines = 2,
+                ) {
+                    wp.tags.take(8).forEach { tag ->
+                        Text(
+                            "#" + tag.replace('_', ' '),
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            modifier = Modifier.clickable { onTag(tag) },
+                        )
+                    }
+                }
+            }
         }
     }
     if (items.isEmpty() && loadingMore) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        Box(modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
 }
 
 @Composable
-private fun FeedButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FilledTonalIconButton(
-            onClick = onClick,
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color.Black.copy(alpha = 0.45f), contentColor = Color.White),
-        ) { Icon(icon, contentDescription = label) }
+private fun ReelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color = Color.White, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier
+                .size(30.dp)
+                .graphicsLayer { shadowElevation = 6f; shape = CircleShape; clip = false },
+        )
         Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/**
+ * One page of the feed. Tall media fills the screen; wide media sits fitted in the middle over
+ * a blurred, darkened copy of itself, so there are no hard black bars.
+ */
+@Composable
+private fun ReelMedia(wp: BrainrotWallpaper, playing: Boolean, modifier: Modifier) {
+    val still = if (wp.isVideo) wp.thumbUrl.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) } ?: wp.gridUrl.takeUnless { MediaType.isVideoUrl(it) }
+    else wp.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: wp.fullUrl.ifBlank { wp.thumbUrl }
+    val ratio = parseAspectRatio(wp.resolution)
+    val tall = wp.resolution.isNotBlank() && ratio < 0.8f
+    Box(modifier) {
+        if (!tall && !still.isNullOrBlank()) {
+            AsyncImage(
+                model = still,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(36.dp)
+                    .graphicsLayer { alpha = 0.55f },
+            )
+        }
+        if (wp.isVideo && playing) {
+            VideoPlayerView(
+                url = wp.fullUrl.ifBlank { wp.sampleUrl },
+                modifier = Modifier.fillMaxSize(),
+                allowTapToToggle = true,
+                showMuteButton = true,
+                progressLine = true,
+                posterUrl = still,
+            )
+        } else {
+            AsyncImage(
+                model = still,
+                contentDescription = wp.tags.take(3).joinToString(" "),
+                contentScale = if (tall) ContentScale.Crop else ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 

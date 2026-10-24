@@ -113,7 +113,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 
-private fun sourceDisplayName(source: String): String = when (source.lowercase()) {
+internal fun sourceDisplayName(source: String): String = when (source.lowercase()) {
     "wallhaven_photos" -> "Wallhaven Photos"
     "bing" -> "Bing"
     "wikimedia" -> "Wikimedia"
@@ -661,6 +661,8 @@ fun BrainrotScreen(
                         },
                         onOpen = { vm.selectItem(it) },
                         onSet = { vm.setWallpaperDirectly(it) },
+                        onSkip = { vm.skip(it) },
+                        onTag = { vm.searchByTag(it) },
                     )
                     viewMode == DiscoverViewMode.SWIPE -> SwipeDeck(
                         items = gridItems,
