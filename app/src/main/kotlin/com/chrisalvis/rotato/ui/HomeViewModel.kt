@@ -326,16 +326,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Directory scans, file copies and downloads below must stay off the main thread;
         // large rotation collections froze the UI here.
         viewModelScope.launch(Dispatchers.IO) {
-            // Also re-runs when an image is un-blocked, so saving it again brings it back.
-            kotlinx.coroutines.flow.combine(
-                localLists.lists, localLists.allWallpapers, preferences.libraryRemovedKeys.distinctUntilChanged(),
-            ) { lists, wallpapers, removed ->
+            // Also re-runs when an image is un-blocked (saving it again brings it back), but not
+            // on every Library delete, which only adds to the set.
+            val unblocked = preferences.libraryRemovedKeys.distinctUntilChanged { old, new -> new.containsAll(old) }
+            kotlinx.coroutines.flow.combine(localLists.lists, localLists.allWallpapers, unblocked) { lists, wallpapers, _ ->
                 val rotationIds = lists.filter { it.useAsRotation }.map { it.id }.toSet()
-                wallpapers.filter { it.listId in rotationIds } to removed
-            }.collect { (toSync, removedKeys) ->
+                wallpapers.filter { it.listId in rotationIds }
+            }.collect { toSync ->
                 var changed = false
                 val stemsOnDisk = imageDir.listFiles()?.mapTo(HashSet()) { it.nameWithoutExtension } ?: hashSetOf()
-                // Images the user deleted from the Library stay deleted (removedKeys).
+                // Images the user deleted from the Library stay deleted; read fresh, since the
+                // trigger above skips additions.
+                val removedKeys = preferences.libraryRemovedKeys.first()
                 toSync.forEach { entry ->
                     if (entry.fullUrl.isBlank()) return@forEach
                     val key = poolKey(entry.source, entry.sourceId)

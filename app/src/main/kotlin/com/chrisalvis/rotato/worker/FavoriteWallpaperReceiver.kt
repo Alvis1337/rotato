@@ -97,7 +97,7 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
                     it.listId in lockedIds && (it.sourceId == wallpaper.id || (wallpaper.fullUrl.isNotBlank() && it.fullUrl == wallpaper.fullUrl))
                 }) return false
             val favorites = getOrCreateFavoritesList(listsPrefs)
-            return listsPrefs.addWallpaper(favorites.id, wallpaper)
+            return listsPrefs.addWallpaper(favorites.id, wallpaper, explicit = true)
         }
 
         fun wallpaperFromHistory(item: WallpaperHistoryItem): BrainrotWallpaper? = wallpaperFromUrls(

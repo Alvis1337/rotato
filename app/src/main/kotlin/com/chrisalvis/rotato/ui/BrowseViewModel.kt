@@ -971,6 +971,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             val removed = all.filter { it.listId == list.id }
             localLists.deleteList(list.id)
             if (list.isSmartCollection) prefs.clearSmartExcludedIds(list.id)
+            if (prefs.stealthCollectionId.first() == list.id) prefs.setStealthCollectionId("")
             val remaining = all.filter { it.listId != list.id }
             deleteOwnedDeviceFiles(removed, remaining)
             // Smart-collection copies elsewhere can still point into this folder.

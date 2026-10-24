@@ -28,15 +28,20 @@ class StealthTileService : TileService() {
     override fun onStartListening() {
         scope.launch {
             val prefs = RotatoPreferences(applicationContext)
-            updateTile(prefs.stealthActive.first(), prefs.stealthCollectionId.first().isNotBlank())
+            updateTile(prefs.stealthActive.first(), hasStealthCollection(prefs))
         }
+    }
+
+    /** Set, and still exists (a deleted collection's id lingers until settings change it). */
+    private suspend fun hasStealthCollection(prefs: RotatoPreferences): Boolean {
+        val id = prefs.stealthCollectionId.first()
+        return id.isNotBlank() && com.chrisalvis.rotato.data.LocalListsPreferences(applicationContext).lists.first().any { it.id == id }
     }
 
     override fun onClick() {
         scope.launch {
             val prefs = RotatoPreferences(applicationContext)
-            val collectionId = prefs.stealthCollectionId.first()
-            if (collectionId.isBlank()) {
+            if (!hasStealthCollection(prefs)) {
                 // Nothing to hide behind, but a stealth left on must still be switchable off.
                 prefs.setStealthActive(false)
                 updateTile(active = false, configured = false)

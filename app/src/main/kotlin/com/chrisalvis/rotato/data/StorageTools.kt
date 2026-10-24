@@ -58,17 +58,24 @@ object StorageTools {
         val dir = File(context.filesDir, "list_images")
         val files = dir.walkTopDown().filter { it.isFile }.toList()
         if (files.isEmpty()) return emptyList()
-        val used = LocalListsPreferences(context).allWallpapers.first()
-            .flatMap { listOf(it.fullUrl, it.thumbUrl, it.sampleUrl) }
-            .filter { it.startsWith("list_images/") }
-            .mapTo(HashSet()) { it.removePrefix("list_images/") }
-        val covers = LocalListsPreferences(context).lists.first()
-            .map { it.coverUrl }.filter { it.startsWith("list_images/") }
-            .mapTo(HashSet()) { it.removePrefix("list_images/") }
-        return files.filter {
-            val rel = it.relativeTo(dir).invariantSeparatorsPath
-            rel !in used && rel !in covers
+        // Entries reach the same file in several forms (list_images/…, file: URIs, absolute
+        // paths), so everything is compared as a canonical path. Deleting is destructive: anything
+        // that resolves to a file counts as used.
+        fun canonical(url: String): String? {
+            if (url.isBlank()) return null
+            val file = when {
+                url.startsWith("list_images/") -> File(context.filesDir, url)
+                url.startsWith("file:") -> android.net.Uri.parse(url).path?.let(::File)
+                url.startsWith("/") -> File(url)
+                else -> null
+            } ?: return null
+            return runCatching { file.canonicalPath }.getOrNull()
         }
+        val lists = LocalListsPreferences(context)
+        val used = HashSet<String>()
+        lists.allWallpapers.first().forEach { e -> listOf(e.fullUrl, e.thumbUrl, e.sampleUrl).mapNotNullTo(used, ::canonical) }
+        lists.lists.first().mapNotNullTo(used) { canonical(it.coverUrl) }
+        return files.filter { f -> runCatching { f.canonicalPath }.getOrNull()?.let { it !in used } == true }
     }
 
     @OptIn(ExperimentalCoilApi::class)

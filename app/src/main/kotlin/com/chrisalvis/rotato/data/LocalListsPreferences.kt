@@ -198,11 +198,14 @@ class LocalListsPreferences(private val context: Context) {
 
     suspend fun setMalConfig(listId: String, config: MalCollectionConfig?) { updateList(listId) { it.copy(malConfig = config) } }
 
-    suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper): Boolean {
+    /**
+     * [explicit] marks a save the user made themselves; only that lets a Library-linked collection
+     * bring back an image they deleted from the Library (automatic fills must not).
+     */
+    suspend fun addWallpaper(listId: String, wallpaper: BrainrotWallpaper, explicit: Boolean = false): Boolean {
         ensureMigrated()
-        // Saving an image again is an explicit add: let a Library-linked collection bring it back.
         // Cleared first (and even if it's already saved) so the Library sync never sees a stale block.
-        RotatoPreferences(context).clearLibraryRemovedKeys(poolKeys(wallpaper.source, wallpaper.id))
+        if (explicit) RotatoPreferences(context).clearLibraryRemovedKeys(poolKeys(wallpaper.source, wallpaper.id))
         val added = db.withTransaction {
             if (dao.countMatching(listId, wallpaper.id, wallpaper.fullUrl) > 0) return@withTransaction false
             val entry = LocalWallpaperEntry(

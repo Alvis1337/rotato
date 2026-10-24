@@ -184,9 +184,8 @@ class WallpaperWorker(
         // collection, overriding schedules, Up Next and normal per-screen pools — a "panic button".
         // Entries not in the pool yet are fetched like a scheduled pick; if none can be had, the
         // wallpaper is left as it is rather than falling back to the normal pool.
-        // Stealth with no collection set (or one since deleted) counts as off, so it can't freeze rotation.
-        val stealthCollectionId = if (prefs.stealthActive.first()) prefs.stealthCollectionId.first()
-            .takeIf { id -> id.isNotBlank() && lists.any { it.id == id } }.orEmpty() else ""
+        // Stealth with no collection set counts as off. One that was deleted leaves the wallpaper as it is.
+        val stealthCollectionId = if (prefs.stealthActive.first()) prefs.stealthCollectionId.first() else ""
         val stealthActive = stealthCollectionId.isNotBlank()
         val stealthWallpapers = if (stealthCollectionId.isNotBlank())
             allWallpapers.filter { it.listId == stealthCollectionId } else emptyList()

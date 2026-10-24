@@ -420,7 +420,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         // cached queries were built for the old mode, so start over.
         viewModelScope.launch {
             prefs.nsfwMode.distinctUntilChanged().drop(1).collect {
-                if (!_noSources.value && !justReset()) loadMore(reset = true)
+                if (!_noSources.value) loadMore(reset = true)
             }
         }
         // Sources turned on or off, or re-keyed, from the Sources screen.
@@ -429,7 +429,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 .filter { it.isNotEmpty() }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { if (!_noSources.value && !justReset()) loadMore(reset = true) }
+                .collect { if (!_noSources.value) loadMore(reset = true) }
         }
     }
 
@@ -467,14 +467,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
      *  3. Drain from the in-memory caches — no network during drain.
      *  4. Batch-update the grid with all new items in a single state emission.
      */
-    private var lastResetAt = 0L
-
-    /** True right after a reset, so a settings change the screen already reset for doesn't reset twice. */
-    private fun justReset() = android.os.SystemClock.uptimeMillis() - lastResetAt < 2_000
-
     fun loadMore(reset: Boolean = false) {
         if (reset) {
-            lastResetAt = android.os.SystemClock.uptimeMillis()
             fetchJob?.cancel()
             fetchJob = null
             _gridItems.update { emptyList() }
@@ -1008,7 +1002,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _selectedListId.update { listId }
         if (leaveGrid) removeFromGrid(wp)
         viewModelScope.launch {
-            val ok = localLists.addWallpaper(listId, wp)
+            val ok = localLists.addWallpaper(listId, wp, explicit = true)
             val ctx = getApplication<Application>().applicationContext
             // Saved videos download in the background (Wi-Fi only) so they're ready to rotate.
             if (ok && wp.isVideo) launch(Dispatchers.IO) { runCatching { com.chrisalvis.rotato.data.OfflinePack.keepVideo(ctx, wp) } }
@@ -1255,8 +1249,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setNsfwMode(enabled: Boolean) {
         viewModelScope.launch {
+            // The nsfwMode collector resets the feed (only if the mode actually changed).
             prefs.setNsfwMode(enabled)
-            loadMore(reset = true)
         }
     }
 
@@ -1373,14 +1367,15 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleSource(source: LocalSource) {
         viewModelScope.launch {
             localSources.update(source.pluginId, source.instanceId, enabled = !source.enabled)
-            loadMore(reset = true)
+            // The sources collector resets the feed; it ignores an empty set, so turning off the last one resets here.
+            if (source.enabled && sources.value.none { sourceKey(it) != sourceKey(source) }) loadMore(reset = true)
         }
     }
 
     fun setSourceNsfw(sourceId: String, instanceId: String, nsfwEnabled: Boolean?) {
         viewModelScope.launch {
+            // The sources collector resets the feed when an enabled source changes.
             localSources.updateSourceNsfw(sourceId, instanceId, nsfwEnabled)
-            loadMore(reset = true)
         }
     }
 
@@ -1490,7 +1485,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (downloadedFile != null) {
                     if (wp.isNsfw) prefs.setFileNsfw(downloadedFile, true)
                     val rotationList = localLists.lists.first().firstOrNull { it.useAsRotation }
-                    if (rotationList != null) localLists.addWallpaper(rotationList.id, wp)
+                    if (rotationList != null) localLists.addWallpaper(rotationList.id, wp, explicit = true)
                     val msg = if (rotationList != null) "Added to rotation · saved to \"${rotationList.name}\"" else "Added to rotation"
                     Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                 } else {

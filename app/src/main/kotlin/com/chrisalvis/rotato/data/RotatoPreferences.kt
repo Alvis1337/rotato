@@ -212,7 +212,7 @@ class RotatoPreferences(private val context: Context) {
     suspend fun addLibraryRemovedKeys(keys: Collection<String>) {
         if (keys.isEmpty()) return
         // Newest last; the oldest fall off so the set can't grow forever.
-        context.dataStore.edit { it[LIBRARY_REMOVED_KEYS] = JSONArray((parsePaths(it[LIBRARY_REMOVED_KEYS]) + keys).distinct().takeLast(3000)).toString() }
+        context.dataStore.edit { it[LIBRARY_REMOVED_KEYS] = JSONArray((parsePaths(it[LIBRARY_REMOVED_KEYS]) + keys).distinct().takeLast(20_000)).toString() }
     }
 
     suspend fun clearLibraryRemovedKeys(keys: Collection<String>) {
@@ -278,7 +278,8 @@ class RotatoPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             val paths = parsePaths(prefs[UP_NEXT_PATHS]).filter { it != path }.toMutableList()
             if (first) paths.add(0, path) else paths.add(path)
-            prefs[UP_NEXT_PATHS] = JSONArray(paths.take(50)).toString()
+            // Full queue: the newest addition always gets in; the item at the other end makes room.
+            prefs[UP_NEXT_PATHS] = JSONArray(if (first) paths.take(50) else paths.takeLast(50)).toString()
         }
     }
 
@@ -468,7 +469,14 @@ class RotatoPreferences(private val context: Context) {
     }
 
     suspend fun setStealthCollectionId(id: String) {
-        context.dataStore.edit { it[STEALTH_COLLECTION_ID] = id }
+        context.dataStore.edit { prefs ->
+            prefs[STEALTH_COLLECTION_ID] = id
+            // No collection left to hide behind: stealth goes off and NSFW mode is put back.
+            if (id.isBlank() && prefs[STEALTH_ACTIVE] == true) {
+                prefs[NSFW_MODE] = prefs[STEALTH_PREV_NSFW_MODE] ?: prefs[NSFW_MODE] ?: false
+                prefs[STEALTH_ACTIVE] = false
+            }
+        }
     }
 
     /**
@@ -477,6 +485,8 @@ class RotatoPreferences(private val context: Context) {
      */
     suspend fun setStealthActive(active: Boolean) {
         context.dataStore.edit { prefs ->
+            // Already in that state: don't re-save or restore a stale NSFW mode.
+            if ((prefs[STEALTH_ACTIVE] ?: false) == active) return@edit
             if (active) {
                 prefs[STEALTH_PREV_NSFW_MODE] = prefs[NSFW_MODE] ?: false
                 prefs[NSFW_MODE] = false
