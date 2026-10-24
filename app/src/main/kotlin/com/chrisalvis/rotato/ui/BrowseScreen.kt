@@ -135,6 +135,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     val unlockedListIds by vm.unlockedListIds.collectAsStateWithLifecycle()
     val lockedHiddenCount by vm.lockedHiddenCount.collectAsStateWithLifecycle()
     val listCounts by vm.listCounts.collectAsStateWithLifecycle()
+    val brokenCounts by vm.brokenCounts.collectAsStateWithLifecycle()
     val listCovers by vm.listCovers.collectAsStateWithLifecycle()
     val listMosaics by vm.listMosaics.collectAsStateWithLifecycle()
     val scheduleEntries by vm.scheduleEntries.collectAsStateWithLifecycle()
@@ -674,6 +675,7 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
             ListPickerContent(
                 lists = lists,
                 listCounts = listCounts,
+                brokenCounts = brokenCounts,
                 listCovers = listCovers,
                 listMosaics = listMosaics,
                 scheduleLinkCounts = remember(scheduleEntries) {
@@ -1255,6 +1257,7 @@ private fun EditRulesDialog(
 private fun ListPickerContent(
     lists: List<LocalList>,
     listCounts: Map<String, Int>,
+    brokenCounts: Map<String, Int> = emptyMap(),
     listCovers: Map<String, String?>,
     listMosaics: Map<String, List<String>> = emptyMap(),
     scheduleLinkCounts: Map<String, Int>,
@@ -1354,6 +1357,7 @@ private fun ListPickerContent(
                     coverUrl = coverUrl,
                     mosaic = listMosaics[list.id].orEmpty(),
                     scheduleCount = scheduleLinkCounts[list.id] ?: 0,
+                    brokenCount = brokenCounts[list.id] ?: 0,
                     isSessionUnlocked = list.isLocked && list.id in unlockedListIds,
                     onClick = { onSelectList(list) },
                     onDelete = { listToDelete = list },
@@ -1454,6 +1458,7 @@ private fun CollectionCard(
     coverUrl: String?,
     mosaic: List<String> = emptyList(),
     scheduleCount: Int,
+    brokenCount: Int = 0,
     isSessionUnlocked: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
@@ -1593,6 +1598,21 @@ private fun CollectionCard(
                                 "Schedule ×$scheduleCount",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                    if (brokenCount > 0) {
+                        // From the last Collection doctor check (Settings › Tools), which can repair or remove them.
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f), MaterialTheme.shapes.small)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                "$brokenCount broken",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
                                 fontWeight = FontWeight.Bold,
                             )
                         }

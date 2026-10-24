@@ -125,6 +125,13 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** Wallpapers per collection that the last Collection doctor check found gone from their site. */
+    val brokenCounts: StateFlow<Map<String, Int>> = combine(localLists.allWallpapers, prefs.brokenEntryIds) { all, broken ->
+            if (broken.isEmpty()) emptyMap()
+            else all.filter { it.id in broken }.groupBy { it.listId }.mapValues { (_, v) -> v.size }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val allKnownTags: StateFlow<List<String>> = combine(
         localLists.allWallpapers,
         prefs.historyJson.map { historyFromJson(it) },

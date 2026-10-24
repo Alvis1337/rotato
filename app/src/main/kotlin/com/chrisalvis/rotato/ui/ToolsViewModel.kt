@@ -32,6 +32,7 @@ data class ToolProgress(val done: Int = 0, val total: Int = 0, val running: Bool
 class ToolsViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val listPrefs = LocalListsPreferences(app)
+    private val rotatoPrefs = com.chrisalvis.rotato.data.RotatoPreferences(app)
 
     val collections: StateFlow<List<LocalList>> = listPrefs.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -76,6 +77,7 @@ class ToolsViewModel(application: Application) : AndroidViewModel(application) {
             _doctor.update { ToolProgress(running = true) }
             val report = CollectionDoctor.check(app) { done, total -> _doctor.update { it.copy(done = done, total = total) } }
             _doctorReport.update { report }
+            rotatoPrefs.setBrokenEntryIds(report.dead.map { it.id })
             _doctor.update {
                 val fixedNote = if (report.repaired > 0) " Updated ${report.repaired} links that had moved." else ""
                 ToolProgress(message = when {
@@ -95,6 +97,7 @@ class ToolsViewModel(application: Application) : AndroidViewModel(application) {
             val fixed = runCatching { CollectionDoctor.repair(app, report.dead) }.getOrDefault(emptySet())
             val left = report.dead.filter { it.id !in fixed }
             _doctorReport.update { report.copy(dead = left) }
+            rotatoPrefs.setBrokenEntryIds(left.map { it.id })
             _doctor.update {
                 ToolProgress(message = "Repaired ${fixed.size}. " + if (left.isEmpty()) "Nothing left broken" else "${left.size} are gone from their site")
             }
@@ -106,6 +109,7 @@ class ToolsViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             listPrefs.removeWallpapers(report.dead.mapTo(HashSet()) { it.id })
             _doctorReport.update { report.copy(dead = emptyList()) }
+            rotatoPrefs.setBrokenEntryIds(emptyList())
             _doctor.update { ToolProgress(message = "Removed ${report.dead.size} broken wallpapers") }
         }
     }

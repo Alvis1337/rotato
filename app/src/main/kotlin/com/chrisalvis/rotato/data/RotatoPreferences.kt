@@ -95,6 +95,7 @@ class RotatoPreferences(private val context: Context) {
         val FOLD_PAIRS = stringPreferencesKey("fold_pairs_json")
         val APPLIED_WALLPAPER_PATHS = stringPreferencesKey("applied_wallpaper_paths_json")
         val UP_NEXT_PATHS = stringPreferencesKey("up_next_paths_json")
+        val BROKEN_ENTRY_IDS = stringPreferencesKey("broken_entry_ids_json")
         val DISCOVER_VIEW_MODE = stringPreferencesKey("discover_view_mode")
     }
 
@@ -191,6 +192,15 @@ class RotatoPreferences(private val context: Context) {
             prefs[APPLIED_WALLPAPER_PATHS] = JSONArray(paths).toString()
         }
         return previous
+    }
+
+    /** Collection entries the last doctor check found gone from their site, so cards can flag them. */
+    val brokenEntryIds: Flow<Set<String>> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { parsePaths(it[BROKEN_ENTRY_IDS]).toSet() }
+
+    suspend fun setBrokenEntryIds(ids: Collection<String>) {
+        context.dataStore.edit { it[BROKEN_ENTRY_IDS] = JSONArray(ids.distinct()).toString() }
     }
 
     /** Wallpapers the user lined up to show next, in order, ahead of the normal rotation. */

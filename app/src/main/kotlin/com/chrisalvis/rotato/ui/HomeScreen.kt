@@ -564,6 +564,28 @@ private fun LibraryContent(
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
                 if (!inSelectionMode) {
+                    // Health in context: warn here, where downloads land, before the phone fills up.
+                    val freeBytes by produceState(Long.MAX_VALUE, resumeTick, images.size) {
+                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { appContext.filesDir.usableSpace }
+                    }
+                    if (freeBytes < 1_000_000_000L) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                            Text(
+                                "Phone storage is low (${com.chrisalvis.rotato.data.StorageTools.format(freeBytes)} free). Settings › Tools › Storage can clear caches.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
