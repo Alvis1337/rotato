@@ -72,6 +72,12 @@ class RotatoWallpaperService : WallpaperService() {
          * is swapped for a fresh one.
          */
         private var surfaceHeldVideo = false
+        /**
+         * The reverse: a canvas has drawn into this surface (an image was showing). A video
+         * decoder can't attach to it afterwards, so the player failed and the screen stayed
+         * black; the surface is swapped for a fresh one before the video starts.
+         */
+        private var surfaceHeldCanvas = false
         // Wallpaper surfaces start opaque, so the first swap goes to RGBA.
         private var opaqueFormat = true
         private var loadToken = 0
@@ -152,6 +158,7 @@ class RotatoWallpaperService : WallpaperService() {
         override fun onSurfaceCreated(holder: SurfaceHolder) {
             super.onSurfaceCreated(holder)
             surfaceHeldVideo = false
+            surfaceHeldCanvas = false
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
@@ -282,6 +289,14 @@ class RotatoWallpaperService : WallpaperService() {
             previous = null
             // With no live surface (this screen is off), wait for onSurfaceChanged to start it.
             if (!surfaceReady || !surfaceHolder.surface.isValid) return
+            if (surfaceHeldCanvas) {
+                // Swap for a fresh surface; onSurfaceChanged starts the video on it.
+                surfaceHeldCanvas = false
+                flipSurfaceFormat()
+                // In case the swap brings no surface callback, start it shortly anyway.
+                main.postDelayed({ if (videoPath == path && player == null && surfaceReady) playVideo(path) }, 350)
+                return
+            }
             try {
                 surfaceHeldVideo = true
                 player = MediaPlayer().apply {
@@ -294,7 +309,18 @@ class RotatoWallpaperService : WallpaperService() {
                     setOnPreparedListener { if (visible && !saving) it.start() else it.seekTo(0) }
                     // A decoder error (e.g. both screens' players competing for it) leaves a dead
                     // player; drop it so the next time this screen shows, it starts again.
-                    setOnErrorListener { _, _, _ -> main.post { releasePlayer() }; true }
+                    setOnErrorListener { _, _, _ ->
+                        main.post {
+                            releasePlayer()
+                            // A surface that still couldn't take the decoder: swap it once more and retry.
+                            if (videoPath == path && videoRetries++ < 1) flipSurfaceFormat()
+                        }
+                        true
+                    }
+                    setOnInfoListener { _, what, _ ->
+                        if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) videoRetries = 0
+                        false
+                    }
                     prepareAsync()
                 }
             } catch (e: Exception) {
@@ -309,6 +335,12 @@ class RotatoWallpaperService : WallpaperService() {
         private fun freshSurfaceAfterVideo() {
             if (!surfaceHeldVideo) return
             surfaceHeldVideo = false
+            flipSurfaceFormat()
+        }
+
+        private var videoRetries = 0
+
+        private fun flipSurfaceFormat() {
             opaqueFormat = !opaqueFormat
             runCatching {
                 surfaceHolder.setFormat(if (opaqueFormat) android.graphics.PixelFormat.RGBX_8888 else android.graphics.PixelFormat.RGBA_8888)
@@ -329,13 +361,15 @@ class RotatoWallpaperService : WallpaperService() {
         }
 
         private fun drawFrame() {
-            if (player != null || width == 0) return
+            // A video owns this surface (or is about to); drawing on it would block the decoder.
+            if (player != null || videoPath != null || width == 0) return
             val holder = surfaceHolder
             val canvas: Canvas = try {
                 holder.lockHardwareCanvas()
             } catch (e: Exception) {
                 runCatching { holder.lockCanvas() }.getOrNull()
             } ?: return
+            surfaceHeldCanvas = true
             val now = SystemClock.uptimeMillis()
             var animating = false
             try {
