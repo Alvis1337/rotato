@@ -66,6 +66,14 @@ class RotatoWallpaperService : WallpaperService() {
         /** The published wallpaper is a video; it plays whenever this screen has a live surface. */
         private var videoPath: String? = null
         private var surfaceReady = false
+        /**
+         * A video decoder has drawn into this surface. Android won't let a canvas draw into it
+         * afterwards, so a still shown next froze on the video's last frame until the surface
+         * is swapped for a fresh one.
+         */
+        private var surfaceHeldVideo = false
+        // Wallpaper surfaces start opaque, so the first swap goes to RGBA.
+        private var opaqueFormat = true
         private var loadToken = 0
 
         // Unfold reveal: when the surface gets wider, start zoomed in and settle out.
@@ -139,6 +147,11 @@ class RotatoWallpaperService : WallpaperService() {
             current = null
             previous = null
             super.onDestroy()
+        }
+
+        override fun onSurfaceCreated(holder: SurfaceHolder) {
+            super.onSurfaceCreated(holder)
+            surfaceHeldVideo = false
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
@@ -245,6 +258,7 @@ class RotatoWallpaperService : WallpaperService() {
                         return@post
                     }
                     releasePlayer()
+                    freshSurfaceAfterVideo()
                     previous?.bitmap?.recycle()
                     previous = if (fade) current else current?.let { it.bitmap.recycle(); null }
                     current = Frame(bmp, focus, crops)
@@ -269,6 +283,7 @@ class RotatoWallpaperService : WallpaperService() {
             // With no live surface (this screen is off), wait for onSurfaceChanged to start it.
             if (!surfaceReady || !surfaceHolder.surface.isValid) return
             try {
+                surfaceHeldVideo = true
                 player = MediaPlayer().apply {
                     setSurface(surfaceHolder.surface)
                     setDataSource(path)
@@ -284,6 +299,19 @@ class RotatoWallpaperService : WallpaperService() {
                 }
             } catch (e: Exception) {
                 releasePlayer()
+            }
+        }
+
+        /**
+         * Swaps the surface for a new one after a video, by flipping its pixel format (the
+         * look is the same either way); onSurfaceCreated/onSurfaceChanged then draw the still.
+         */
+        private fun freshSurfaceAfterVideo() {
+            if (!surfaceHeldVideo) return
+            surfaceHeldVideo = false
+            opaqueFormat = !opaqueFormat
+            runCatching {
+                surfaceHolder.setFormat(if (opaqueFormat) android.graphics.PixelFormat.RGBX_8888 else android.graphics.PixelFormat.RGBA_8888)
             }
         }
 
