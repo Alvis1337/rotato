@@ -365,17 +365,15 @@ private fun ReelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, la
 }
 
 /**
- * One page of the feed. Tall media fills the screen; wide media sits fitted in the middle over
- * a blurred, darkened copy of itself, so there are no hard black bars.
+ * One page of the feed. Media is always shown whole, never cropped or zoomed; whatever space
+ * it leaves is filled by a blurred, darkened copy of itself instead of hard black bars.
  */
 @Composable
 private fun ReelMedia(wp: BrainrotWallpaper, playing: Boolean, modifier: Modifier) {
     val still = if (wp.isVideo) wp.thumbUrl.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) } ?: wp.gridUrl.takeUnless { MediaType.isVideoUrl(it) }
     else wp.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: wp.fullUrl.ifBlank { wp.thumbUrl }
-    val ratio = parseAspectRatio(wp.resolution)
-    val tall = wp.resolution.isNotBlank() && ratio < 0.8f
     Box(modifier) {
-        if (!tall && !still.isNullOrBlank()) {
+        if (!still.isNullOrBlank()) {
             AsyncImage(
                 model = still,
                 contentDescription = null,
@@ -399,7 +397,7 @@ private fun ReelMedia(wp: BrainrotWallpaper, playing: Boolean, modifier: Modifie
             AsyncImage(
                 model = still,
                 contentDescription = wp.tags.take(3).joinToString(" "),
-                contentScale = if (tall) ContentScale.Crop else ContentScale.Fit,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
         }
