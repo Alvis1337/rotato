@@ -30,6 +30,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -467,8 +469,12 @@ fun BrainrotScreen(
         }
     }
 
+        // Unfolded with a grid layout: the grid stays on the left and the viewer opens on the right.
+        val twoPane = LocalConfiguration.current.screenWidthDp >= 700 &&
+            (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT)
+        val paneOpen = twoPane && selectedItem != null
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = if (paneOpen) Modifier.fillMaxHeight().fillMaxWidth(0.42f) else Modifier.fillMaxSize()) {
                 if (!noSources) {
                     Surface(
                         tonalElevation = 2.dp,
@@ -1132,6 +1138,7 @@ fun BrainrotScreen(
                                 }
             } // closes if (!noSources)
             selectedItem?.let { selected ->
+              Box(if (paneOpen) Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.58f).clipToBounds() else Modifier.fillMaxSize()) {
                         val startIndex = gridItems.indexOfFirst { it.id == selected.id && it.source == selected.source }.coerceAtLeast(0)
                         WallpaperDetailOverlay(
                             items = gridItems,
@@ -1188,6 +1195,7 @@ fun BrainrotScreen(
                                 }
                             },
                         )
+              }
                     }
 
             if (showHandsFree) {

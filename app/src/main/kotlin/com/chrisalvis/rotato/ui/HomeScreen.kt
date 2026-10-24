@@ -12,6 +12,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -452,6 +455,9 @@ private fun LibraryContent(
             )
         }
 
+        // Unfolded: the picture opens in a pane beside the grid instead of over it.
+        val libraryTwoPane = LocalConfiguration.current.screenWidthDp >= 700
+        val preview: @Composable (Boolean, Modifier) -> Unit = { inline, paneModifier ->
         selectedFile?.takeIf { images.isNotEmpty() }?.let { file ->
             ImagePreviewDialog(
                 images = images,
@@ -468,15 +474,21 @@ private fun LibraryContent(
                 onSaveToGallery = { currentFile -> viewModel.saveFileToGallery(currentFile) },
                 onPlayNext = { currentFile -> viewModel.queueUpNext(currentFile, first = true) },
                 wallpaperRatings = wallpaperRatings,
-                onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) }
+                onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) },
+                inline = inline,
+                modifier = paneModifier,
             )
         }
 
+        }
+        if (!libraryTwoPane) preview(false, Modifier)
+
+        Row(Modifier.weight(1f)) {
         PullToRefreshBox(
             isRefreshing = isLoading,
             onRefresh = viewModel::refreshImages,
             state = pullRefreshState,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).fillMaxHeight()
         ) {
             if (images.isEmpty()) {
                 EmptyState(
@@ -566,6 +578,10 @@ private fun LibraryContent(
                 }
                 } // Column
             }
+        }
+        if (libraryTwoPane && selectedFile != null && images.isNotEmpty()) {
+            preview(true, Modifier.weight(1.3f).fillMaxHeight())
+        }
         }
 
         Row(
@@ -1067,7 +1083,10 @@ private fun ImagePreviewDialog(
     onSaveToGallery: (File) -> Unit = {},
     onPlayNext: (File) -> Unit = {},
     wallpaperRatings: Map<String, Int> = emptyMap(),
-    onSetRating: (File, Int) -> Unit = { _, _ -> }
+    onSetRating: (File, Int) -> Unit = { _, _ -> },
+    /** Unfolded: shown in a pane beside the grid instead of a full-screen dialog. */
+    inline: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onDismiss)
     val coroutineScope = rememberCoroutineScope()
@@ -1098,10 +1117,7 @@ private fun ImagePreviewDialog(
 
     LaunchedEffect(pagerState.currentPage) { showZoom = false }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
+    PreviewHost(inline = inline, onDismiss = onDismiss, modifier = modifier) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1384,6 +1400,19 @@ private fun ImagePreviewDialog(
                 }
             }
         }
+    }
+}
+
+/** Full-screen dialog, or (unfolded) a plain pane that clips to its bounds. */
+@Composable
+internal fun PreviewHost(inline: Boolean, onDismiss: () -> Unit, modifier: Modifier, content: @Composable () -> Unit) {
+    if (inline) {
+        Box(modifier.clipToBounds().background(Color.Black)) { content() }
+    } else {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) { content() }
     }
 }
 

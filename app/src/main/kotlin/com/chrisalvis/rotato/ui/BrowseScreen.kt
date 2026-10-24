@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
@@ -294,7 +296,9 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
         )
     }
 
-    previewWallpaper?.let { initial ->
+    // Unfolded: a picture opens in a pane beside the collection's grid instead of over it.
+    val collectionsTwoPane = LocalConfiguration.current.screenWidthDp >= 700
+    val collectionPreview: @Composable (BrowseWallpaper, Boolean, Modifier) -> Unit = { initial, inline, paneModifier ->
         WallpaperUrlPreviewDialog(
             wallpapers = wallpapers,
             initialWallpaper = initial,
@@ -335,9 +339,12 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                 previewWallpaper = null
                 val idx = wallpapers.indexOfFirst { it.entryId == lastViewed?.entryId }.takeIf { it >= 0 }
                 if (idx != null) browseScope.launch { gridState.scrollToItem(idx) }
-            }
+            },
+            inline = inline,
+            modifier = paneModifier,
         )
     }
+    if (!collectionsTwoPane) previewWallpaper?.let { collectionPreview(it, false, Modifier) }
 
     if (showCreateMenu) {
         NewCollectionSheet(
@@ -852,6 +859,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                         }
                     )
                 }
+                Row(Modifier.weight(1f)) {
+                val paneWallpaper = previewWallpaper?.takeIf { collectionsTwoPane }
                 WallpaperGridContent(
                     wallpapers = wallpapers,
                     listId = selectedList?.id,
@@ -879,6 +888,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                     onGoToDiscover = onGoToDiscover,
                     modifier = Modifier.weight(1f)
                 )
+                if (paneWallpaper != null) collectionPreview(paneWallpaper, true, Modifier.weight(1.3f).fillMaxHeight())
+                }
             }
         }
         }
@@ -2170,7 +2181,9 @@ private fun WallpaperUrlPreviewDialog(
     onFoldPair: (BrowseWallpaper) -> Unit = {},
     onTagSearch: (String) -> Unit = {},
     onTagTier: (String, com.chrisalvis.rotato.data.TagTier) -> Unit = { _, _ -> },
-    onDismiss: (currentWallpaper: BrowseWallpaper?) -> Unit
+    onDismiss: (currentWallpaper: BrowseWallpaper?) -> Unit,
+    inline: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
@@ -2209,10 +2222,7 @@ private fun WallpaperUrlPreviewDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = { onDismiss(currentWallpaper) },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
+    PreviewHost(inline = inline, onDismiss = { onDismiss(currentWallpaper) }, modifier = modifier) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
