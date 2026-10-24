@@ -296,6 +296,9 @@ fun VideoPlayerView(
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                 }
             },
+            // The view outlives a change of url (Skip puts the next video on the same pager page),
+            // so it must be pointed at the new player; otherwise it keeps the released one's last frame.
+            update = { view -> if ((view as PlayerView).player !== exoPlayer) view.player = exoPlayer },
         )
 
         // A plain Compose node (not the AndroidView above) so the seek bar drawn later in this
