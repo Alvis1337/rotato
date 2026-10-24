@@ -106,6 +106,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>().applicationContext
         val key = "gallery:${item.fullUrl}"
         if (_downloading.value.contains(key)) return
+        if (!com.chrisalvis.rotato.data.LegacyStoragePermission.ensure(ctx)) return
         viewModelScope.launch {
             _downloading.value = _downloading.value + key
             val ok = if (item.fullUrl.startsWith("/")) {
@@ -172,7 +173,9 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 val dir = java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Rotato")
                 dir.mkdirs()
-                java.io.File(dir, file.name).writeBytes(bytes)
+                val out = java.io.File(dir, file.name)
+                out.writeBytes(bytes)
+                com.chrisalvis.rotato.data.LegacyStoragePermission.scan(ctx, out, mimeType)
             }
             true
         } catch (_: Exception) { false }

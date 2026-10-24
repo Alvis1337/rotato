@@ -1503,6 +1503,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveToGallery(wp: BrainrotWallpaper) {
+        if (!com.chrisalvis.rotato.data.LegacyStoragePermission.ensure(getApplication<Application>())) return
         learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.DOWNLOADED)
         val key = "gallery:${wp.source}:${wp.id}"
         if (_downloadingIds.value.contains(key)) return

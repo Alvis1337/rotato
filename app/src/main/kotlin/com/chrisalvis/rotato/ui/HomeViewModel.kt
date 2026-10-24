@@ -746,6 +746,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveFileToGallery(file: File) {
+        if (!com.chrisalvis.rotato.data.LegacyStoragePermission.ensure(getApplication<Application>())) return
         viewModelScope.launch {
             val app = getApplication<Application>()
             val ok = feedRepo.saveFileToGallery(app, file)

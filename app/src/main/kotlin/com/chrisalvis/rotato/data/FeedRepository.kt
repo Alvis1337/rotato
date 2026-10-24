@@ -138,7 +138,9 @@ class FeedRepository(private val imageDir: File) {
                     "Rotato"
                 )
                 dir.mkdirs()
-                File(dir, fileName).writeBytes(bytes)
+                val out = File(dir, fileName)
+                out.writeBytes(bytes)
+                LegacyStoragePermission.scan(context, out, mimeType)
                 if (BuildConfig.DEBUG) Log.d(TAG, "Saved to file: ${dir.absolutePath}/$fileName")
             }
             true
@@ -184,7 +186,8 @@ class FeedRepository(private val imageDir: File) {
             } else {
                 val dir = File(Environment.getExternalStoragePublicDirectory(publicDir), "Rotato")
                 dir.mkdirs()
-                file.copyTo(File(dir, file.name), overwrite = true)
+                val out = file.copyTo(File(dir, file.name), overwrite = true)
+                LegacyStoragePermission.scan(context, out, mimeType)
             }
             if (BuildConfig.DEBUG) Log.d(TAG, "saveFileToGallery success: ${file.name}")
             true

@@ -23,6 +23,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 class ScheduleReceiver : BroadcastReceiver() {
@@ -31,6 +32,9 @@ class ScheduleReceiver : BroadcastReceiver() {
         const val EXTRA_ENTRY_ID = "schedule_entry_id"
         const val EXTRA_NAVIGATE_TO = "navigate_to"
         private const val TAG = "ScheduleReceiver"
+        /** How long a switch waits on downloads before handing the rest to [PoolSyncWorker]. */
+        internal const val QUICK_SYNC_MS = 5_000L
+        private const val BACKGROUND_NOTE = "finishing in background"
 
         /**
          * Apply a schedule entry: update rotation flags, sync image pool, enqueue WallpaperWorker,
@@ -68,8 +72,12 @@ class ScheduleReceiver : BroadcastReceiver() {
                 if (!active) removeRotationFiles(context, listId, listPrefs, keepKeys = incomingKeys)
             }
 
-            val imagesInPool = syncRotationPool(context, entry.listIds, listPrefs)
-            val triggerResult = if (imagesInPool == 0) "applied (empty pool!)" else "applied ($imagesInPool images)"
+            val (imagesInPool, deferred) = syncRotationPoolOrDefer(context, entry.listIds, listPrefs)
+            val triggerResult = when {
+                deferred -> "applied ($imagesInPool images, $BACKGROUND_NOTE)"
+                imagesInPool == 0 -> "applied (empty pool!)"
+                else -> "applied ($imagesInPool images)"
+            }
             schedPrefs.recordTrigger(entry.id, triggerResult)
 
             enqueueRotation(context)
@@ -78,7 +86,7 @@ class ScheduleReceiver : BroadcastReceiver() {
             return triggerResult
         }
 
-        private fun enqueueRotation(context: Context) {
+        internal fun enqueueRotation(context: Context) {
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(
                     "schedule_trigger",
@@ -87,6 +95,38 @@ class ScheduleReceiver : BroadcastReceiver() {
                         .setInputData(workDataOf(WallpaperWorker.KEY_MANUAL to true))
                         .build(),
                 )
+        }
+
+        /**
+         * Fills the pool for [listIds], giving the downloads [QUICK_SYNC_MS]; whatever isn't done
+         * by then is finished by [PoolSyncWorker] once there's a connection. Returns the images of
+         * [listIds] now on disk and whether the rest was handed off to the background.
+         */
+        internal suspend fun syncRotationPoolOrDefer(
+            context: Context,
+            listIds: Set<String>,
+            listPrefs: LocalListsPreferences,
+        ): Pair<Int, Boolean> {
+            val synced = withTimeoutOrNull(QUICK_SYNC_MS) { syncRotationPool(context, listIds, listPrefs) }
+            if (synced != null) {
+                PoolSyncWorker.cancel(context)
+                return synced to false
+            }
+            val partial = countPooled(context, listIds, listPrefs)
+            PoolSyncWorker.enqueue(context, listIds, rotateWhenDone = partial == 0)
+            return partial to true
+        }
+
+        /** Wallpapers of [listIds] that are already in the pool. */
+        internal suspend fun countPooled(
+            context: Context,
+            listIds: Set<String>,
+            listPrefs: LocalListsPreferences,
+        ): Int {
+            val onDisk = File(context.filesDir, "rotato_images").listFiles()?.toList().orEmpty()
+            return listPrefs.allWallpapers.first()
+                .filter { it.listId in listIds }
+                .count { wp -> onDisk.findPoolFile(wp.source, wp.sourceId) != null }
         }
 
         internal suspend fun syncRotationPool(
@@ -185,9 +225,19 @@ class ScheduleReceiver : BroadcastReceiver() {
                 }
             } catch (e: TimeoutCancellationException) {
                 Log.e(TAG, "Timed out processing entry $entryId", e)
-                runCatching { schedPrefs.recordTrigger(entryId, "error: timeout") }
-                // Pool sync ran long; still rotate from whatever made it onto disk.
-                if (fired?.enabled == true) enqueueRotation(context)
+                val entry = fired?.takeIf { it.enabled }
+                if (entry == null) {
+                    runCatching { schedPrefs.recordTrigger(entryId, "error: timeout") }
+                } else {
+                    // Pool sync ran long; rotate from whatever made it onto disk and let the
+                    // background sync download the rest.
+                    runCatching {
+                        val partial = countPooled(context, entry.listIds, LocalListsPreferences(context))
+                        PoolSyncWorker.enqueue(context, entry.listIds, rotateWhenDone = partial == 0)
+                        schedPrefs.recordTrigger(entryId, "applied ($BACKGROUND_NOTE)")
+                    }
+                    enqueueRotation(context)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Unhandled error processing entry $entryId", e)
                 runCatching { schedPrefs.recordTrigger(entryId, "error: ${e.javaClass.simpleName}") }

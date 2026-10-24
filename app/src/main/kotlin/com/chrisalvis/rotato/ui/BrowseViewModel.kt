@@ -1152,6 +1152,8 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val allSelected = wallpapers.value.filter { _selected.value.contains(it.entryId) }
         val toDownload = allSelected.filter { it.source != "device" }
         val deviceCount = allSelected.size - toDownload.size
+        // Keep the selection when asking for storage access so the user can just tap save again.
+        if (toDownload.isNotEmpty() && !com.chrisalvis.rotato.data.LegacyStoragePermission.ensure(app)) return
         exitSelectionMode()
         val ctx = app.applicationContext
         viewModelScope.launch {
@@ -1185,6 +1187,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         val ctx = app.applicationContext
+        if (!com.chrisalvis.rotato.data.LegacyStoragePermission.ensure(ctx)) return
         viewModelScope.launch {
             if (_downloading.value.contains(wallpaper.sourceId)) return@launch
             _downloading.update { it + wallpaper.sourceId }
@@ -1742,6 +1745,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
         val listId = _selectedListId.value ?: return
         if (_exportProgress.value != null) return
         val ctx = app.applicationContext
+        if (!com.chrisalvis.rotato.data.LegacyStoragePermission.ensure(ctx)) return
         viewModelScope.launch(Dispatchers.IO) {
             val items = localLists.wallpapersForList(listId).first()
             if (items.isEmpty()) {
@@ -1823,7 +1827,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Rotato")
                 dir.mkdirs()
-                File(dir, file.name).writeBytes(bytes)
+                val out = File(dir, file.name)
+                out.writeBytes(bytes)
+                com.chrisalvis.rotato.data.LegacyStoragePermission.scan(ctx, out, mimeType)
             }
             true
         } catch (_: Exception) {

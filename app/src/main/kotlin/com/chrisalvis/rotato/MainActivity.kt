@@ -1,8 +1,11 @@
 package com.chrisalvis.rotato
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -42,6 +45,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.core.content.IntentCompat
 import androidx.core.os.BundleCompat
+import com.chrisalvis.rotato.data.LegacyStoragePermission
 import com.chrisalvis.rotato.data.RotatoPreferences
 import com.chrisalvis.rotato.data.plugins.PluginRepository
 import com.chrisalvis.rotato.ui.BrainrotScreen
@@ -77,6 +81,15 @@ class MainActivity : AppCompatActivity() {
     private val _pendingNavigate = mutableStateOf<String?>(null)
     private val _pendingSharedImages = mutableStateOf<List<Uri>>(emptyList())
     private val _pendingMalCode = mutableStateOf<String?>(null)
+
+    /** Gallery saves on Android 8–9 ask through [LegacyStoragePermission]; the user then taps save again. */
+    private val legacyStorageLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        Toast.makeText(
+            this,
+            if (granted) "Storage access allowed, tap save again" else "Saving to the gallery needs storage access",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
 
     @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     /** Volume up while a video with sound controls is on screen unmutes it, like other video apps. */
@@ -116,6 +129,11 @@ class MainActivity : AppCompatActivity() {
             _pendingMalCode.value = savedInstanceState.getString(STATE_PENDING_MAL_CODE)
         }
         setContent {
+            LaunchedEffect(Unit) {
+                LegacyStoragePermission.requests.collect {
+                    legacyStorageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            }
             val themePrefs = remember { RotatoPreferences(applicationContext) }
             val themeMode by themePrefs.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
             val dynamicColor by themePrefs.dynamicColor.collectAsStateWithLifecycle(initialValue = true)

@@ -96,7 +96,8 @@ class AutomationReceiver : BroadcastReceiver() {
                 ScheduleReceiver.removeRotationFiles(context, other.id, listPrefs)
             }
             listPrefs.setUseAsRotation(listId, true)
-            ScheduleReceiver.syncRotationPool(context, setOf(listId), listPrefs)
+            // Slow or offline: the rest of the downloads finish in the background.
+            ScheduleReceiver.syncRotationPoolOrDefer(context, setOf(listId), listPrefs)
             if (rotate) rotateNow(context)
         }
     }
