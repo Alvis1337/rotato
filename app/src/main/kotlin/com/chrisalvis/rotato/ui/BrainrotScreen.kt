@@ -78,6 +78,7 @@ import android.content.ClipData
 import android.widget.Toast
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.FocusRequester
@@ -588,6 +589,23 @@ fun BrainrotScreen(
             if (lists.isEmpty()) onAddToList(wp) else vm.addToList(selectedListId ?: lists.first().id, wp, leaveGrid = false)
         }
         var peekItem by remember { mutableStateOf<BrainrotWallpaper?>(null) }
+        // Where each tile sits on screen, so the viewer can grow out of the one that was tapped.
+        val tileBounds = remember { mutableMapOf<String, androidx.compose.ui.geometry.Rect>() }
+        val openProgress = remember { androidx.compose.animation.core.Animatable(1f) }
+        var openFrom by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var overlayOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        val viewerOpen = selectedItem != null
+        LaunchedEffect(viewerOpen) {
+            if (viewerOpen) {
+                openFrom = selectedItem?.let { tileBounds["${it.source}:${it.id}"] }
+                if (openFrom != null) {
+                    openProgress.snapTo(0f)
+                    openProgress.animateTo(1f, androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                } else openProgress.snapTo(1f)
+            } else {
+                openFrom = null
+            }
+        }
         peekItem?.let { wp ->
             DiscoverPeek(
                 wallpaper = wp,
@@ -695,6 +713,7 @@ fun BrainrotScreen(
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     gridGridItems(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
+                                      Box(Modifier.onGloballyPositioned { tileBounds["${wp.source}:${wp.id}"] = it.boundsInRoot() }) {
                                         DiscoverThumbnailGridItem(
                                             wallpaper = wp,
                                             isDownloading = downloadingIds.contains(wp.id),
@@ -710,6 +729,7 @@ fun BrainrotScreen(
                                             onLongPress = { if (batchMode) vm.toggleBatchSelect(wp.id) else peekItem = wp },
                                             onDoubleTap = { quickSave(wp) },
                                         )
+                                      }
                                     }
                                     if (loadingMore) {
                                         gridGridItems(
@@ -762,6 +782,7 @@ fun BrainrotScreen(
                                     verticalItemSpacing = 5.dp
                                 ) {
                                     items(gridItems, key = { "${it.source}:${it.id}" }) { wp ->
+                                      Box(Modifier.onGloballyPositioned { tileBounds["${wp.source}:${wp.id}"] = it.boundsInRoot() }) {
                                         DiscoverGridItem(
                                             wallpaper = wp,
                                             isDownloading = downloadingIds.contains(wp.id),
@@ -778,6 +799,7 @@ fun BrainrotScreen(
                                             onLongPress = { if (batchMode) vm.toggleBatchSelect(wp.id) else peekItem = wp },
                                             onDoubleTap = { quickSave(wp) },
                                         )
+                                      }
                                     }
                                     if (loadingMore) {
                                         items(listOf("loading-more"), span = { StaggeredGridItemSpan.FullLine }) {
@@ -1074,7 +1096,25 @@ fun BrainrotScreen(
                                 }
             } // closes if (!noSources)
             selectedItem?.let { selected ->
-              Box(if (paneOpen) Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.58f).clipToBounds() else Modifier.fillMaxSize()) {
+              Box(
+                  (if (paneOpen) Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.58f).clipToBounds() else Modifier.fillMaxSize())
+                      .onGloballyPositioned { overlayOrigin = it.boundsInRoot().topLeft }
+                      .graphicsLayer {
+                          // Grow from the tapped tile to full screen.
+                          val from = openFrom
+                          val p = openProgress.value
+                          if (from != null && p < 1f && size.width > 0f && size.height > 0f) {
+                              transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                              scaleX = lerpF(from.width / size.width, 1f, p)
+                              scaleY = lerpF(from.height / size.height, 1f, p)
+                              translationX = lerpF(from.left - overlayOrigin.x, 0f, p)
+                              translationY = lerpF(from.top - overlayOrigin.y, 0f, p)
+                              alpha = lerpF(0.4f, 1f, p)
+                              shape = RoundedCornerShape(lerpF(16f, 0f, p).dp)
+                              clip = true
+                          }
+                      }
+              ) {
                         val startIndex = gridItems.indexOfFirst { it.id == selected.id && it.source == selected.source }.coerceAtLeast(0)
                         WallpaperDetailOverlay(
                             inPane = paneOpen,
@@ -3045,3 +3085,5 @@ private fun FoldPairPreviewDialog(
         }
     )
 }
+
+private fun lerpF(start: Float, stop: Float, fraction: Float): Float = start + (stop - start) * fraction

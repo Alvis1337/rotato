@@ -79,6 +79,17 @@ class MainActivity : AppCompatActivity() {
     private val _pendingMalCode = mutableStateOf<String?>(null)
 
     @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    /** Volume up while a video with sound controls is on screen unmutes it, like other video apps. */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP &&
+            com.chrisalvis.rotato.ui.VideoMuteState.onScreen > 0 &&
+            com.chrisalvis.rotato.ui.VideoMuteState.muted
+        ) {
+            com.chrisalvis.rotato.ui.VideoMuteState.muted = false
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

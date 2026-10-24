@@ -141,6 +141,29 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     val scheduleEntries by vm.scheduleEntries.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
+    // Play: this collection in the full-screen feed, like Discover's Feed.
+    var playCollectionFrom by remember { mutableStateOf<Int?>(null) }
+    playCollectionFrom?.let { start ->
+        val reelItems = remember(wallpapers) {
+            wallpapers.map { w ->
+                com.chrisalvis.rotato.data.BrainrotWallpaper(
+                    id = w.entryId.ifBlank { w.sourceId }, source = w.source, thumbUrl = w.thumbUrl,
+                    sampleUrl = w.sampleUrl.ifBlank { w.fullUrl }, fullUrl = w.fullUrl, resolution = w.resolution,
+                    pageUrl = w.pageUrl, tags = w.tags, isVideo = w.isVideo, isNsfw = w.isNsfw,
+                )
+            }
+        }
+        val byId = remember(wallpapers) { wallpapers.associateBy { it.entryId.ifBlank { it.sourceId } } }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        ReelPlayer(
+            items = reelItems,
+            startIndex = start,
+            onDismiss = { playCollectionFrom = null },
+            onSet = { wp -> byId[wp.id]?.let { vm.setAsWallpaper(it) } },
+            onShare = { wp -> byId[wp.id]?.let { vm.shareWallpapers(ctx, listOf(it.toLocalWallpaperEntry(selectedList?.id.orEmpty()))) } },
+            title = { selectedList?.name ?: "Collection" },
+        )
+    }
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
     val nsfwBlurEnabled by vm.nsfwBlurEnabled.collectAsStateWithLifecycle()
@@ -525,6 +548,9 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
                         }
                     }
                     if (!selectionMode && selectedList != null) {
+                        if (wallpapers.isNotEmpty()) IconButton(onClick = { playCollectionFrom = 0 }) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Play this collection")
+                        }
                         IconButton(onClick = { vm.enterSelectionMode() }) {
                             Icon(Icons.Default.CheckBox, contentDescription = "Select images")
                         }

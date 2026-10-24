@@ -453,6 +453,29 @@ private fun LibraryContent(
         f.apply(baseGridImages, wallpaperRatings, nsfwFileNames, foldNames)
     }
 
+    // Play: the Library (as currently filtered) in the full-screen feed.
+    var reelStart by remember { mutableStateOf<Int?>(null) }
+    reelStart?.let { start ->
+        val reelItems = remember(gridImages) {
+            gridImages.map { f ->
+                val uri = f.toURI().toString()
+                com.chrisalvis.rotato.data.BrainrotWallpaper(
+                    id = f.absolutePath, source = "device", thumbUrl = uri, sampleUrl = uri, fullUrl = uri,
+                    resolution = "", pageUrl = "", tags = photoTags[f.name].orEmpty(),
+                    isVideo = com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(f), isNsfw = f.name in nsfwFileNames,
+                )
+            }
+        }
+        ReelPlayer(
+            items = reelItems,
+            startIndex = start,
+            onDismiss = { reelStart = null },
+            onSet = { viewModel.setSpecificWallpaper(File(it.id)) },
+            onShare = { wp -> shareLocalFile(appContext, File(wp.id)) },
+            title = { "Library" },
+            nsfwBlurEnabled = nsfwBlurEnabled,
+        )
+    }
     if (showSaveToListDialog) {
         SaveToCollectionDialog(
             collections = collections,
@@ -601,6 +624,13 @@ private fun LibraryContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
                         )
+                        if (gridImages.isNotEmpty()) {
+                            TextButton(onClick = { reelStart = 0 }) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Play", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
                         if (images.size > 1) {
                             TextButton(onClick = { viewModel.findDuplicates() }) {
                                 Text("Find duplicates", style = MaterialTheme.typography.labelMedium)
@@ -2216,5 +2246,21 @@ private fun ColourFilterRow(
                 trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Clear colour filter", modifier = Modifier.size(16.dp)) }
             )
         }
+    }
+}
+
+
+/** Shares a picture or video from the phone through the system share sheet. */
+internal fun shareLocalFile(context: android.content.Context, file: File) {
+    runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) "video/*" else "image/*"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(android.content.Intent.createChooser(send, "Share wallpaper").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure {
+        android.widget.Toast.makeText(context, "Couldn't share this file", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

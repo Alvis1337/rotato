@@ -2,6 +2,7 @@ package com.chrisalvis.rotato.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ThumbDown
@@ -230,17 +231,23 @@ internal fun DiscoverFeed(
     loadingMore: Boolean,
     endReached: Boolean,
     onLoadMore: () -> Unit,
-    onSave: (BrainrotWallpaper) -> Unit,
+    /** Null hides Save (and double-tap saving), e.g. when playing the user's own Library. */
+    onSave: ((BrainrotWallpaper) -> Unit)?,
     onOpen: (BrainrotWallpaper) -> Unit,
     onSet: (BrainrotWallpaper) -> Unit,
-    onSkip: (BrainrotWallpaper) -> Unit = {},
+    onSkip: ((BrainrotWallpaper) -> Unit)? = {},
     onTag: (String) -> Unit = {},
-    onMoreLikeThis: (BrainrotWallpaper) -> Unit = {},
+    onMoreLikeThis: ((BrainrotWallpaper) -> Unit)? = {},
     onDwell: (BrainrotWallpaper, Long) -> Unit = { _, _ -> },
+    /** Replaces the default share (the post's link as text), e.g. to share a file on the phone. */
+    onShare: ((BrainrotWallpaper) -> Unit)? = null,
+    /** The caption's first line; defaults to the source and size. */
+    title: ((BrainrotWallpaper) -> String)? = null,
+    startPage: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val pager = rememberPagerState { items.size }
+    val pager = rememberPagerState(initialPage = startPage.coerceIn(0, (items.size - 1).coerceAtLeast(0))) { items.size }
     LoadAhead({ pager.currentPage }, items.size, 4, loadingMore, endReached, onLoadMore)
     // Load the start of the next two videos while this one plays, so a swipe starts instantly.
     LaunchedEffect(pager.currentPage, items.size) {
@@ -265,7 +272,7 @@ internal fun DiscoverFeed(
         val blurred = wp.isNsfw && nsfwBlurEnabled && !revealed
         var burst by remember { mutableStateOf(0) }
         val saved = isSaved(wp)
-        val save = { if (!saved) onSave(wp); burst++ }
+        val save = { if (onSave != null) { if (!saved) onSave(wp); burst++ } }
         Box(Modifier.fillMaxSize()) {
             ReelMedia(
                 wp = wp,
@@ -276,7 +283,7 @@ internal fun DiscoverFeed(
                     .pointerInput(wp.id, blurred, saved) {
                         detectTapGestures(
                             onTap = { if (blurred) revealed = true },
-                            onDoubleTap = { if (!blurred) save() },
+                            onDoubleTap = { if (!blurred && onSave != null) save() },
                             onLongPress = { onOpen(wp) },
                         )
                     },
@@ -306,17 +313,18 @@ internal fun DiscoverFeed(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                ReelAction(if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, if (saved) "Saved" else "Save", tint = if (saved) MaterialTheme.colorScheme.primary else Color.White) { save() }
+                if (onSave != null) ReelAction(if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, if (saved) "Saved" else "Save", tint = if (saved) MaterialTheme.colorScheme.primary else Color.White) { save() }
                 ReelAction(Icons.Default.Wallpaper, "Set") { onSet(wp) }
                 ReelAction(Icons.Default.Share, "Share") {
+                    if (onShare != null) { onShare(wp); return@ReelAction }
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(android.content.Intent.EXTRA_TEXT, wp.pageUrl.takeIf { it.startsWith("http") } ?: wp.fullUrl)
                     }
                     context.startActivity(android.content.Intent.createChooser(send, "Share"))
                 }
-                ReelAction(Icons.Default.AutoAwesome, "More like this") { onMoreLikeThis(wp) }
-                ReelAction(Icons.Default.ThumbDown, "Not for me") { onSkip(wp) }
+                if (onMoreLikeThis != null) ReelAction(Icons.Default.AutoAwesome, "More like this") { onMoreLikeThis(wp) }
+                if (onSkip != null) ReelAction(Icons.Default.ThumbDown, "Not for me") { onSkip(wp) }
                 ReelAction(Icons.Default.OpenInFull, "More") { onOpen(wp) }
             }
 
@@ -329,7 +337,7 @@ internal fun DiscoverFeed(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    buildString {
+                    title?.invoke(wp) ?: buildString {
                         append(sourceDisplayName(wp.source))
                         if (wp.resolution.isNotBlank()) append(" · ").append(wp.resolution.replace("x", "×"))
                     },
@@ -350,7 +358,7 @@ internal fun DiscoverFeed(
                             maxLines = 1,
                             modifier = Modifier.combinedClickable(
                                 onClick = { onTag(tag) },
-                                onLongClick = { onMoreLikeThis(wp) },
+                                onLongClick = { onMoreLikeThis?.invoke(wp) },
                             ),
                         )
                     }
@@ -553,4 +561,50 @@ private fun onSaveNow(wp: BrainrotWallpaper, offset: Animatable<Float, androidx.
 private suspend fun settle(offset: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>) {
     kotlinx.coroutines.delay(600)
     offset.snapTo(0f)
+}
+
+
+/**
+ * The feed, full screen over everything, for the user's own pictures and videos: the Library or
+ * a collection played like Discover's Feed. Swipe down past the first, press back or tap ✕ to leave.
+ */
+@Composable
+internal fun ReelPlayer(
+    items: List<BrainrotWallpaper>,
+    startIndex: Int,
+    onDismiss: () -> Unit,
+    onSet: (BrainrotWallpaper) -> Unit,
+    onShare: ((BrainrotWallpaper) -> Unit)? = null,
+    onSave: ((BrainrotWallpaper) -> Unit)? = null,
+    isSaved: (BrainrotWallpaper) -> Boolean = { false },
+    title: ((BrainrotWallpaper) -> String)? = null,
+    nsfwBlurEnabled: Boolean = false,
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            DiscoverFeed(
+                items = items,
+                isSaved = isSaved,
+                nsfwBlurEnabled = nsfwBlurEnabled,
+                loadingMore = false,
+                endReached = true,
+                onLoadMore = {},
+                onSave = onSave,
+                onOpen = {},
+                onSet = onSet,
+                onSkip = null,
+                onMoreLikeThis = null,
+                onShare = onShare,
+                title = title,
+                startPage = startIndex,
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp),
+            ) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) }
+        }
+    }
 }

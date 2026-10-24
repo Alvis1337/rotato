@@ -66,10 +66,38 @@ object OfflinePack {
         .setRequiresStorageNotLow(true)
         .build()
 
-    /** The pack's copy of [entry], if it has one. */
+    /** The pack's copy of [entry], or a saved video's copy, if there is one. */
     fun fileFor(context: Context, entry: LocalWallpaperEntry): File? =
         dir(context).listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId)
             ?.takeIf { it.length() > 0 }
+            ?: videoDir(context).listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId)
+                ?.takeIf { it.length() > 0 }
+
+    /** Videos saved from Discover, kept on the phone so they can rotate without a wait. */
+    fun videoDir(context: Context): File = File(context.filesDir, "saved_videos").also { it.mkdirs() }
+
+    /** Most saved videos kept; the oldest go first. */
+    private const val MAX_VIDEOS = 60
+
+    /**
+     * Downloads a just-saved video in the background, on Wi-Fi only, so it's ready when rotation
+     * or a schedule picks it. On mobile data it's left to download when it's first needed.
+     */
+    suspend fun keepVideo(context: Context, wallpaper: BrainrotWallpaper) {
+        if (!wallpaper.isVideo || !wallpaper.fullUrl.startsWith("http")) return
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        if (cm.isActiveNetworkMetered) return
+        val dir = videoDir(context)
+        if (dir.listFiles()?.toList().orEmpty().findPoolFile(wallpaper.source, wallpaper.id) != null) return
+        val name = runCatching {
+            FeedRepository(dir).downloadWallpaper(wallpaper.id, wallpaper.fullUrl, wallpaper.sampleUrl, source = wallpaper.source)
+        }.getOrNull() ?: return
+        if (wallpaper.isNsfw) RotatoPreferences(context).setFileNsfw(name, true)
+        dir.listFiles()?.filter { it.isFile && !it.name.endsWith(".part") }
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(MAX_VIDEOS)
+            ?.forEach { it.delete() }
+    }
 
     /** Downloads what enabled schedules need and drops what they no longer use. Returns the file count. */
     internal suspend fun sync(context: Context): Int {

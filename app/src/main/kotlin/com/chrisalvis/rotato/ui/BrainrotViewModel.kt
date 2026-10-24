@@ -978,6 +978,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = localLists.addWallpaper(listId, wp)
             val ctx = getApplication<Application>().applicationContext
+            // Saved videos download in the background (Wi-Fi only) so they're ready to rotate.
+            if (ok && wp.isVideo) launch(Dispatchers.IO) { runCatching { com.chrisalvis.rotato.data.OfflinePack.keepVideo(ctx, wp) } }
             val list = lists.value.find { it.id == listId }
             val listName = list?.name ?: "list"
             if (ok) {

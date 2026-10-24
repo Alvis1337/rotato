@@ -174,12 +174,30 @@ object FullscreenVideo {
 }
 
 /**
- * Session-scoped (not persisted across app restarts) mute preference for full-screen video
- * playback — unmuting one video keeps subsequent videos unmuted for the rest of the session.
- * Grid previews never read this; they're always muted regardless.
+ * Mute choice for full-screen and feed videos, remembered across app restarts: once unmuted,
+ * later videos play with sound. Players on screen follow a change straight away. Grid previews
+ * never read this; they're always muted.
  */
 object VideoMuteState {
-    var muted by mutableStateOf(true)
+    private const val PREFS = "video_sound"
+    private var prefs: android.content.SharedPreferences? = null
+    private var state by mutableStateOf(true)
+
+    /** Players that show a mute button (full-screen viewer, feed) currently on screen. */
+    var onScreen by mutableIntStateOf(0)
+
+    var muted: Boolean
+        get() = state
+        set(value) {
+            state = value
+            prefs?.edit()?.putBoolean("muted", value)?.apply()
+        }
+
+    fun load(context: android.content.Context) {
+        if (prefs != null) return
+        prefs = context.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .also { state = it.getBoolean("muted", true) }
+    }
 }
 
 private fun formatDuration(ms: Long): String {
@@ -220,6 +238,7 @@ fun VideoPlayerView(
     progressLine: Boolean = false,
 ) {
     val context = LocalContext.current
+    remember { VideoMuteState.load(context) }
     var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
     // Bumped by Retry to rebuild the player after an error.
     var attempt by remember(url) { mutableIntStateOf(0) }
@@ -254,6 +273,17 @@ fun VideoPlayerView(
                 volume = if (isMuted) 0f else 1f
                 playWhenReady = true
             }
+    }
+    if (showMuteButton) {
+        DisposableEffect(Unit) {
+            VideoMuteState.onScreen++
+            onDispose { VideoMuteState.onScreen-- }
+        }
+        // Follow a change made elsewhere (another page, or the volume keys).
+        LaunchedEffect(exoPlayer, VideoMuteState.muted) {
+            isMuted = VideoMuteState.muted
+            exoPlayer.volume = if (isMuted) 0f else 1f
+        }
     }
     LaunchedEffect(exoPlayer) {
         // Full screen: give the grid previews a couple of frames to release their decoders first.
