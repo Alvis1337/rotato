@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Star
@@ -540,6 +541,8 @@ private fun LibraryContent(
                 onPlayNext = { currentFile -> viewModel.queueUpNext(currentFile, first = true) },
                 wallpaperRatings = wallpaperRatings,
                 onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) },
+                collections = collections,
+                onAddToCollection = { currentFile, listId -> viewModel.saveRotationToList(listId, listOf(currentFile)) },
                 inline = inline,
                 modifier = paneModifier,
             )
@@ -1187,11 +1190,31 @@ private fun ImagePreviewDialog(
     onPlayNext: (File) -> Unit = {},
     wallpaperRatings: Map<String, Int> = emptyMap(),
     onSetRating: (File, Int) -> Unit = { _, _ -> },
+    /** Same viewer actions as Discover and Collections: collection, screen preview, share. */
+    collections: List<LocalList> = emptyList(),
+    onAddToCollection: (File, String) -> Unit = { _, _ -> },
     /** Unfolded: shown in a pane beside the grid instead of a full-screen dialog. */
     inline: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onDismiss)
+    val viewerContext = LocalContext.current
+    var collectionPickFor by remember { mutableStateOf<File?>(null) }
+    var screenPreviewFor by remember { mutableStateOf<File?>(null) }
+    collectionPickFor?.let { f ->
+        SaveToCollectionDialog(
+            collections = collections,
+            onDismiss = { collectionPickFor = null },
+            onSelect = { listId -> onAddToCollection(f, listId); collectionPickFor = null },
+        )
+    }
+    screenPreviewFor?.let { f ->
+        ScreenPreviewDialog(
+            imageUrl = f.toURI().toString(),
+            onSet = { onSetWallpaper(f); screenPreviewFor = null },
+            onDismiss = { screenPreviewFor = null },
+        )
+    }
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -1474,6 +1497,43 @@ private fun ImagePreviewDialog(
                                 tint = Color.White,
                                 modifier = Modifier.size(18.dp)
                             )
+                        }
+
+                        if (collections.isNotEmpty()) OutlinedIconButton(
+                            onClick = { collectionPickFor = file },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Add to collection", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+
+                        if (!com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) OutlinedIconButton(
+                            onClick = { screenPreviewFor = file },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.Wallpaper, contentDescription = "Preview on my screens", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+
+                        OutlinedIconButton(
+                            onClick = {
+                                runCatching {
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(viewerContext, "${viewerContext.packageName}.fileprovider", file)
+                                    val type = if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) "video/*" else "image/*"
+                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        this.type = type
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    viewerContext.startActivity(android.content.Intent.createChooser(send, "Share wallpaper"))
+                                }.onFailure {
+                                    android.widget.Toast.makeText(viewerContext, "Couldn't share this file", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
 
                         Spacer(Modifier.weight(1f))
