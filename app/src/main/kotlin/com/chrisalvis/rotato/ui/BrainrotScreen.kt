@@ -1746,7 +1746,8 @@ private fun WallpaperDetailOverlay(
                     showSeekBar = true,
                     allowDoubleTapSeek = true,
                     // In a pane the video already ends above the dock, so its seek bar sits at its own bottom.
-                    seekBarBottomInset = if (inPane) 0.dp else bottomPanelHeight
+                    seekBarBottomInset = if (inPane) 0.dp else bottomPanelHeight,
+                    posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) },
                 )
             } else if (item.isVideo) {
                 val posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) }

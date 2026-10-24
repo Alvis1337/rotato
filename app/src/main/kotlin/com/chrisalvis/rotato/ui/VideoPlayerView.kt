@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -182,6 +183,8 @@ fun VideoPlayerView(
     // and steal taps from — the seek bar, since both are independently BottomCenter-aligned over
     // the same full-screen area.
     seekBarBottomInset: Dp = 0.dp,
+    /** Still shown (fitted) until the first video frame is on screen at its proper shape. */
+    posterUrl: String? = null,
 ) {
     val context = LocalContext.current
     var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
@@ -232,6 +235,16 @@ fun VideoPlayerView(
     var seekFeedback by remember(exoPlayer) { mutableStateOf<Int?>(null) } // seek delta in seconds, for the transient overlay
     var userSeeking by remember(exoPlayer) { mutableStateOf(false) }
     var draggedFraction by remember(exoPlayer) { mutableFloatStateOf(0f) }
+    // The texture view paints its first frame stretched to the whole view before the player's
+    // frame layout learns the video's shape, so it stays invisible until a frame has rendered
+    // and a couple of layout passes have fitted it.
+    var firstFrame by remember(exoPlayer) { mutableStateOf(false) }
+    var videoShown by remember(exoPlayer) { mutableStateOf(false) }
+    LaunchedEffect(firstFrame) {
+        if (!firstFrame) return@LaunchedEffect
+        repeat(2) { withFrameNanos { } }
+        videoShown = true
+    }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -241,6 +254,9 @@ fun VideoPlayerView(
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) durationMs = exoPlayer.duration.coerceAtLeast(0L)
+            }
+            override fun onRenderedFirstFrame() {
+                firstFrame = true
             }
             override fun onPlayerError(error: PlaybackException) {
                 hasError = true
@@ -285,8 +301,16 @@ fun VideoPlayerView(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
+        if (!videoShown && !posterUrl.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = posterUrl,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (videoShown || hasError) 1f else 0f },
             factory = { ctx ->
                 // TextureView-backed (see the layout): it moves with the window when the phone
                 // unfolds and respects Compose layers, where a SurfaceView could stay black.
