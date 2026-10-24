@@ -2,6 +2,11 @@
 
 package com.chrisalvis.rotato.ui
 
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -193,11 +198,30 @@ object VideoMuteState {
             prefs?.edit()?.putBoolean("muted", value)?.apply()
         }
 
+    /** Volume up unmutes, for windows (dialogs) that MainActivity.onKeyDown never sees. */
+    fun onVolumeKey(event: androidx.compose.ui.input.key.KeyEvent): Boolean {
+        if (event.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
+            event.key == androidx.compose.ui.input.key.Key.VolumeUp && onScreen > 0 && muted
+        ) muted = false
+        return false
+    }
+
     fun load(context: android.content.Context) {
         if (prefs != null) return
         prefs = context.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
             .also { state = it.getBoolean("muted", true) }
     }
+}
+
+/** Lets volume up unmute videos inside a dialog, which has its own window and key dispatch. */
+@Composable
+fun Modifier.volumeUpUnmutes(): Modifier {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    return this
+        .onPreviewKeyEvent(VideoMuteState::onVolumeKey)
+        .focusRequester(focus)
+        .focusable()
 }
 
 private fun formatDuration(ms: Long): String {
@@ -236,6 +260,9 @@ fun VideoPlayerView(
     posterUrl: String? = null,
     /** A hairline of playback progress along the bottom edge, for the full-screen feed. */
     progressLine: Boolean = false,
+    /** Double-tap and long-press for the caller (e.g. the feed's save and open); the tap layer would otherwise swallow them. */
+    onDoubleTap: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     remember { VideoMuteState.load(context) }
@@ -396,7 +423,7 @@ fun VideoPlayerView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(exoPlayer, allowDoubleTapSeek) {
+                    .pointerInput(exoPlayer, allowDoubleTapSeek, onDoubleTap, onLongPress) {
                         detectTapGestures(
                             onTap = {
                                 exoPlayer.playWhenReady = !exoPlayer.playWhenReady
@@ -405,8 +432,9 @@ fun VideoPlayerView(
                             onDoubleTap = { offset ->
                                 if (allowDoubleTapSeek) {
                                     if (offset.x < size.width / 2f) seekBy(-10) else seekBy(10)
-                                }
-                            }
+                                } else onDoubleTap?.invoke()
+                            },
+                            onLongPress = onLongPress?.let { cb -> { _: androidx.compose.ui.geometry.Offset -> cb() } },
                         )
                     }
             )

@@ -217,6 +217,7 @@ fun BrainrotScreen(
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
+    val shuffleVersion by vm.shuffleVersion.collectAsStateWithLifecycle()
     val searchCoverage by vm.searchCoverage.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
@@ -254,7 +255,8 @@ fun BrainrotScreen(
     // alone, a page that finished (or came back empty) while the user was already at the bottom
     // never triggered the next one until they scrolled away and back.
     LaunchedEffect(gridMode) {
-        snapshotFlow { shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null }
+        // Only the grids page this way; the feed and swipe deck ask for more themselves.
+        snapshotFlow { (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT) && shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null }
             .collect { ready -> if (ready) vm.loadMore() }
     }
     LaunchedEffect(resetVersion, gridMode) {
@@ -594,10 +596,13 @@ fun BrainrotScreen(
         val openProgress = remember { androidx.compose.animation.core.Animatable(1f) }
         var openFrom by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         var overlayOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        LaunchedEffect(viewMode, gridMode) { tileBounds.clear() }
         val viewerOpen = selectedItem != null
         LaunchedEffect(viewerOpen) {
             if (viewerOpen) {
-                openFrom = selectedItem?.let { tileBounds["${it.source}:${it.id}"] }
+                // Only the grids have tiles to grow from; the feed and deck open in place.
+                val fromGrid = viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT
+                openFrom = if (fromGrid) selectedItem?.let { tileBounds["${it.source}:${it.id}"] } else null
                 if (openFrom != null) {
                     openProgress.snapTo(0f)
                     openProgress.animateTo(1f, androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing))
@@ -667,7 +672,8 @@ fun BrainrotScreen(
                             }
                         }
                     }
-                    viewMode == DiscoverViewMode.FEED -> DiscoverFeed(
+                    // Keyed on Shuffle so the feed starts again at the new picks it put on top.
+                    viewMode == DiscoverViewMode.FEED -> androidx.compose.runtime.key(shuffleVersion) { DiscoverFeed(
                         items = gridItems,
                         isSaved = { "${it.source}:${it.id}" in savedSourceIds },
                         nsfwBlurEnabled = nsfwBlurEnabled,
@@ -684,7 +690,8 @@ fun BrainrotScreen(
                         onTag = { vm.searchByTag(it) },
                         onMoreLikeThis = { vm.moreLikeThis(it) },
                         onDwell = { wp, ms -> vm.recordDwell(wp, ms) },
-                    )
+                        active = selectedItem == null,
+                    ) }
                     viewMode == DiscoverViewMode.SWIPE -> SwipeDeck(
                         items = gridItems,
                         nsfwBlurEnabled = nsfwBlurEnabled,

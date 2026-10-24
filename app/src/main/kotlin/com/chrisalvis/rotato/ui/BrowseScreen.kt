@@ -141,6 +141,8 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
     val scheduleEntries by vm.scheduleEntries.collectAsStateWithLifecycle()
     val selectedList by vm.selectedList.collectAsStateWithLifecycle()
     val wallpapers by vm.wallpapers.collectAsStateWithLifecycle()
+    val nsfwBlurEnabled by vm.nsfwBlurEnabled.collectAsStateWithLifecycle()
+    val effectiveNsfwBlurEnabled = nsfwBlurEnabled && selectedList?.blurExempt != true
     // Play: this collection in the full-screen feed, like Discover's Feed.
     var playCollectionFrom by remember { mutableStateOf<Int?>(null) }
     playCollectionFrom?.let { start ->
@@ -162,12 +164,11 @@ fun BrowseScreen(onGoToDiscover: () -> Unit = {}, onSearchDiscover: (String) -> 
             onSet = { wp -> byId[wp.id]?.let { vm.setAsWallpaper(it) } },
             onShare = { wp -> byId[wp.id]?.let { vm.shareWallpapers(ctx, listOf(it.toLocalWallpaperEntry(selectedList?.id.orEmpty()))) } },
             title = { selectedList?.name ?: "Collection" },
+            nsfwBlurEnabled = effectiveNsfwBlurEnabled,
         )
     }
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val videoPreviewMode by vm.videoPreviewMode.collectAsStateWithLifecycle()
-    val nsfwBlurEnabled by vm.nsfwBlurEnabled.collectAsStateWithLifecycle()
-    val effectiveNsfwBlurEnabled = nsfwBlurEnabled && selectedList?.blurExempt != true
     val selectionMode by vm.selectionMode.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val showCreateDialog by vm.showCreateDialog.collectAsStateWithLifecycle()

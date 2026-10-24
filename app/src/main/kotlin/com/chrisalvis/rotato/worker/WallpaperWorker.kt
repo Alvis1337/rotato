@@ -215,7 +215,11 @@ class WallpaperWorker(
         var mainQueueCount: Int? = null
         // Lined up from the Now screen: shown first, in order (stealth mode still wins).
         val queued = if (stealthFiles.isEmpty()) {
-            prefs.popUpNext { path -> File(path).let { it.exists() && it.name !in filterOut } }?.let(::File)
+            // A queued video can only play through the live wallpaper; without it, pass over it.
+            val liveActive = LiveWallpaper.isActive(applicationContext)
+            prefs.popUpNext { path ->
+                File(path).let { it.exists() && it.name !in filterOut && (liveActive || !LiveWallpaper.isVideoFile(it)) }
+            }?.let(::File)
         } else null
         val targetFile = queued
             ?: resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))

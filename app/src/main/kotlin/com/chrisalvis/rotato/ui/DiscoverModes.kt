@@ -244,6 +244,8 @@ internal fun DiscoverFeed(
     /** The caption's first line; defaults to the source and size. */
     title: ((BrainrotWallpaper) -> String)? = null,
     startPage: Int = 0,
+    /** False while something covers the feed (the detail viewer), so the reel underneath stops playing. */
+    active: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -276,7 +278,9 @@ internal fun DiscoverFeed(
         Box(Modifier.fillMaxSize()) {
             ReelMedia(
                 wp = wp,
-                playing = page == pager.currentPage && !blurred,
+                playing = active && page == pager.currentPage && !blurred,
+                onDoubleTap = { if (onSave != null) save() },
+                onLongPress = { onOpen(wp) },
                 modifier = Modifier
                     .fillMaxSize()
                     .nsfwContentBlur(wp.isNsfw, nsfwBlurEnabled, revealed)
@@ -397,7 +401,13 @@ private fun ReelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, la
  * it leaves is filled by a blurred, darkened copy of itself instead of hard black bars.
  */
 @Composable
-private fun ReelMedia(wp: BrainrotWallpaper, playing: Boolean, modifier: Modifier) {
+private fun ReelMedia(
+    wp: BrainrotWallpaper,
+    playing: Boolean,
+    modifier: Modifier,
+    onDoubleTap: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+) {
     val still = if (wp.isVideo) wp.thumbUrl.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) } ?: wp.gridUrl.takeUnless { MediaType.isVideoUrl(it) }
     else wp.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: wp.fullUrl.ifBlank { wp.thumbUrl }
     Box(modifier) {
@@ -420,6 +430,8 @@ private fun ReelMedia(wp: BrainrotWallpaper, playing: Boolean, modifier: Modifie
                 showMuteButton = true,
                 progressLine = true,
                 posterUrl = still,
+                onDoubleTap = onDoubleTap,
+                onLongPress = onLongPress,
             )
         } else {
             AsyncImage(
@@ -584,7 +596,7 @@ internal fun ReelPlayer(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize().background(Color.Black).volumeUpUnmutes()) {
             DiscoverFeed(
                 items = items,
                 isSaved = isSaved,

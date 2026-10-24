@@ -652,7 +652,8 @@ private fun LibraryContent(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                         )
                     }
-                    if (images.size > 1) {
+                    // Stays up while a filter is on, so it can always be cleared.
+                    if (images.size > 1 || libraryFilter.active) {
                         ColourFilterRow(
                             selected = selectedColour,
                             loading = looksLoading || matchLoading,
@@ -1605,7 +1606,7 @@ internal fun PreviewHost(inline: Boolean, onDismiss: () -> Unit, modifier: Modif
         Dialog(
             onDismissRequest = onDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-        ) { content() }
+        ) { Box(Modifier.volumeUpUnmutes()) { content() } }
     }
 }
 

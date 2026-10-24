@@ -343,6 +343,10 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _resetVersion = MutableStateFlow(0)
     val resetVersion: StateFlow<Int> = _resetVersion.asStateFlow()
 
+    /** Bumped when Shuffle puts new picks at the top, so the feed can jump to them. */
+    private val _shuffleVersion = MutableStateFlow(0)
+    val shuffleVersion: StateFlow<Int> = _shuffleVersion.asStateFlow()
+
     val danbooruEnabled: StateFlow<Boolean> = localSources.sources
         .map { sources -> sources.any { it.enabled && it.pluginId == "DANBOORU" } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -1207,6 +1211,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                     prefetchGridImage(ctx, wp)
                 }
                 _gridItems.update { freshItems.notIn(it) + it }
+                _shuffleVersion.update { it + 1 }
                 _noResults.update { false }
                 _noResultsReason.update { null }
                 _endReached.update { false }

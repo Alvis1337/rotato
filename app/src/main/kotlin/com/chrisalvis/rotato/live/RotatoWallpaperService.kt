@@ -250,6 +250,8 @@ class RotatoWallpaperService : WallpaperService() {
                 return
             }
             if (prefs.getBoolean(LiveWallpaper.KEY_VIDEO, false)) {
+                // A new video gets its own retry.
+                if (videoPath != path) videoRetries = 0
                 videoPath = path
                 playVideo(path)
                 return

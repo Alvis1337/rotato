@@ -655,6 +655,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     .filter { it.listId == listId }
                     .map { it.sourceId }
                     .toSet()
+                val nsfwNames = preferences.nsfwFileNames.first()
                 var added = 0
                 files.forEach { file ->
                     val sourceId = file.nameWithoutExtension
@@ -669,7 +670,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             fullUrl = fileUri,
                             resolution = "",
                             pageUrl = "",
-                            tags = emptyList()
+                            tags = emptyList(),
+                            isVideo = com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file),
+                            isNsfw = file.name in nsfwNames,
                         )
                     )
                     added++
