@@ -131,6 +131,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         .map { historyFromJson(it).maxByOrNull { h -> h.timestamp } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The full-size file on this phone for [nowShowing], when there is one: the history entry's own
+     * path, the applied file it came from, or its copy in the pool or offline pack. Null means only
+     * its URLs are known.
+     */
+    val nowShowingFile: StateFlow<File?> = combine(nowShowing, preferences.appliedWallpaperPaths, localLists.allWallpapers) { item, applied, all ->
+        if (item == null) return@combine null
+        val app = getApplication<Application>()
+        (com.chrisalvis.rotato.data.imageSourceFor(app, item.fullUrl) as? File)?.takeIf { it.isFile }?.let { return@combine it }
+        val entry = all.firstOrNull { item.fullUrl.isNotBlank() && it.fullUrl == item.fullUrl } ?: return@combine null
+        val keys = poolKeys(entry.source, entry.sourceId)
+        applied.lastOrNull()?.let(::File)?.takeIf { it.nameWithoutExtension in keys && it.isFile }
+            ?: imageDir.listFiles()?.toList().orEmpty().findPoolFile(entry.source, entry.sourceId)
+            ?: com.chrisalvis.rotato.data.OfflinePack.fileFor(app, entry)
+    }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     /** Wallpapers lined up to show next, oldest first; missing files drop out. */
     val upNext: StateFlow<List<File>> = preferences.upNext
         .map { paths -> paths.map(::File).filter { it.exists() } }

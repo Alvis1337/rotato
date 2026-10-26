@@ -369,10 +369,11 @@ class MainActivity : AppCompatActivity() {
                                     onNavigateToTaste = { navController.navigate("taste") },
                                 )
                             }
-                            // Saved: collections, with everything rotating as the first card.
+                            // Saved: collections, with In rotation as the first card.
                             composable("home") {
                                 HomeScreen(
                                     viewModel = homeViewModel,
+                                    onOpenSettings = { navController.navigate("settings") { launchSingleTop = true } },
                                     onBrowseFeed = { navController.navigate("browse") },
                                     onGoToDiscover = { onTabSelected(1) },
                                     onSearchDiscover = { tag ->

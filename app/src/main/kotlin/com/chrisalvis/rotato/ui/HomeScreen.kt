@@ -168,7 +168,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * The Saved tab: "Everything rotating" (the Library pool) above the collections. Tapping the
+ * The Saved tab: "In rotation" (the Library pool) above the collections. Tapping the
  * hero card opens the Library grid as a sub-screen with a back arrow.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -182,6 +182,8 @@ fun HomeScreen(
     onGoToDiscover: () -> Unit = onBrowseFeed,
     /** A tag tapped in a collection's viewer, searched on Discover. */
     onSearchDiscover: (String) -> Unit = {},
+    /** The Settings gear in the Saved overview's actions. */
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     val allImages by viewModel.images.collectAsStateWithLifecycle()
     // With the content filter on, NSFW images in the library aren't shown.
@@ -199,7 +201,7 @@ fun HomeScreen(
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
 
-    // The Library grid is a sub-screen of Saved, opened from the "Everything rotating" card.
+    // The Library grid is a sub-screen of Saved, opened from the "In rotation" card.
     var showLibrary by rememberSaveable { mutableStateOf(false) }
     var libraryFilterOpen by rememberSaveable { mutableStateOf(false) }
     var showSaveToListDialog by remember { mutableStateOf(false) }
@@ -272,6 +274,7 @@ fun HomeScreen(
             },
             onSavedSearch = { showLibrary = true; libraryFilterOpen = true },
             onAddPhotos = pickPhotos,
+            onOpenSettings = onOpenSettings,
         )
     } else Scaffold(
         topBar = {
@@ -351,9 +354,9 @@ fun HomeScreen(
                     },
                     title = {
                         Column {
-                            Text("Everything rotating", fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text("In rotation", fontWeight = FontWeight.Bold, maxLines = 1)
                             Text(
-                                "${images.size} image${if (images.size == 1) "" else "s"}",
+                                "Wallpapers Rotato cycles through · ${images.size}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -406,7 +409,7 @@ fun HomeScreen(
     }
 }
 
-/** The wide "Everything rotating" card at the top of Saved: a peek at the Library pool. */
+/** The wide "In rotation" card at the top of Saved: a peek at the Library pool. */
 @Composable
 private fun SavedHeroCard(
     images: List<File>,
@@ -429,7 +432,7 @@ private fun SavedHeroCard(
             .fillMaxWidth()
             .height(200.dp)
             .clip(RoundedCornerShape(20.dp))
-            .clickable(onClickLabel = "Open everything rotating", onClick = onOpen)
+            .clickable(onClickLabel = "Open In rotation", onClick = onOpen)
     ) {
         SavedMosaic(
             models = peek,
@@ -450,7 +453,7 @@ private fun SavedHeroCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SavedStatusDot(on = on, modifier = Modifier.size(10.dp))
                 Text(
-                    "Everything rotating",
+                    "In rotation",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -458,9 +461,9 @@ private fun SavedHeroCard(
             }
             Text(
                 text = when {
-                    images.isEmpty() -> "Nothing here yet. Save from Discover or add photos."
-                    on -> "${images.size} image${if (images.size == 1) "" else "s"} · every ${formatInterval(intervalMinutes)}"
-                    else -> "${images.size} image${if (images.size == 1) "" else "s"} · paused"
+                    images.isEmpty() -> "Wallpapers Rotato cycles through. Save from Discover or add photos."
+                    on -> "Wallpapers Rotato cycles through · ${images.size} · every ${formatInterval(intervalMinutes)}"
+                    else -> "Wallpapers Rotato cycles through · ${images.size} · paused"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.85f),

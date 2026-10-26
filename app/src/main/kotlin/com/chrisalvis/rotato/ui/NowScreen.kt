@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -41,8 +40,6 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -52,6 +49,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -65,6 +66,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,17 +77,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoSettings
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
 import com.chrisalvis.rotato.live.LiveWallpaper
 import com.chrisalvis.rotato.worker.AutomationReceiver
+import kotlinx.coroutines.launch
 import java.io.File
 
 private const val PANEL_UP_NEXT = "up_next"
@@ -108,11 +113,29 @@ fun NowScreen(
     modifier: Modifier = Modifier,
 ) {
     val now by viewModel.nowShowing.collectAsStateWithLifecycle()
+    val nowFile by viewModel.nowShowingFile.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
     val pool by viewModel.images.collectAsStateWithLifecycle()
     val upNext by viewModel.upNext.collectAsStateWithLifecycle()
     val errors by viewModel.rotationErrors.collectAsStateWithLifecycle()
+    val nsfwHidden = LocalNsfwHidden.current
+    val nsfwNames by viewModel.nsfwFileNames.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    // What rotation can draw right now, as the worker sees it: videos only through the live
+    // wallpaper, and nothing the content filter hides. The forecast below follows this, not the
+    // whole Library, so "Then, in order" matches what Next actually sets.
+    val liveActive = remember(pool, now) { LiveWallpaper.isActive(context) }
+    val rotationPool = remember(pool, liveActive, nsfwHidden, nsfwNames) {
+        pool.filter { (liveActive || !LiveWallpaper.isVideoFile(it)) && !(nsfwHidden && it.name in nsfwNames) }
+    }
+    val waitReason: (File) -> String? = { file ->
+        when {
+            LiveWallpaper.isVideoFile(file) && !liveActive -> "Waits for the live wallpaper"
+            nsfwHidden && file.name in nsfwNames -> "Hidden by the content filter"
+            else -> null
+        }
+    }
     val linkedCount = remember(collections) { collections.count { it.useAsRotation } }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     var showRotation by rememberSaveable { mutableStateOf(false) }
@@ -121,12 +144,38 @@ fun NowScreen(
     val onPrevious = { viewModel.automation(AutomationReceiver.ACTION_PREVIOUS) }
     val onNext = { viewModel.automation(AutomationReceiver.ACTION_NEXT) }
     val onFavorite = { viewModel.automation(AutomationReceiver.ACTION_SAVE) }
-    val onNever = { viewModel.dislikeCurrent() }
+    // Blocking deletes the file, so it waits out an Undo snackbar before it happens.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var neverPending by remember { mutableStateOf(false) }
+    val onNever: () -> Unit = {
+        if (!neverPending) {
+            neverPending = true
+            // Only the wallpaper that was on screen at the tap gets blocked: if rotation moves on
+            // during the snackbar, blocking "the current one" would hit a different image.
+            val tapped = viewModel.nowShowing.value
+            scope.launch {
+                var undone = false
+                try {
+                    undone = snackbarHostState.showSnackbar(
+                        "Won't show this one again",
+                        actionLabel = "Undo",
+                        duration = SnackbarDuration.Short,
+                    ) == SnackbarResult.ActionPerformed
+                } finally {
+                    // Leaving the screen mid-snackbar still counts as a yes.
+                    neverPending = false
+                    if (!undone && viewModel.nowShowing.value == tapped) viewModel.dislikeCurrent()
+                }
+            }
+        }
+    }
 
     val upNextList: @Composable (Modifier) -> Unit = { m ->
         UpNextList(
             queued = upNext,
-            pool = pool,
+            pool = rotationPool,
+            waitReason = waitReason,
             shuffle = settings.shuffleMode,
             currentIndex = settings.currentIndex,
             onMove = viewModel::moveUpNext,
@@ -149,74 +198,87 @@ fun NowScreen(
         if (errors.isNotEmpty()) RotationErrorChip(count = errors.size, onClick = { panel = PANEL_ERRORS })
     }
 
-    if (wide) {
-        // Unfolded: the wallpaper on the left, rotation and its queue on the right.
-        Row(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize()) {
+        if (wide) {
+            // Unfolded: the wallpaper on the left, rotation and its queue on the right.
+            Row(Modifier.fillMaxSize()) {
+                WallpaperStage(
+                    item = now,
+                    localFile = nowFile,
+                    hasPool = pool.isNotEmpty(),
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    onFavorite = onFavorite,
+                    onNever = onNever,
+                    onGoToDiscover = onGoToDiscover,
+                    onOpenSettings = null,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    bottomInset = true,
+                ) {}
+                VerticalDivider()
+                var tab by rememberSaveable { mutableIntStateOf(0) }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Wallpaper", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        SettingsGear(onClick = onOpenSettings, onImage = false)
+                    }
+                    errorChip()
+                    pill(false)
+                    PrimaryTabRow(selectedTabIndex = tab) {
+                        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(if (upNext.isEmpty()) "Up next" else "Up next · ${upNext.size}") })
+                        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("History") })
+                    }
+                    when (tab) {
+                        0 -> upNextList(Modifier.weight(1f))
+                        else -> HistoryScreen(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
             WallpaperStage(
                 item = now,
+                localFile = nowFile,
                 hasPool = pool.isNotEmpty(),
                 onPrevious = onPrevious,
                 onNext = onNext,
                 onFavorite = onFavorite,
                 onNever = onNever,
                 onGoToDiscover = onGoToDiscover,
-                onOpenSettings = null,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                bottomInset = true,
-            ) {}
-            VerticalDivider()
-            var tab by rememberSaveable { mutableIntStateOf(0) }
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Wallpaper", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    SettingsGear(onClick = onOpenSettings, onImage = false)
-                }
+                onOpenSettings = onOpenSettings,
+                modifier = Modifier.fillMaxSize(),
+                bottomInset = false,
+            ) { onImage ->
                 errorChip()
-                pill(false)
-                PrimaryTabRow(selectedTabIndex = tab) {
-                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(if (upNext.isEmpty()) "Up next" else "Up next · ${upNext.size}") })
-                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("History") })
-                }
-                when (tab) {
-                    0 -> upNextList(Modifier.weight(1f))
-                    else -> HistoryScreen(modifier = Modifier.weight(1f))
-                }
+                pill(onImage)
+                // Queued ones that have to wait are passed over by Next, so they aren't shown as coming.
+                val readyQueued = upNext.filter { waitReason(it) == null }
+                UpNextStrip(
+                    upcoming = remember(readyQueued, rotationPool, settings.shuffleMode, settings.currentIndex) {
+                        readyQueued + followingInOrder(rotationPool, settings.shuffleMode, settings.currentIndex, 10)
+                    }.take(10),
+                    queuedCount = upNext.size,
+                    shuffle = settings.shuffleMode,
+                    poolSize = rotationPool.size,
+                    onOpenUpNext = { panel = PANEL_UP_NEXT },
+                    onOpenHistory = { panel = PANEL_HISTORY },
+                )
             }
         }
-    } else {
-        WallpaperStage(
-            item = now,
-            hasPool = pool.isNotEmpty(),
-            onPrevious = onPrevious,
-            onNext = onNext,
-            onFavorite = onFavorite,
-            onNever = onNever,
-            onGoToDiscover = onGoToDiscover,
-            onOpenSettings = onOpenSettings,
-            modifier = modifier.fillMaxSize(),
-            bottomInset = false,
-        ) { onImage ->
-            errorChip()
-            pill(onImage)
-            UpNextStrip(
-                upcoming = remember(upNext, pool, settings.shuffleMode, settings.currentIndex) {
-                    upNext + followingInOrder(pool, settings.shuffleMode, settings.currentIndex, 10)
-                }.take(10),
-                queuedCount = upNext.size,
-                shuffle = settings.shuffleMode,
-                poolSize = pool.size,
-                onOpenUpNext = { panel = PANEL_UP_NEXT },
-                onOpenHistory = { panel = PANEL_HISTORY },
-            )
-        }
+        SnackbarHost(
+            snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 48.dp),
+        )
     }
 
     if (showRotation) {
@@ -256,6 +318,8 @@ fun NowScreen(
 @Composable
 private fun WallpaperStage(
     item: WallpaperHistoryItem?,
+    /** The full-size copy on the phone, when there is one; see [HomeViewModel.nowShowingFile]. */
+    localFile: File?,
     hasPool: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -267,15 +331,27 @@ private fun WallpaperStage(
     bottomInset: Boolean,
     below: @Composable ColumnScope.(onImage: Boolean) -> Unit,
 ) {
-    val model: Any? = item?.let { h ->
-        h.fullUrl.takeIf { it.startsWith("/") }?.let(::File)?.takeIf { it.exists() }
-            ?: h.thumbUrl.ifBlank { h.sampleUrl.ifBlank { h.fullUrl } }
-    }
-    val onImage = model != null
+    // The applied file first, then the full image, then the sample; the thumbnail is only a
+    // stand-in underneath while the big one loads (it used to be all that was shown).
+    val full: Any? = item?.let { h -> localFile ?: h.fullUrl.ifBlank { h.sampleUrl }.ifBlank { null } }
+    val thumb: String? = item?.let { h -> h.thumbUrl.takeIf { it.isNotBlank() && it != h.fullUrl } }
+    val onImage = full != null || thumb != null
+    val context = LocalContext.current
     Box(modifier.background(if (onImage) Color.Black else MaterialTheme.colorScheme.surface)) {
-        if (model != null) {
+        if (onImage) {
             // Crop on purpose: this previews the wallpaper as it fills the screen.
-            AsyncImage(model = model, contentDescription = "Current wallpaper", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            if (thumb != null) {
+                AsyncImage(model = thumb, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            if (full != null) {
+                // Sized from the layout, so it decodes at screen size and fades in over the thumbnail.
+                AsyncImage(
+                    model = remember(full) { ImageRequest.Builder(context).data(full).crossfade(300).build() },
+                    contentDescription = "Current wallpaper",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -349,7 +425,6 @@ private fun WallpaperStage(
 
 @Composable
 private fun NowCaption(item: WallpaperHistoryItem, onNever: () -> Unit) {
-    var menu by remember { mutableStateOf(false) }
     val source = item.source.replaceFirstChar { it.uppercase() }
     val ago = android.text.format.DateUtils.getRelativeTimeSpanString(item.timestamp).toString()
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -367,19 +442,7 @@ private fun NowCaption(item: WallpaperHistoryItem, onNever: () -> Unit) {
                 color = LocalContentColor.current.copy(alpha = 0.8f),
             )
         }
-        Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text("Never show again") },
-                    leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) },
-                    onClick = {
-                        menu = false
-                        onNever()
-                    },
-                )
-            }
-        }
+        IconButton(onClick = onNever) { Icon(Icons.Default.Block, contentDescription = "Never show again") }
     }
 }
 
@@ -573,6 +636,8 @@ private fun followingInOrder(pool: List<File>, shuffle: Boolean, currentIndex: I
 private fun UpNextList(
     queued: List<File>,
     pool: List<File>,
+    /** Why a queued one is being passed over for now, or null when Next will show it. */
+    waitReason: (File) -> String?,
     shuffle: Boolean,
     currentIndex: Int,
     onMove: (Int, Int) -> Unit,
@@ -585,7 +650,7 @@ private fun UpNextList(
         if (queued.isEmpty()) {
             item {
                 Text(
-                    "Nothing lined up. In Saved, open a wallpaper and pick Play next.",
+                    "Nothing lined up. Open a wallpaper in Saved and tap Play next to show it after this one.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp),
@@ -599,7 +664,7 @@ private fun UpNextList(
                 }
             }
             itemsIndexed(queued, key = { _, f -> "q:" + f.absolutePath }) { i, file ->
-                QueueRow(file) {
+                QueueRow(file, note = waitReason(file)) {
                     IconButton(onClick = { onMove(i, i - 1) }, enabled = i > 0) { Icon(Icons.Default.ArrowUpward, contentDescription = "Move up") }
                     IconButton(onClick = { onMove(i, i + 1) }, enabled = i < queued.lastIndex) { Icon(Icons.Default.ArrowDownward, contentDescription = "Move down") }
                     IconButton(onClick = { onRemove(file) }) { Icon(Icons.Default.Close, contentDescription = "Remove") }
@@ -622,7 +687,7 @@ private fun UpNextList(
 }
 
 @Composable
-private fun QueueRow(file: File, actions: @Composable () -> Unit) {
+private fun QueueRow(file: File, note: String? = null, actions: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
         Box {
             AsyncImage(
@@ -633,9 +698,9 @@ private fun QueueRow(file: File, actions: @Composable () -> Unit) {
             )
         }
         Text(
-            if (LiveWallpaper.isVideoFile(file)) "Video" else "Image",
+            listOfNotNull(if (LiveWallpaper.isVideoFile(file)) "Video" else "Image", note).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (note != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f).padding(start = 12.dp),
         )
         actions()

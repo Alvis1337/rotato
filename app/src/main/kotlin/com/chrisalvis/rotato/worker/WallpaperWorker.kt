@@ -166,12 +166,12 @@ class WallpaperWorker(
         // Content filter on: locked collections and NSFW images never come up, scheduled or not.
         val nsfwHiddenNow = prefs.nsfwHidden.first()
         val activeScheduledListIds = findActiveScheduledListIds(scheduleEntries, if (nsfwHiddenNow) lists.filter { !it.isLocked } else lists)
-        val scheduledEntry = activeScheduledListIds
+        // Only the candidates here: picking one advances the in-order index, so it waits until
+        // Up next has had its turn (a queued wallpaper used to cost the schedule a step).
+        val scheduledWallpapers = activeScheduledListIds
             .takeIf { it.isNotEmpty() && !(hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH) }
-            ?.let { listIds ->
-                val wallpapers = allWallpapers.filter { it.listId in listIds && !(nsfwHiddenNow && it.isNsfw) }
-                selectScheduledWallpaper(wallpapers, settings.shuffleMode, settings.currentIndex, prefs, lastWallpaperFullUrl)
-            }
+            ?.let { listIds -> allWallpapers.filter { it.listId in listIds && !(nsfwHiddenNow && it.isNsfw) } }
+            .orEmpty()
 
         val allSources = LocalSourcesPreferences(applicationContext).sources.first()
 
@@ -207,7 +207,7 @@ class WallpaperWorker(
             ))
             return Result.success()
         }
-        val effectiveScheduledEntry = if (stealthActive) null else scheduledEntry
+        val scheduleActive = !stealthActive && scheduledWallpapers.isNotEmpty()
 
         // Build per-screen file sets when per-screen pools are configured and target is BOTH.
         val homeFiles: List<File>
@@ -215,7 +215,7 @@ class WallpaperWorker(
         if (stealthActive) {
             homeFiles = stealthFiles
             lockFiles = stealthFiles
-        } else if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
+        } else if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && !scheduleActive) {
             fun listIdsFor(screen: ScreenRotationTarget) = allRotationLists
                 .filter { it.rotationTarget == screen || it.rotationTarget == ScreenRotationTarget.BOTH }
                 .mapTo(HashSet()) { it.id }
@@ -262,10 +262,11 @@ class WallpaperWorker(
                 eligible = { path -> File(path).let { it.name !in filterOut && (liveActive || !LiveWallpaper.isVideoFile(it)) } },
             )?.let(::File)
         } else null
-        // Kept apart so the scheduled entry is credited only when it really supplied the file.
-        val scheduledFile = if (queued == null) {
-            resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
+        val effectiveScheduledEntry = if (queued == null && scheduleActive) {
+            selectScheduledWallpaper(scheduledWallpapers, settings.shuffleMode, settings.currentIndex, prefs, lastWallpaperFullUrl)
         } else null
+        // Kept apart so the scheduled entry is credited only when it really supplied the file.
+        val scheduledFile = resolveScheduledTargetFile(effectiveScheduledEntry, feedRepository, imageDir, prefs, danbooruAuthHeader(effectiveScheduledEntry, allSources))
         val targetFile = queued
             ?: scheduledFile
             ?: run {
@@ -294,7 +295,7 @@ class WallpaperWorker(
             return Result.success()
         }
 
-        val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && effectiveScheduledEntry == null) {
+        val lockTargetFile = if (hasPerScreen && settings.wallpaperTarget == WallpaperTarget.BOTH && !scheduleActive) {
             val candidates = lockPool.filter { it.absolutePath != targetFile.absolutePath && !LiveWallpaper.isVideoFile(it) }
             candidates.ifEmpty { lockPool }.randomOrNull() ?: targetFile
         } else targetFile
@@ -422,6 +423,8 @@ class WallpaperWorker(
             // Only retry transient network/IO errors; permanent failures (bad file,
             // permission denied, corrupt state) should not loop indefinitely.
             if (e is java.io.IOException || e is java.net.SocketTimeoutException) {
+                // The retry should still show what was lined up.
+                queued?.let { prefs.queueUpNext(it.absolutePath, first = true) }
                 Result.retry()
             } else {
                 Result.failure()

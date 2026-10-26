@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.filled.Add
@@ -58,6 +59,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
@@ -98,6 +100,7 @@ import com.chrisalvis.rotato.data.LocalSource
 import com.chrisalvis.rotato.data.LocalWallpaperEntry
 import com.chrisalvis.rotato.data.MinResolution
 import com.chrisalvis.rotato.data.SmartRule
+import com.chrisalvis.rotato.data.findPoolFile
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -135,12 +138,14 @@ import kotlinx.coroutines.launch
 fun BrowseScreen(
     onGoToDiscover: () -> Unit = {},
     onSearchDiscover: (String) -> Unit = {},
-    /** Set on the Saved tab: the "Everything rotating" card shown above the collections. */
+    /** Set on the Saved tab: the "In rotation" card shown above the collections. */
     savedHero: (@Composable () -> Unit)? = null,
     /** Saved tab: the Search action (the Library's photo search and filters). */
     onSavedSearch: (() -> Unit)? = null,
     /** Saved tab: "+" › Add photos from device, into the Library. */
     onAddPhotos: (() -> Unit)? = null,
+    /** Saved tab: the Settings gear at the end of the overview's actions. */
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     val vm: BrowseViewModel = viewModel()
 
@@ -359,6 +364,21 @@ fun BrowseScreen(
             moveTargets = lists.filter { it.id != selectedList?.id && !it.isSmartCollection },
             onMoveTo = { wp, target -> vm.moveEntryToList(wp.entryId, target.id) },
             onSetWallpaper = { vm.setAsWallpaper(it) },
+            // Up next plays files from the rotation pool, so only ones already in it can be lined up.
+            onPlayNext = { wp ->
+                browseScope.launch {
+                    val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        java.io.File(context.filesDir, "rotato_images").listFiles()?.toList().orEmpty()
+                            .findPoolFile(wp.source, wp.sourceId)
+                    }
+                    if (file == null) {
+                        android.widget.Toast.makeText(context, "Add it to your rotation first", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.chrisalvis.rotato.data.RotatoPreferences(context).queueUpNext(file.absolutePath, first = true)
+                        android.widget.Toast.makeText(context, "Playing next", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
             canFoldPair = vm.canFoldPair,
             foldPairOuter = foldPairOuter,
             foldPairBusy = foldPairBusy,
@@ -525,13 +545,59 @@ fun BrowseScreen(
         )
     }
 
-    // The Saved overview's large title folds away as the collections scroll.
+    // Standalone, the overview's large title folds away as the collections scroll. On the Saved
+    // tab there's no title (the tab bar says where you are), just a slim row of actions.
     val overviewScroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val onOverview = selectedList == null && !selectionMode
     var showAddMenu by remember { mutableStateOf(false) }
+    val overviewActions: @Composable RowScope.() -> Unit = {
+        if (onSavedSearch != null) {
+            IconButton(onClick = onSavedSearch) {
+                Icon(Icons.Default.Search, contentDescription = "Search and filter your photos")
+            }
+        }
+        Box {
+            IconButton(onClick = { showAddMenu = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add")
+            }
+            DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text("New collection") },
+                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
+                    onClick = { showAddMenu = false; showCreateMenu = true }
+                )
+                if (onAddPhotos != null) {
+                    DropdownMenuItem(
+                        text = { Text("Add photos from device") },
+                        leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
+                        onClick = { showAddMenu = false; onAddPhotos() }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Import or restore") },
+                    leadingIcon = { Icon(Icons.Default.SettingsBackupRestore, contentDescription = null) },
+                    onClick = {
+                        showAddMenu = false
+                        restoreBackupLauncher.launch(arrayOf("application/json", "*/*"))
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Save rotation as collection") },
+                    leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },
+                    onClick = { showAddMenu = false; showSaveRotationDialog = true }
+                )
+            }
+        }
+        if (onOpenSettings != null) {
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings")
+            }
+        }
+    }
 
     Scaffold(
-        modifier = if (onOverview) Modifier.nestedScroll(overviewScroll.nestedScrollConnection) else Modifier,
+        // Only the large title collapses; without one the behavior would swallow the scroll.
+        modifier = if (onOverview && savedHero == null) Modifier.nestedScroll(overviewScroll.nestedScrollConnection) else Modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             val openList = selectedList
@@ -634,47 +700,19 @@ fun BrowseScreen(
                         }
                     }
                 )
+                savedHero != null -> Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(52.dp)
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = overviewActions,
+                )
                 else -> LargeTopAppBar(
-                    title = { Text(if (savedHero != null) "Saved" else "Collections", fontWeight = FontWeight.Bold) },
-                    actions = {
-                        if (onSavedSearch != null) {
-                            IconButton(onClick = onSavedSearch) {
-                                Icon(Icons.Default.Search, contentDescription = "Search and filter your photos")
-                            }
-                        }
-                        Box {
-                            IconButton(onClick = { showAddMenu = true }) {
-                                Icon(Icons.Default.Add, contentDescription = "Add")
-                            }
-                            DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("New collection") },
-                                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
-                                    onClick = { showAddMenu = false; showCreateMenu = true }
-                                )
-                                if (onAddPhotos != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Add photos from device") },
-                                        leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
-                                        onClick = { showAddMenu = false; onAddPhotos() }
-                                    )
-                                }
-                                DropdownMenuItem(
-                                    text = { Text("Import or restore") },
-                                    leadingIcon = { Icon(Icons.Default.SettingsBackupRestore, contentDescription = null) },
-                                    onClick = {
-                                        showAddMenu = false
-                                        restoreBackupLauncher.launch(arrayOf("application/json", "*/*"))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Save rotation as collection") },
-                                    leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },
-                                    onClick = { showAddMenu = false; showSaveRotationDialog = true }
-                                )
-                            }
-                        }
-                    },
+                    title = { Text("Collections", fontWeight = FontWeight.Bold) },
+                    actions = overviewActions,
                     scrollBehavior = overviewScroll,
                 )
             }
@@ -890,7 +928,7 @@ fun BrowseScreen(
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                             enabled = wallpapers.isNotEmpty(),
                         )
-                        // Whether this collection feeds the wallpaper rotation (Everything rotating).
+                        // Whether this collection feeds the wallpaper rotation (In rotation).
                         val rotating = openList.useAsRotation
                         val offDot: @Composable () -> Unit = { SavedStatusDot(on = false) }
                         SavedPill(
@@ -2292,6 +2330,8 @@ private fun WallpaperUrlPreviewDialog(
     moveTargets: List<LocalList> = emptyList(),
     onMoveTo: (BrowseWallpaper, LocalList) -> Unit = { _, _ -> },
     onSetWallpaper: (BrowseWallpaper) -> Unit = {},
+    /** Lines the wallpaper up to show next; offered for ones in the rotation pool. */
+    onPlayNext: ((BrowseWallpaper) -> Unit)? = null,
     canFoldPair: Boolean = false,
     foldPairOuter: BrowseWallpaper? = null,
     foldPairBusy: Boolean = false,
@@ -2619,6 +2659,7 @@ private fun WallpaperUrlPreviewDialog(
                         onTagSearch = { tag -> showDetails = false; onTagSearch(tag) },
                         onTagTier = onTagTier,
                         onSetWallpaper = { showDetails = false; onSetWallpaper(wp) },
+                        onPlayNext = if (onPlayNext != null && inRotation && !wp.isVideo) ({ showDetails = false; onPlayNext(wp) }) else null,
                         onDismiss = { showDetails = false },
                     )
                 }
@@ -2652,6 +2693,7 @@ private fun CollectionImageSheet(
     onTagSearch: (String) -> Unit = {},
     onTagTier: (String, com.chrisalvis.rotato.data.TagTier) -> Unit = { _, _ -> },
     onSetWallpaper: () -> Unit = {},
+    onPlayNext: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2701,6 +2743,13 @@ private fun CollectionImageSheet(
             }
 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onPlayNext != null) {
+                    FilledTonalButton(onClick = onPlayNext) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Play next")
+                    }
+                }
                 val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
                 if (page != null) {
                     FilledTonalButton(onClick = {

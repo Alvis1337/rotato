@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
-// Shared pieces of the Saved tab: the Library ("Everything rotating") and collections.
+// Shared pieces of the Saved tab: the Library ("In rotation") and collections.
 
 /** Status green: something is in the wallpaper rotation. */
 internal val SavedRotatingGreen = Color(0xFF2EB872)

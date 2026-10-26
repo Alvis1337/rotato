@@ -71,14 +71,14 @@ object FirstRunTour {
             if (supportsFoldPairs(context)) add("On your foldable, Pair sets one image for the cover screen and another for the inside.")
         }
         "home" -> listOf(
-            "Saved holds everything you keep. Everything rotating, at the top, is what Rotato cycles through as your wallpaper.",
+            "Saved holds everything you keep. In rotation, at the top, is the set of wallpapers Rotato cycles through on your screen.",
             "Collections sit below. Open one and tap Rotating to add it to your rotation; a green dot means it's in.",
             "Use + to make a collection, add photos, import a shared one or save your rotation. Filter in any grid has colours, Match a photo and sorting.",
         )
         "now" -> listOf(
-            "This is what's on your screen, with next, back and save one tap away. Never-again sits under the ⋮ menu.",
+            "This is what's on your screen, with next, back and save one tap away. The block button by its name means never show it again.",
             "Tap the rotation bar to turn rotation on or off, change how often, and pick which collections it uses.",
-            "Settings live behind the gear at the top.",
+            "Settings live behind the gear at the top of Wallpaper, Discover and Saved.",
         )
         "browse" -> listOf(
             "Collections hold the images you save from Discover.",
