@@ -114,6 +114,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val collections: StateFlow<List<LocalList>> = localLists.lists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** How many wallpapers each collection holds, by collection id. */
+    val collectionSizes: StateFlow<Map<String, Int>> = localLists.allWallpapers
+        .map { all -> all.groupingBy { it.listId }.eachCount() }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val settings: StateFlow<RotatoSettings> = preferences.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RotatoSettings())
 

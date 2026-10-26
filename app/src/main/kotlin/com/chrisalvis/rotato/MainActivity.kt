@@ -28,10 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.PlayCircleOutline
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -203,14 +201,16 @@ class MainActivity : AppCompatActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
+                // Tabs: 0 Wallpaper ("now"), 1 Discover, 2 Saved ("home"). Settings and its
+                // screens open from the Wallpaper tab's gear, so they light that tab.
                 val selectedTab = when (currentRoute) {
-                    "discover", "taste" -> 0
-                    "home", "browse" -> 1
-                    "now" -> 2
-                    "settings", "sources", "schedule", "stats", "source_health",
+                    "now", "settings", "sources", "schedule", "stats", "source_health",
                     "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
-                    "settings_integrations", "settings_about_data", "settings_tools" -> 3
-                    else -> 0
+                    "settings_integrations", "settings_about_data", "settings_tools" -> 0
+                    // Taste opens from Discover and from Settings; follow where it came from.
+                    "taste" -> if (navController.previousBackStackEntry?.destination?.route?.startsWith("settings") == true) 0 else 1
+                    "home", "browse" -> 2
+                    else -> 1
                 }
 
                 val showBottomBar = currentRoute !in setOf("sources", "source_health", "setup", "onboarding", "plugin_store")
@@ -244,15 +244,18 @@ class MainActivity : AppCompatActivity() {
                 // Unfolded foldables / tablets get a side rail instead of a stretched bottom bar.
                 val useNavRail = LocalConfiguration.current.screenWidthDp >= 600
                 val navTabs = listOf(
+                    NavTab("now", "Wallpaper", Icons.Default.Smartphone),
                     NavTab("discover", "Discover", Icons.Default.AutoAwesome),
-                    NavTab("home", "Library", Icons.Default.Wallpaper),
-                    NavTab("now", "Now", Icons.Default.PlayCircleOutline),
-                    NavTab("settings", "Settings", Icons.Default.Settings),
+                    NavTab("home", "Saved", Icons.Default.BookmarkBorder),
                 )
                 val onTabSelected: (Int) -> Unit = { index ->
                     val route = navTabs[index].route
                     if (route == "home") homeViewModel.refreshFromFeeds()
-                    navController.navigate(route) {
+                    // Tapping the tab you're in from a screen pushed on it (e.g. Settings) goes
+                    // back to the tab itself.
+                    val backToTabRoot = selectedTab == index && currentRoute != route &&
+                        navController.popBackStack(route, inclusive = false)
+                    if (!backToTabRoot) navController.navigate(route) {
                         if (route == "discover") {
                             popUpTo("discover") { inclusive = false }
                         } else {
@@ -385,7 +388,14 @@ class MainActivity : AppCompatActivity() {
                             }
                             composable("now") {
                                 val lists by homeViewModel.collections.collectAsStateWithLifecycle()
-                                NowScreen(viewModel = homeViewModel, collections = lists)
+                                NowScreen(
+                                    viewModel = homeViewModel,
+                                    collections = lists,
+                                    onOpenSettings = { navController.navigate("settings") { launchSingleTop = true } },
+                                    onGoToDiscover = { onTabSelected(navTabs.indexOfFirst { it.route == "discover" }) },
+                                    onOpenSchedule = { navController.navigate("schedule") },
+                                    onOpenRotationSettings = { navController.navigate("settings_rotation_wallpaper") },
+                                )
                             }
                             composable("settings") {
                                 if (settingsTwoPane) {

@@ -76,8 +76,9 @@ object FirstRunTour {
             "Settings › Rotation has the Rotato live wallpaper: crossfades, video wallpapers and double-tap for next.",
         )
         "now" -> listOf(
-            "Now shows what's on your screen, with next, back, save and never-again one tap away.",
-            "Line wallpapers up from the Library with Play next; they show before anything else.",
+            "This is what's on your screen, with next, back and save one tap away. Never-again sits under the ⋮ menu.",
+            "Tap the rotation bar to turn rotation on or off, change how often, and pick which collections it uses.",
+            "Settings live behind the gear at the top.",
         )
         "browse" -> listOf(
             "Collections hold the images you save from Discover.",
