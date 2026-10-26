@@ -1,6 +1,5 @@
 package com.chrisalvis.rotato.ui
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.combinedClickable
@@ -10,7 +9,6 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,8 +36,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +47,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -70,22 +65,20 @@ import com.chrisalvis.rotato.data.BrainrotWallpaper
 import com.chrisalvis.rotato.data.MediaType
 import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 /**
- * How Discover lays out results. Grid is the default; the choice is remembered. The header's
- * tabs offer Grid, Feed and Swipe; Compact is Grid's small-tile size, switched in Filters.
+ * How Discover lays out results: always a grid, at the regular size or Compact (small tiles,
+ * switched in Filters). The choice is remembered.
  */
 enum class DiscoverViewMode(val key: String, val label: String) {
     GRID("grid", "Grid"),
-    COMPACT("compact", "Compact grid"),
-    SWIPE("swipe", "Swipe"),
-    FEED("feed", "Feed");
+    COMPACT("compact", "Compact grid");
 
     /** Either size of grid. */
     val isGrid: Boolean get() = this == GRID || this == COMPACT
 
     companion object {
+        /** Feed and Swipe are gone; anyone who left Discover in one of them comes back to Grid. */
         fun of(key: String) = entries.firstOrNull { it.key == key } ?: GRID
     }
 }
@@ -429,121 +422,8 @@ private fun MediaPage(wp: BrainrotWallpaper, playing: Boolean, modifier: Modifie
 }
 
 /**
- * Swipe: one card at a time. Drag right (or tap the bookmark) to save, left (or ✕) to skip.
- */
-@Composable
-internal fun SwipeDeck(
-    items: List<BrainrotWallpaper>,
-    nsfwBlurEnabled: Boolean,
-    loading: Boolean,
-    endReached: Boolean,
-    onLoadMore: () -> Unit,
-    onSave: (BrainrotWallpaper) -> Unit,
-    onSkip: (BrainrotWallpaper) -> Unit,
-    onOpen: (BrainrotWallpaper) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    LoadAhead({ 0 }, items.size, 6, loading, endReached, onLoadMore)
-    val top = items.firstOrNull()
-    val scope = rememberCoroutineScope()
-    val offsetX = remember(top?.id, top?.source) { Animatable(0f) }
-    Column(modifier.fillMaxSize().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            items.getOrNull(1)?.let { next ->
-                MediaPage(next, playing = false, crop = true, modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = 0.94f; scaleY = 0.94f }.clip(RoundedCornerShape(20.dp)).background(Color.Black))
-            }
-            if (top == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (loading) CircularProgressIndicator() else Text("That's everything for these filters", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else {
-                var revealed by rememberNsfwRevealed("${top.source}:${top.id}")
-                val decide: (Boolean) -> Unit = { save ->
-                    scope.launch {
-                        offsetX.animateTo(if (save) 1600f else -1600f)
-                        if (save) onSave(top) else onSkip(top)
-                        settle(offsetX)
-                    }
-                }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            translationX = offsetX.value
-                            rotationZ = offsetX.value / 60f
-                        }
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.Black)
-                        .pointerInput(top.id) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    val x = offsetX.value
-                                    when {
-                                        x > size.width * 0.28f -> decide(true)
-                                        x < -size.width * 0.28f -> decide(false)
-                                        else -> scope.launch { offsetX.animateTo(0f) }
-                                    }
-                                },
-                                onDragCancel = { scope.launch { offsetX.animateTo(0f) } },
-                            ) { change, drag ->
-                                change.consume()
-                                scope.launch { offsetX.snapTo(offsetX.value + drag) }
-                            }
-                        }
-                        .pointerInput(top.id) {
-                            detectTapGestures(onTap = { if (top.isNsfw && nsfwBlurEnabled && !revealed) revealed = true else onOpen(top) })
-                        }
-                ) {
-                    MediaPage(top, playing = true, crop = true, modifier = Modifier.fillMaxSize().nsfwContentBlur(top.isNsfw, nsfwBlurEnabled, revealed))
-                    NsfwBlurLayer(top.isNsfw, nsfwBlurEnabled, revealed)
-                    val x = offsetX.value
-                    if (abs(x) > 40f) {
-                        Text(
-                            if (x > 0) "SAVE" else "SKIP",
-                            color = Color.White,
-                            style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier
-                                .align(if (x > 0) Alignment.TopStart else Alignment.TopEnd)
-                                .padding(20.dp)
-                                .background((if (x > 0) Color(0xFF2E7D32) else Color(0xFFC62828)).copy(alpha = 0.85f), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                    }
-                }
-            }
-        }
-        Row(Modifier.padding(top = 12.dp, bottom = 72.dp), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalIconButton(onClick = { top?.let { onSkipNow(it, offsetX, scope, onSkip) } }, enabled = top != null, modifier = Modifier.size(60.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Skip")
-            }
-            FilledTonalIconButton(onClick = { top?.let(onOpen) }, enabled = top != null) {
-                Icon(Icons.Default.OpenInFull, contentDescription = "Open")
-            }
-            FilledIconButton(onClick = { top?.let { onSaveNow(it, offsetX, scope, onSave) } }, enabled = top != null, modifier = Modifier.size(60.dp), shape = CircleShape) {
-                Icon(Icons.Default.BookmarkBorder, contentDescription = "Save")
-            }
-        }
-    }
-}
-
-private fun onSkipNow(wp: BrainrotWallpaper, offset: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>, scope: kotlinx.coroutines.CoroutineScope, onSkip: (BrainrotWallpaper) -> Unit) {
-    scope.launch { offset.animateTo(-1600f); onSkip(wp); settle(offset) }
-}
-
-private fun onSaveNow(wp: BrainrotWallpaper, offset: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>, scope: kotlinx.coroutines.CoroutineScope, onSave: (BrainrotWallpaper) -> Unit) {
-    scope.launch { offset.animateTo(1600f); onSave(wp); settle(offset) }
-}
-
-/** If the card is still the top one (e.g. saving opened "new collection" and was cancelled), bring it back. */
-private suspend fun settle(offset: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>) {
-    kotlinx.coroutines.delay(600)
-    offset.snapTo(0f)
-}
-
-
-/**
  * The feed, full screen over everything, for the user's own pictures and videos: the Library or
- * a collection played like Discover's Feed. Swipe down past the first, press back or tap ✕ to leave.
+ * a collection played one picture per screen. Swipe down past the first, press back or tap ✕ to leave.
  */
 @Composable
 internal fun ReelPlayer(

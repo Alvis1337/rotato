@@ -186,7 +186,6 @@ fun BrainrotScreen(
     val foldPairOuter by vm.foldPairOuter.collectAsStateWithLifecycle()
     val forYouEnabled by vm.forYouEnabled.collectAsStateWithLifecycle()
     val foldPairBusy by vm.foldPairBusy.collectAsStateWithLifecycle()
-    val busy by vm.busy.collectAsStateWithLifecycle()
     val endReached by vm.endReached.collectAsStateWithLifecycle()
     val noResults by vm.noResults.collectAsStateWithLifecycle()
     val noResultsReason by vm.noResultsReason.collectAsStateWithLifecycle()
@@ -217,10 +216,6 @@ fun BrainrotScreen(
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
-    // Which grid size the Grid tab goes back to after a turn in Feed or Swipe.
-    var compactPreferred by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(viewMode) { if (viewMode.isGrid) compactPreferred = viewMode == DiscoverViewMode.COMPACT }
-    val shuffleVersion by vm.shuffleVersion.collectAsStateWithLifecycle()
     val searchCoverage by vm.searchCoverage.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
 
@@ -259,8 +254,7 @@ fun BrainrotScreen(
     // alone, a page that finished (or came back empty) while the user was already at the bottom
     // never triggered the next one until they scrolled away and back.
     LaunchedEffect(gridMode) {
-        // Only the grids page this way; the feed and swipe deck ask for more themselves.
-        snapshotFlow { (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT) && shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null }
+        snapshotFlow { shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null }
             .collect { ready -> if (ready) vm.loadMore() }
     }
     LaunchedEffect(resetVersion, gridMode) {
@@ -539,7 +533,7 @@ fun BrainrotScreen(
                 onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
                 onToggleProfile = { vm.toggleDiscoverProfile(it) },
                 sourcesContent = sourcesRow,
-                compactGrid = if (viewMode.isGrid) viewMode == DiscoverViewMode.COMPACT else null,
+                compactGrid = viewMode == DiscoverViewMode.COMPACT,
                 onSetCompactGrid = { vm.setViewMode(if (it) DiscoverViewMode.COMPACT else DiscoverViewMode.GRID) },
                 onTaste = { showSettings = false; onNavigateToTaste() },
                 onDismiss = { showSettings = false }
@@ -575,7 +569,7 @@ fun BrainrotScreen(
         }
     }
 
-        // The header and Shuffle float over the content and tuck away while scrolling down.
+        // The header floats over the content and tucks away while scrolling down.
         val chrome = remember { ChromeOnScroll() }
         val density = LocalDensity.current
         var topInset by remember { mutableStateOf(112.dp) }
@@ -611,9 +605,7 @@ fun BrainrotScreen(
         val viewerOpen = selectedItem != null
         LaunchedEffect(viewerOpen) {
             if (viewerOpen) {
-                // Only the grids have tiles to grow from; the feed and deck open in place.
-                val fromGrid = viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT
-                openFrom = if (fromGrid) selectedItem?.let { tileBounds["${it.source}:${it.id}"] } else null
+                openFrom = selectedItem?.let { tileBounds["${it.source}:${it.id}"] }
                 if (openFrom != null) {
                     openProgress.snapTo(0f)
                     openProgress.animateTo(1f, androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing))
@@ -636,8 +628,7 @@ fun BrainrotScreen(
         }
 
         // Unfolded with a grid layout: the grid stays on the left and the viewer opens on the right.
-        val twoPane = viewerBesideGrid() &&
-            (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT)
+        val twoPane = viewerBesideGrid()
         val paneOpen = twoPane && selectedItem != null
         Box(modifier = Modifier.fillMaxSize()) {
             // A faint wash of whatever's at the top of the feed, over a plain dark page.
@@ -646,9 +637,8 @@ fun BrainrotScreen(
                 modifier = (if (paneOpen) Modifier.fillMaxHeight().fillMaxWidth(0.42f) else Modifier.fillMaxSize())
                     .nestedScroll(chrome)
             ) {
-                // Grids and the feed scroll under the floating header themselves; everything else starts below it.
-                val padsItself = !noSources && !noResults && !(loading && gridItems.isEmpty()) &&
-                    viewMode != DiscoverViewMode.SWIPE
+                // The grids scroll under the floating header themselves; everything else starts below it.
+                val padsItself = !noSources && !noResults && !(loading && gridItems.isEmpty())
                 Box(Modifier.fillMaxSize().padding(top = if (padsItself) 0.dp else topInset)) {
                     when {
                     noSources -> NoSourcesState(onNavigateToSources = onNavigateToSources)
@@ -683,41 +673,12 @@ fun BrainrotScreen(
                             }
                         }
                     }
-                    // Keyed on Shuffle so the feed starts again at the new picks it put on top.
-                    viewMode == DiscoverViewMode.FEED -> androidx.compose.runtime.key(shuffleVersion) { DiscoverFeed(
-                        items = gridItems,
-                        isSaved = { "${it.source}:${it.id}" in savedSourceIds },
-                        nsfwBlurEnabled = nsfwBlurEnabled,
-                        loadingMore = loadingMore || loading,
-                        endReached = endReached,
-                        onLoadMore = { vm.loadMore() },
-                        // Saving here keeps the item in the feed, so the page doesn't jump.
-                        onSave = { wp ->
-                            if (lists.isEmpty()) onAddToList(wp) else vm.addToList(selectedListId ?: lists.first().id, wp, leaveGrid = false)
-                        },
-                        onOpen = { vm.selectItem(it) },
-                        onSet = { vm.setWallpaperDirectly(it) },
-                        onSkip = { vm.skip(it) },
-                        onTag = { vm.searchByTag(it) },
-                        onMoreLikeThis = { vm.moreLikeThis(it) },
-                        onDwell = { wp, ms -> vm.recordDwell(wp, ms) },
-                        active = selectedItem == null,
-                    ) }
-                    viewMode == DiscoverViewMode.SWIPE -> SwipeDeck(
-                        items = gridItems,
-                        nsfwBlurEnabled = nsfwBlurEnabled,
-                        loading = loading || loadingMore,
-                        endReached = endReached,
-                        onLoadMore = { vm.loadMore() },
-                        onSave = { wp -> onAddToList(wp) },
-                        onSkip = { wp -> vm.skip(wp) },
-                        onOpen = { vm.selectItem(it) },
-                    )
                     else -> {
                         val pullRefreshState = rememberPullToRefreshState()
                         PullToRefreshBox(
                             isRefreshing = loading,
-                            onRefresh = { vm.loadMore(reset = true) },
+                            // A fresh shuffled batch, keeping what was just on screen out of it.
+                            onRefresh = { vm.refresh() },
                             state = pullRefreshState,
                             modifier = Modifier.fillMaxSize()
                         ) {
@@ -861,23 +822,15 @@ fun BrainrotScreen(
             if (!noSources) {
                 Box(Modifier.align(Alignment.TopStart).then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth())) {
                     DiscoverTopBar(
-                        // The feed's tabs stay put, like a reel app's; elsewhere the header hides on scroll.
-                        visible = chrome.visible || selectedItem != null || viewMode == DiscoverViewMode.FEED,
+                        visible = chrome.visible || selectedItem != null,
                         query = searchQuery,
                         pinned = pinnedSearches,
-                        viewMode = viewMode,
                         filterCount = filterCount,
                         onOpenSearch = { showSearch = true },
                         onClearSearch = { vm.setSearchQuery("") },
                         onSelectPinned = { vm.setSearchQuery(it) },
                         onPinCurrent = { vm.pinCurrentSearch() },
                         onOpenFilters = { showSettings = true },
-                        onOpenSettings = onNavigateToSettings,
-                        onSelectMode = { mode ->
-                            // Back to Grid comes back at the size it was last used at.
-                            vm.setViewMode(if (mode == DiscoverViewMode.GRID && compactPreferred) DiscoverViewMode.COMPACT else mode)
-                            chrome.visible = true
-                        },
                         coverage = searchCoverage.takeIf { searchQuery.isNotBlank() && it.isNotEmpty() }?.joinToString(" · ") { c ->
                             when {
                                 c.skipped != null -> "${c.name}: ${c.skipped}"
@@ -944,21 +897,6 @@ fun BrainrotScreen(
                             }
                         }
                     }
-                } else {
-                    // Shuffle floats in the grids and the deck; the feed keeps serving fresh items on its own.
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomStart)
-                            .then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth()),
-                        contentAlignment = Alignment.BottomEnd,
-                    ) {
-                        DiscoverShuffleButton(
-                            visible = viewMode != DiscoverViewMode.FEED && !noResults &&
-                                (chrome.visible || viewMode == DiscoverViewMode.SWIPE),
-                            busy = busy,
-                            onShuffle = { vm.surpriseMe() },
-                        )
-                    }
                 }
                 Box(
                     Modifier
@@ -968,7 +906,7 @@ fun BrainrotScreen(
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     DiscoverBackToTop(
-                        visible = showScrollTop && viewMode.isGrid && selectedItem == null,
+                        visible = showScrollTop && selectedItem == null,
                         onClick = {
                             coroutineScope.launch {
                                 if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)

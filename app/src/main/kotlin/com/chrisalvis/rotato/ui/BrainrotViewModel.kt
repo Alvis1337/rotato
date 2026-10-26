@@ -264,9 +264,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedListId = MutableStateFlow<String?>(null)
     val selectedListId: StateFlow<String?> = _selectedListId.asStateFlow()
 
-    private val _busy = MutableStateFlow(false)
-    val busy: StateFlow<Boolean> = _busy.asStateFlow()
-
     val nsfwMode: StateFlow<Boolean> = prefs.nsfwMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -344,16 +341,17 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private val _resetVersion = MutableStateFlow(0)
     val resetVersion: StateFlow<Int> = _resetVersion.asStateFlow()
 
-    /** Bumped when Shuffle puts new picks at the top, so the feed can jump to them. */
-    private val _shuffleVersion = MutableStateFlow(0)
-    val shuffleVersion: StateFlow<Int> = _shuffleVersion.asStateFlow()
-
     val danbooruEnabled: StateFlow<Boolean> = localSources.sources
         .map { sources -> sources.any { it.enabled && it.pluginId == "DANBOORU" } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
+    /**
+     * What was on screen before a pull to refresh: kept out of the new feed while there's anything
+     * else to show, and only used to top up a batch that would otherwise come up short.
+     */
+    private var refreshAvoid: Set<String> = emptySet()
     private val persistentBlockedKeys = mutableSetOf<String>()
 
     /** Tracks how many consecutive fetches returned 0 new items while the grid has content. */
@@ -457,6 +455,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         prefs.setGlobalBlacklist(emptySet())
     }
 
+    /** Pull to refresh: starts over with a new shuffled batch, keeping what was just on screen out of it. */
+    fun refresh() {
+        loadMore(reset = true, avoid = _gridItems.value.mapTo(mutableSetOf()) { "${it.source}:${it.id}" })
+    }
+
     /**
      * Loads the next batch of items into the grid.
      * [reset] = true clears the grid and caches (pull-to-refresh, filter change, etc.).
@@ -467,8 +470,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
      *  3. Drain from the in-memory caches — no network during drain.
      *  4. Batch-update the grid with all new items in a single state emission.
      */
-    fun loadMore(reset: Boolean = false) {
+    fun loadMore(reset: Boolean = false, avoid: Set<String> = emptySet()) {
         if (reset) {
+            refreshAvoid = avoid
             fetchJob?.cancel()
             fetchJob = null
             _gridItems.update { emptyList() }
@@ -549,6 +553,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             // Steps 1+2 repeat up to 3 rounds: if strict filters drain the caches before the
             // target is reached, clear and fetch again rather than stopping short.
             val newItems = mutableListOf<BrainrotWallpaper>()
+            // Just-refreshed-away items that turned up again, held back for topping up.
+            val held = LinkedHashMap<String, BrainrotWallpaper>()
             var totalSkipped = 0
             var round = 0
             while (newItems.size < target && round < 3) {
@@ -585,6 +591,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
                 // With NSFW off nothing fetched as NSFW is ever shown, whatever cache it came from.
                 if (!nsfw && wp.isNsfw) { totalSkipped++; continue }
+                if (key in refreshAvoid) { held.putIfAbsent(key, wp); if (++totalSkipped >= 200) break; continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
                 prefetchGridImage(ctx, wp)
@@ -594,6 +601,13 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             round++
             if (round < 3 && newItems.size < target) pageCache.clear()
             } // end round loop
+            // Only so much matches (a narrow search): bring back what was on screen rather than come up short.
+            for ((key, wp) in held) {
+                if (newItems.size >= target) break
+                if (!displayedKeys.add(key)) continue
+                prefetchGridImage(ctx, wp)
+                newItems += wp
+            }
 
             Log.d("DiscoverFetch", "drain complete — ${newItems.size} new items, ${displayedKeys.size} total seen")
             if (newItems.isEmpty()) {
@@ -758,14 +772,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** API families whose sites carry video posts. */
         val VIDEO_PROTOCOLS = setOf(Protocol.GELBOORU, Protocol.DANBOORU, Protocol.REDDIT)
-
-        /** Tags on nearly every post, useless for finding similar ones. */
-        val GENERIC_TAGS = setOf(
-            "1girl", "1boy", "2girls", "solo", "highres", "absurdres", "commentary", "commentary_request",
-            "english_commentary", "translated", "animated", "video", "sound", "looking_at_viewer", "simple_background",
-            "white_background", "tagme", "original", "artist_request", "general", "safe", "questionable", "explicit",
-            "sensitive", "wallpaper", "anime", "mp4", "webm", "gif", "has_audio", "no_audio",
-        )
     }
 
     private fun sourceKey(source: LocalSource): String =
@@ -1119,7 +1125,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _gridMode.update { !it }
     }
 
-    /** Grid, compact grid, swipe or feed; remembered between visits. */
+    /** Grid or compact grid; remembered between visits. A stored "feed" or "swipe" reads as Grid. */
     val viewMode: StateFlow<DiscoverViewMode> = prefs.discoverViewMode
         .map { DiscoverViewMode.of(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, DiscoverViewMode.GRID)
@@ -1127,124 +1133,6 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     fun setViewMode(mode: DiscoverViewMode) {
         _gridMode.value = mode == DiscoverViewMode.COMPACT
         viewModelScope.launch { prefs.setDiscoverViewMode(mode.key) }
-    }
-
-    /**
-     * Fills the feed right after [wp] with posts sharing its most telling tags, from every
-     * source, without leaving the current search or losing the user's place.
-     */
-    fun moreLikeThis(wp: BrainrotWallpaper) {
-        val tags = wp.tags.map(::normalizeTag)
-            .filter { it.isNotBlank() && it !in GENERIC_TAGS && ':' !in it && !it.endsWith("_resolution") }
-            .take(3)
-        if (tags.isEmpty()) {
-            android.widget.Toast.makeText(getApplication(), "Not enough tags on this one to find more", android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        val generation = feedGeneration
-        android.widget.Toast.makeText(getApplication(), "Finding more like this", android.widget.Toast.LENGTH_SHORT).show()
-        viewModelScope.launch {
-            val nsfw = prefs.nsfwMode.first()
-            val filters = withMalAnimeOnly(prefs.brainrotFilters.first())
-            val blockedUrls = prefs.blockedUrls.first()
-            val requests = buildDiscoverRequests(nsfw, filters, tags.joinToString(", "))
-            val seenKeys = displayedKeys.toSet()
-            val found = requests.flatMap { request ->
-                request.queries.map { q ->
-                    async(Dispatchers.IO) {
-                        val sourceKey = request.source.pluginId.lowercase()
-                        val excludes = seenKeys.filter { it.startsWith("$sourceKey:") }.map { it.removePrefix("$sourceKey:") }
-                        fetchPageForSource(request.source, q, excludes, request.effectiveNsfw, filters, 30)
-                    }
-                }
-            }.awaitAll().flatten()
-                .filter { "${it.source}:${it.id}" !in seenKeys && (blockedUrls.isEmpty() || it.fullUrl !in blockedUrls) && (nsfw || !it.isNsfw) }
-                .distinctBy { "${it.source}:${it.id}" }
-                .shuffled()
-                .take(15)
-            if (generation != feedGeneration) return@launch
-            if (found.isEmpty()) {
-                android.widget.Toast.makeText(getApplication(), "Couldn't find more like this", android.widget.Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            found.forEach { displayedKeys.add("${it.source}:${it.id}") }
-            _gridItems.update { list ->
-                val at = list.indexOfFirst { it.id == wp.id && it.source == wp.source }.let { if (it < 0) list.size else it + 1 }
-                list.take(at) + found.notIn(list) + list.drop(at)
-            }
-        }
-    }
-
-    /**
-     * How long the feed stayed on [wp]: lingering reads as liking it, a quick flick past as a
-     * mild "not this", so For you sharpens without the user saving or skipping anything.
-     */
-    fun recordDwell(wp: BrainrotWallpaper, ms: Long) {
-        when {
-            ms >= 6_000 -> learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.LINGERED)
-            ms in 1..1_200 -> learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.FLICKED_PAST)
-        }
-    }
-
-    fun surpriseMe() {
-        if (_busy.value) return
-        val generation = feedGeneration
-        viewModelScope.launch {
-            _busy.update { true }
-            try {
-                val nsfw = prefs.nsfwMode.first()
-                val filters = withMalAnimeOnly(prefs.brainrotFilters.first())
-                val alignInterests = prefs.interestAlignEnabled.first()
-                val sfwTierMap = if (alignInterests) tastePrefs.sfwTagTiers.first() else emptyMap()
-                val nsfwTierMap = if (alignInterests && nsfw) tastePrefs.nsfwTagTiers.first() else emptyMap()
-                val neverTagSet = (sfwTierMap + nsfwTierMap).filterValues { it == TagTier.NEVER }.keys.map(::normalizeTag).toSet()
-                val activeProfiles = if (alignInterests) tastePrefs.interestProfiles.first().filter { it.isActive } else emptyList()
-                val profileExcludes = activeProfiles.flatMap { it.excludeTags }.map(::normalizeTag).toSet()
-                val blacklist = prefs.globalBlacklist.first().map(::normalizeTag).toSet() + neverTagSet + profileExcludes
-                val blockedUrls = prefs.blockedUrls.first()
-                val explicitQuery = _searchQuery.value
-                val requests = buildDiscoverRequests(nsfw, filters, explicitQuery)
-                if (requests.isEmpty()) return@launch
-
-                val seenKeys = displayedKeys.toSet()
-                val ctx = getApplication<Application>().applicationContext
-                val freshItems = requests.map { request ->
-                    async(Dispatchers.IO) {
-                        val sourceKey = request.source.pluginId.lowercase()
-                        val excludes = seenKeys
-                            .filter { it.startsWith("$sourceKey:") }
-                            .map { it.removePrefix("$sourceKey:") }
-                        request.queries.firstNotNullOfOrNull { query ->
-                            fetchSingleForSource(request.source, query, excludes, request.effectiveNsfw, filters)
-                        }
-                    }
-                }.awaitAll()
-                    .filterNotNull()
-                    .filter { wp ->
-                        val key = "${wp.source}:${wp.id}"
-                        key !in seenKeys && (nsfw || !wp.isNsfw) &&
-                            (blacklist.isEmpty() || wp.tags.none { normalizeTag(it) in blacklist }) &&
-                            (blockedUrls.isEmpty() || wp.fullUrl !in blockedUrls)
-                    }
-                    .distinctBy { "${it.source}:${it.id}" }
-
-                if (freshItems.isEmpty() || generation != feedGeneration) return@launch
-
-                freshItems.forEach { wp ->
-                    displayedKeys.add("${wp.source}:${wp.id}")
-                    prefetchGridImage(ctx, wp)
-                }
-                _gridItems.update { freshItems.notIn(it) + it }
-                _shuffleVersion.update { it + 1 }
-                _noResults.update { false }
-                _noResultsReason.update { null }
-                _endReached.update { false }
-                pageCache.clear()
-                prefs.addSeenWallpaperKeys(freshItems.map { "${it.source}:${it.id}" }.toSet())
-            } finally {
-                _busy.update { false }
-            }
-        }
     }
 
     fun setNsfwMode(enabled: Boolean) {

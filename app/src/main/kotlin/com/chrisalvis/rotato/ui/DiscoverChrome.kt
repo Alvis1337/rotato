@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -37,11 +35,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wallpaper
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,15 +65,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -106,16 +95,13 @@ class ChromeOnScroll : NestedScrollConnection {
 }
 
 /**
- * The top of Discover. Grid and Swipe: search, Filters and Settings, then the layout tabs,
- * search coverage and pinned searches. Feed keeps one row (search, the tabs, Filters
- * and Settings) over a light shade, like a reel app, so the picture keeps the screen.
+ * The top of Discover: search and Filters, then search coverage and pinned searches.
  */
 @Composable
 internal fun DiscoverTopBar(
     visible: Boolean,
     query: String,
     pinned: List<String>,
-    viewMode: DiscoverViewMode,
     /** How many filters are narrowing the results; shown on the Filters button. */
     filterCount: Int,
     onOpenSearch: () -> Unit,
@@ -123,8 +109,6 @@ internal fun DiscoverTopBar(
     onSelectPinned: (String) -> Unit,
     onPinCurrent: () -> Unit,
     onOpenFilters: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onSelectMode: (DiscoverViewMode) -> Unit,
     /** While searching: what each source returned, or why it sat out. */
     coverage: String? = null,
     modifier: Modifier = Modifier,
@@ -135,41 +119,7 @@ internal fun DiscoverTopBar(
         exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { -it },
         modifier = modifier,
     ) {
-        if (viewMode == DiscoverViewMode.FEED) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.45f), 1f to Color.Transparent))
-                    .statusBarsPadding()
-                    .padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 12.dp),
-            ) {
-                IconButton(onClick = onOpenSearch, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-                }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    DiscoverModeTabs(mode = viewMode, onSelect = onSelectMode, onPicture = true)
-                }
-                IconButton(onClick = onOpenFilters, modifier = Modifier.size(44.dp)) {
-                    Box {
-                        Icon(Icons.Default.Tune, contentDescription = "Filters", tint = Color.White)
-                        if (filterCount > 0) Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = 8.dp, y = (-6).dp)
-                                .size(16.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape),
-                        ) {
-                            Text("$filterCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
-                }
-                IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
-                }
-            }
-        } else Column(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -186,7 +136,7 @@ internal fun DiscoverTopBar(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(start = 12.dp, end = 4.dp),
+                modifier = Modifier.padding(horizontal = 12.dp),
             ) {
                 Surface(
                     onClick = onOpenSearch,
@@ -242,11 +192,7 @@ internal fun DiscoverTopBar(
                         }
                     }
                 }
-                IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings")
-                }
             }
-            DiscoverModeTabs(mode = viewMode, onSelect = onSelectMode, modifier = Modifier.padding(horizontal = 4.dp))
             if (!coverage.isNullOrBlank()) {
                 Text(
                     coverage,
@@ -259,83 +205,6 @@ internal fun DiscoverTopBar(
             }
             SavedSearchTabs(pinned = pinned, current = query, onSelect = onSelectPinned, onPinCurrent = onPinCurrent)
         }
-    }
-}
-
-/**
- * Grid, Feed and Swipe as words, like a reel app's top tabs: the current one bold and
- * underlined, the others dim. Grid stays selected in either grid size.
- */
-@Composable
-private fun DiscoverModeTabs(
-    mode: DiscoverViewMode,
-    onSelect: (DiscoverViewMode) -> Unit,
-    modifier: Modifier = Modifier,
-    /** Drawn over a picture (the feed): always white. */
-    onPicture: Boolean = false,
-) {
-    val on = if (onPicture) Color.White else MaterialTheme.colorScheme.onSurface
-    val off = if (onPicture) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-    Row(modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
-        listOf(DiscoverViewMode.GRID, DiscoverViewMode.FEED, DiscoverViewMode.SWIPE).forEach { tab ->
-            val selected = if (tab == DiscoverViewMode.GRID) mode.isGrid else mode == tab
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .heightIn(min = 44.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .selectable(
-                        selected = selected,
-                        role = Role.Tab,
-                        // Grid keeps whichever size was in use; the screen decides which that is.
-                        onClick = { if (!selected) onSelect(tab) },
-                    )
-                    .padding(horizontal = if (onPicture) 10.dp else 14.dp),
-            ) {
-                Text(
-                    tab.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (selected) on else off,
-                )
-                Spacer(Modifier.height(4.dp))
-                Box(
-                    Modifier
-                        .size(width = 18.dp, height = 2.dp)
-                        .background(if (selected) on else Color.Transparent, RoundedCornerShape(1.dp))
-                )
-            }
-        }
-    }
-}
-
-/** Shuffle, spelled out, bottom right; tucks away with the header while scrolling down. */
-@Composable
-internal fun DiscoverShuffleButton(
-    visible: Boolean,
-    busy: Boolean,
-    onShuffle: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(160)) + slideInVertically(tween(200)) { it },
-        exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it },
-        modifier = modifier,
-    ) {
-        ExtendedFloatingActionButton(
-            text = { Text("Shuffle") },
-            icon = {
-                if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-                else Icon(Icons.Default.Shuffle, contentDescription = null)
-            },
-            onClick = { if (!busy) onShuffle() },
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            modifier = Modifier
-                .navigationBarsPadding()
-                .padding(end = 16.dp, bottom = 16.dp),
-        )
     }
 }
 
