@@ -76,9 +76,13 @@ object FirstRunTour {
             "Use + to make a collection, add photos, import a shared one or save your rotation. Filter in any grid has colours, Match a photo and sorting.",
         )
         "now" -> listOf(
-            "This is what's on your screen, with next, back and save one tap away. The block button by its name means never show it again.",
-            "Tap the rotation bar to turn rotation on or off, change how often, and pick which collections it uses.",
-            "Settings live behind the gear at the top of Wallpaper, Discover and Saved.",
+            "This is what's on your screen. Previous, Next, Favourite and Never show sit in one row under it.",
+            "Tap the rotation card to turn rotation on or off, change how often, and pick which collections it uses.",
+            "Up next shows what's coming and History what's been. Tap a thumbnail or See all for the full list.",
+        )
+        "settings" -> listOf(
+            "Settings for the whole app live in this tab: rotation, content filters, sources, integrations and backups.",
+            "Tap the Settings tab again from any page inside it to come back to this list.",
         )
         "browse" -> listOf(
             "Collections hold the images you save from Discover.",

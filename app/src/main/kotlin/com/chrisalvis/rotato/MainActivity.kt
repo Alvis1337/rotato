@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
@@ -201,15 +202,16 @@ class MainActivity : AppCompatActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                // Tabs: 0 Wallpaper ("now"), 1 Discover, 2 Saved ("home"). Settings and its
-                // screens open from the Wallpaper tab's gear, so they light that tab.
+                // Tabs: 0 Wallpaper ("now"), 1 Discover, 2 Saved ("home"), 3 Settings. Every
+                // screen that belongs to Settings lights its tab, wherever it was opened from.
                 val selectedTab = when (currentRoute) {
-                    "now", "settings", "sources", "schedule", "stats", "source_health",
-                    "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
-                    "settings_integrations", "settings_about_data", "settings_tools" -> 0
-                    // Taste opens from Discover and from Settings; follow where it came from.
-                    "taste" -> if (navController.previousBackStackEntry?.destination?.route?.startsWith("settings") == true) 0 else 1
+                    "now" -> 0
                     "home", "browse" -> 2
+                    "settings", "sources", "plugin_store", "schedule", "stats", "source_health",
+                    "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
+                    "settings_integrations", "settings_about_data", "settings_tools" -> 3
+                    // Taste opens from Discover and from Settings; follow where it came from.
+                    "taste" -> if (navController.previousBackStackEntry?.destination?.route?.startsWith("settings") == true) 3 else 1
                     else -> 1
                 }
 
@@ -247,12 +249,13 @@ class MainActivity : AppCompatActivity() {
                     NavTab("now", "Wallpaper", Icons.Default.Smartphone),
                     NavTab("discover", "Discover", Icons.Default.AutoAwesome),
                     NavTab("home", "Saved", Icons.Default.BookmarkBorder),
+                    NavTab("settings", "Settings", Icons.Default.Settings),
                 )
                 val onTabSelected: (Int) -> Unit = { index ->
                     val route = navTabs[index].route
                     if (route == "home") homeViewModel.refreshFromFeeds()
-                    // Tapping the tab you're in from a screen pushed on it (e.g. Settings) goes
-                    // back to the tab itself.
+                    // Tapping the tab you're in from a screen pushed on it (e.g. a Settings
+                    // category) goes back to the tab itself.
                     val backToTabRoot = selectedTab == index && currentRoute != route &&
                         navController.popBackStack(route, inclusive = false)
                     if (!backToTabRoot) navController.navigate(route) {
@@ -277,9 +280,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 val settingsList: @Composable (Modifier) -> Unit = { paneModifier ->
                     SettingsScreen(
-                        onNavigateBack = {
-                            if (!navController.popBackStack("settings", inclusive = true)) navController.popBackStack()
-                        },
                         onNavigateToRotationWallpaper = { openSettingsCategory("settings_rotation_wallpaper") },
                         onNavigateToNsfwPrivacy = { openSettingsCategory("settings_nsfw_privacy") },
                         onNavigateToDiscoverSources = { openSettingsCategory("settings_discover_sources") },
@@ -358,13 +358,7 @@ class MainActivity : AppCompatActivity() {
                             composable("discover") {
                                 BrainrotScreen(
                                     externalViewModel = brainrotViewModel,
-                                    onNavigateToSettings = {
-                                        navController.navigate("settings") {
-                                            popUpTo("discover") { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
+                                    onNavigateToSettings = { onTabSelected(navTabs.indexOfFirst { it.route == "settings" }) },
                                     onNavigateToSources = { navController.navigate("sources") },
                                     onNavigateToTaste = { navController.navigate("taste") },
                                 )
@@ -373,7 +367,6 @@ class MainActivity : AppCompatActivity() {
                             composable("home") {
                                 HomeScreen(
                                     viewModel = homeViewModel,
-                                    onOpenSettings = { navController.navigate("settings") { launchSingleTop = true } },
                                     onBrowseFeed = { navController.navigate("browse") },
                                     onGoToDiscover = { onTabSelected(1) },
                                     onSearchDiscover = { tag ->
@@ -387,7 +380,6 @@ class MainActivity : AppCompatActivity() {
                                 NowScreen(
                                     viewModel = homeViewModel,
                                     collections = lists,
-                                    onOpenSettings = { navController.navigate("settings") { launchSingleTop = true } },
                                     onGoToDiscover = { onTabSelected(navTabs.indexOfFirst { it.route == "discover" }) },
                                     onOpenSchedule = { navController.navigate("schedule") },
                                     onOpenRotationSettings = { navController.navigate("settings_rotation_wallpaper") },

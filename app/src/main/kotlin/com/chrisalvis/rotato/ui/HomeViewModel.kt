@@ -149,6 +149,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The collections that hold [nowShowing], locked ones left out: the Wallpaper tab's "from …"
+     * line and its Favourited state come from this.
+     */
+    val nowShowingCollections: StateFlow<List<LocalList>> = combine(nowShowing, localLists.lists, localLists.allWallpapers) { item, lists, all ->
+        if (item == null) return@combine emptyList()
+        val favoriteId = com.chrisalvis.rotato.worker.FavoriteWallpaperReceiver.wallpaperFromHistory(item)?.id
+        val listIds = all
+            .filter { (item.fullUrl.isNotBlank() && it.fullUrl == item.fullUrl) || (favoriteId != null && it.sourceId == favoriteId) }
+            .mapTo(HashSet()) { it.listId }
+        lists.filter { it.id in listIds && !it.isLocked }
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** Wallpapers lined up to show next, oldest first; missing files drop out. */
     val upNext: StateFlow<List<File>> = preferences.upNext
         .map { paths -> paths.map(::File).filter { it.exists() } }

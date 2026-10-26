@@ -182,8 +182,6 @@ fun HomeScreen(
     onGoToDiscover: () -> Unit = onBrowseFeed,
     /** A tag tapped in a collection's viewer, searched on Discover. */
     onSearchDiscover: (String) -> Unit = {},
-    /** The Settings gear in the Saved overview's actions. */
-    onOpenSettings: (() -> Unit)? = null,
 ) {
     val allImages by viewModel.images.collectAsStateWithLifecycle()
     // With the content filter on, NSFW images in the library aren't shown.
@@ -274,7 +272,6 @@ fun HomeScreen(
             },
             onSavedSearch = { showLibrary = true; libraryFilterOpen = true },
             onAddPhotos = pickPhotos,
-            onOpenSettings = onOpenSettings,
         )
     } else Scaffold(
         topBar = {

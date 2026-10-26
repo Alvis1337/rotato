@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Explore
@@ -26,7 +25,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -71,7 +69,6 @@ private object UpdateCheckSessionState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onNavigateBack: () -> Unit,
     onNavigateToRotationWallpaper: () -> Unit = {},
     onNavigateToNsfwPrivacy: () -> Unit = {},
     onNavigateToDiscoverSources: () -> Unit = {},
@@ -124,12 +121,8 @@ fun SettingsScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
+            // A tab root: the bottom bar is the way out, so no back arrow.
             TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
                 title = { Text("Settings", fontWeight = FontWeight.Bold) }
             )
         }

@@ -59,7 +59,6 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
@@ -144,8 +143,6 @@ fun BrowseScreen(
     onSavedSearch: (() -> Unit)? = null,
     /** Saved tab: "+" › Add photos from device, into the Library. */
     onAddPhotos: (() -> Unit)? = null,
-    /** Saved tab: the Settings gear at the end of the overview's actions. */
-    onOpenSettings: (() -> Unit)? = null,
 ) {
     val vm: BrowseViewModel = viewModel()
 
@@ -586,11 +583,6 @@ fun BrowseScreen(
                     leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },
                     onClick = { showAddMenu = false; showSaveRotationDialog = true }
                 )
-            }
-        }
-        if (onOpenSettings != null) {
-            IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
         }
     }

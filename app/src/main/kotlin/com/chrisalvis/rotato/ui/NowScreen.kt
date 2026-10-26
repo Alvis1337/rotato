@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -31,9 +30,9 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Wallpaper
@@ -42,10 +41,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -53,9 +51,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -78,18 +74,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.RotatoSettings
 import com.chrisalvis.rotato.data.WallpaperHistoryItem
+import com.chrisalvis.rotato.data.WallpaperTarget
 import com.chrisalvis.rotato.live.LiveWallpaper
 import com.chrisalvis.rotato.worker.AutomationReceiver
+import com.chrisalvis.rotato.worker.FavoriteWallpaperReceiver
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -97,16 +97,40 @@ private const val PANEL_UP_NEXT = "up_next"
 private const val PANEL_HISTORY = "history"
 private const val PANEL_ERRORS = "errors"
 
+private const val TAB_UP_NEXT = 0
+private const val TAB_HISTORY = 1
+
+// One visual system for everything over the wallpaper: one container colour and corner, one icon
+// size, one gap, and three text styles (title, body, caption).
+private val NowShape = RoundedCornerShape(20.dp)
+private val NowIcon = 22.dp
+private val NowGap = 12.dp
+private val NowPad = 16.dp
+
+private object NowType {
+    val title: TextStyle @Composable get() = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+    val body: TextStyle @Composable get() = MaterialTheme.typography.bodyMedium
+    val caption: TextStyle @Composable get() = MaterialTheme.typography.bodySmall
+}
+
+/** Translucent dark over the wallpaper; the theme's raised surface where there's no image behind. */
+@Composable
+private fun nowContainer(onImage: Boolean): Color =
+    if (onImage) Color.Black.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainerHigh
+
+@Composable
+private fun nowContent(onImage: Boolean): Color =
+    if (onImage) Color.White else MaterialTheme.colorScheme.onSurface
+
 /**
- * Wallpaper: what's on screen, full-bleed, with next/back/save on top of it. Rotation's status is
- * a pill that opens [RotationSheet]; Up next and History open full height from the strip below.
+ * Wallpaper: what's on screen, full-bleed, with its caption, one row of labelled actions, the
+ * rotation card (opens [RotationSheet]) and an Up next / History strip at the bottom.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowScreen(
     viewModel: HomeViewModel,
     collections: List<LocalList>,
-    onOpenSettings: () -> Unit,
     onGoToDiscover: () -> Unit,
     onOpenSchedule: () -> Unit,
     onOpenRotationSettings: () -> Unit,
@@ -114,11 +138,15 @@ fun NowScreen(
 ) {
     val now by viewModel.nowShowing.collectAsStateWithLifecycle()
     val nowFile by viewModel.nowShowingFile.collectAsStateWithLifecycle()
+    val nowLists by viewModel.nowShowingCollections.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
     val pool by viewModel.images.collectAsStateWithLifecycle()
     val upNext by viewModel.upNext.collectAsStateWithLifecycle()
     val errors by viewModel.rotationErrors.collectAsStateWithLifecycle()
+    // Same instance HistoryScreen uses on this screen, so the strip and the full list agree.
+    val historyVm: HistoryViewModel = viewModel()
+    val history by historyVm.history.collectAsStateWithLifecycle()
     val nsfwHidden = LocalNsfwHidden.current
     val nsfwNames by viewModel.nsfwFileNames.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -140,6 +168,14 @@ fun NowScreen(
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     var showRotation by rememberSaveable { mutableStateOf(false) }
     var panel by rememberSaveable { mutableStateOf<String?>(null) }
+    var queueTab by rememberSaveable { mutableIntStateOf(TAB_UP_NEXT) }
+
+    val isFavorite = nowLists.any { it.name.equals(FavoriteWallpaperReceiver.FAVORITES_LIST_NAME, ignoreCase = true) }
+    // "from …": the rotation collection it came out of, else any other collection that holds it.
+    val fromCollection = (nowLists.firstOrNull { it.useAsRotation }
+        ?: nowLists.firstOrNull { !it.name.equals(FavoriteWallpaperReceiver.FAVORITES_LIST_NAME, ignoreCase = true) })?.name
+    // The one on screen is shown above; the strip is what came before it.
+    val pastItems = remember(history, now) { history.filterNot { it == now } }
 
     val onPrevious = { viewModel.automation(AutomationReceiver.ACTION_PREVIOUS) }
     val onNext = { viewModel.automation(AutomationReceiver.ACTION_NEXT) }
@@ -184,61 +220,63 @@ fun NowScreen(
             modifier = m,
         )
     }
-    val pill: @Composable (Boolean) -> Unit = { onImage ->
-        RotationPill(
+    val rotationCard: @Composable (Boolean) -> Unit = { onImage ->
+        RotationCard(
             settings = settings,
             lastRotationMs = lastRotationMs,
             linkedCount = linkedCount,
             poolSize = pool.size,
+            problemCount = errors.size,
             onImage = onImage,
             onClick = { showRotation = true },
+            onOpenProblems = { panel = PANEL_ERRORS },
         )
     }
-    val errorChip: @Composable () -> Unit = {
-        if (errors.isNotEmpty()) RotationErrorChip(count = errors.size, onClick = { panel = PANEL_ERRORS })
-    }
+    val openSelectedList = { panel = if (queueTab == TAB_UP_NEXT) PANEL_UP_NEXT else PANEL_HISTORY }
 
     Box(modifier.fillMaxSize()) {
         if (wide) {
-            // Unfolded: the wallpaper on the left, rotation and its queue on the right.
+            // Unfolded: the wallpaper on the left; the same cards stacked on the right, with the
+            // selected list given the room the thumbnail strip has on a phone.
             Row(Modifier.fillMaxSize()) {
                 WallpaperStage(
                     item = now,
                     localFile = nowFile,
                     hasPool = pool.isNotEmpty(),
+                    fromCollection = fromCollection,
+                    isFavorite = isFavorite,
                     onPrevious = onPrevious,
                     onNext = onNext,
                     onFavorite = onFavorite,
                     onNever = onNever,
                     onGoToDiscover = onGoToDiscover,
-                    onOpenSettings = null,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     bottomInset = true,
                 ) {}
                 VerticalDivider()
-                var tab by rememberSaveable { mutableIntStateOf(0) }
                 Column(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
                         .statusBarsPadding()
                         .navigationBarsPadding()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(NowPad),
+                    verticalArrangement = Arrangement.spacedBy(NowGap)
                 ) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Wallpaper", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        SettingsGear(onClick = onOpenSettings, onImage = false)
-                    }
-                    errorChip()
-                    pill(false)
-                    PrimaryTabRow(selectedTabIndex = tab) {
-                        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(if (upNext.isEmpty()) "Up next" else "Up next · ${upNext.size}") })
-                        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("History") })
-                    }
-                    when (tab) {
-                        0 -> upNextList(Modifier.weight(1f))
-                        else -> HistoryScreen(modifier = Modifier.weight(1f))
+                    rotationCard(false)
+                    QueueCard(
+                        tab = queueTab,
+                        onTab = { queueTab = it },
+                        upNextCount = upNext.size,
+                        historyCount = history.size,
+                        onImage = false,
+                        onSeeAll = null,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        when (queueTab) {
+                            TAB_UP_NEXT -> upNextList(Modifier.weight(1f).padding(horizontal = NowPad))
+                            else -> HistoryScreen(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -247,29 +285,43 @@ fun NowScreen(
                 item = now,
                 localFile = nowFile,
                 hasPool = pool.isNotEmpty(),
+                fromCollection = fromCollection,
+                isFavorite = isFavorite,
                 onPrevious = onPrevious,
                 onNext = onNext,
                 onFavorite = onFavorite,
                 onNever = onNever,
                 onGoToDiscover = onGoToDiscover,
-                onOpenSettings = onOpenSettings,
                 modifier = Modifier.fillMaxSize(),
                 bottomInset = false,
             ) { onImage ->
-                errorChip()
-                pill(onImage)
+                rotationCard(onImage)
                 // Queued ones that have to wait are passed over by Next, so they aren't shown as coming.
                 val readyQueued = upNext.filter { waitReason(it) == null }
-                UpNextStrip(
-                    upcoming = remember(readyQueued, rotationPool, settings.shuffleMode, settings.currentIndex) {
-                        readyQueued + followingInOrder(rotationPool, settings.shuffleMode, settings.currentIndex, 10)
-                    }.take(10),
-                    queuedCount = upNext.size,
-                    shuffle = settings.shuffleMode,
-                    poolSize = rotationPool.size,
-                    onOpenUpNext = { panel = PANEL_UP_NEXT },
-                    onOpenHistory = { panel = PANEL_HISTORY },
-                )
+                val upcoming = remember(readyQueued, rotationPool, settings.shuffleMode, settings.currentIndex) {
+                    (readyQueued + followingInOrder(rotationPool, settings.shuffleMode, settings.currentIndex, 10)).take(10)
+                }
+                QueueCard(
+                    tab = queueTab,
+                    onTab = { queueTab = it },
+                    upNextCount = upNext.size,
+                    historyCount = history.size,
+                    onImage = onImage,
+                    onSeeAll = openSelectedList,
+                ) {
+                    when {
+                        queueTab == TAB_UP_NEXT && upNext.isEmpty() ->
+                            QueueHelp("Nothing queued. In Saved, open an image and tap Play next.")
+                        queueTab == TAB_UP_NEXT && upcoming.isEmpty() ->
+                            QueueHelp("What's queued is waiting its turn. Tap See all for why.")
+                        queueTab == TAB_UP_NEXT ->
+                            ThumbStrip(models = upcoming, onClick = openSelectedList)
+                        pastItems.isEmpty() ->
+                            QueueHelp("Wallpapers Rotato sets will show up here.")
+                        else ->
+                            ThumbStrip(models = pastItems.take(10).map { it.thumbUrl.ifBlank { it.fullUrl } }, onClick = openSelectedList)
+                    }
+                }
             }
         }
         SnackbarHost(
@@ -277,7 +329,7 @@ fun NowScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(top = 48.dp),
+                .padding(top = NowPad),
         )
     }
 
@@ -312,8 +364,8 @@ fun NowScreen(
 }
 
 /**
- * The current wallpaper filling [modifier], scrimmed at the bottom, with its caption and controls
- * over it. [below] adds content under the controls and is told whether it sits on the image.
+ * The current wallpaper filling [modifier], scrimmed at the bottom, with its caption and action
+ * row over it. [below] adds the cards under the actions and is told whether they sit on the image.
  */
 @Composable
 private fun WallpaperStage(
@@ -321,12 +373,13 @@ private fun WallpaperStage(
     /** The full-size copy on the phone, when there is one; see [HomeViewModel.nowShowingFile]. */
     localFile: File?,
     hasPool: Boolean,
+    fromCollection: String?,
+    isFavorite: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onFavorite: () -> Unit,
     onNever: () -> Unit,
     onGoToDiscover: () -> Unit,
-    onOpenSettings: (() -> Unit)?,
     modifier: Modifier = Modifier,
     bottomInset: Boolean,
     below: @Composable ColumnScope.(onImage: Boolean) -> Unit,
@@ -352,12 +405,13 @@ private fun WallpaperStage(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            // Just enough shade under the status bar icons to keep them readable.
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
+                    .height(80.dp)
                     .align(Alignment.TopCenter)
-                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent)))
+                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.3f), Color.Transparent)))
             )
             Box(
                 Modifier
@@ -371,23 +425,12 @@ private fun WallpaperStage(
                     )
             )
         }
-        CompositionLocalProvider(LocalContentColor provides if (onImage) Color.White else MaterialTheme.colorScheme.onSurface) {
+        CompositionLocalProvider(LocalContentColor provides nowContent(onImage)) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .then(if (bottomInset) Modifier.navigationBarsPadding() else Modifier)
             ) {
-                if (onOpenSettings != null) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        SettingsGear(onClick = onOpenSettings, onImage = onImage)
-                    }
-                }
                 if (item == null) {
                     NowEmptyState(
                         hasPool = hasPool,
@@ -401,19 +444,22 @@ private fun WallpaperStage(
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(start = NowPad, end = NowPad, bottom = NowPad),
+                    verticalArrangement = Arrangement.spacedBy(NowGap)
                 ) {
                     if (item != null) {
-                        NowCaption(item = item, onNever = onNever)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            RoundAction(Icons.Default.SkipPrevious, "Previous", onPrevious, onImage)
-                            Button(onClick = onNext, modifier = Modifier.weight(1f).height(52.dp)) {
-                                Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Next wallpaper")
-                            }
-                            RoundAction(Icons.Default.FavoriteBorder, "Save to Favorites", onFavorite, onImage)
+                        NowCaption(item = item, fromCollection = fromCollection)
+                        Row(horizontalArrangement = Arrangement.spacedBy(NowGap)) {
+                            NowAction(Icons.Default.SkipPrevious, "Previous", onPrevious, onImage, Modifier.weight(1f))
+                            NowAction(Icons.Default.SkipNext, "Next", onNext, onImage, Modifier.weight(1f), emphasised = true)
+                            NowAction(
+                                if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                if (isFavorite) "Favourited" else "Favourite",
+                                onFavorite,
+                                onImage,
+                                Modifier.weight(1f),
+                            )
+                            NowAction(Icons.Default.Block, "Never show", onNever, onImage, Modifier.weight(1f))
                         }
                     }
                     below(onImage)
@@ -423,49 +469,67 @@ private fun WallpaperStage(
     }
 }
 
+/** What it is (tags, else the source), and when and where it came from. */
 @Composable
-private fun NowCaption(item: WallpaperHistoryItem, onNever: () -> Unit) {
+private fun NowCaption(item: WallpaperHistoryItem, fromCollection: String?) {
     val source = item.source.replaceFirstChar { it.uppercase() }
     val ago = android.text.format.DateUtils.getRelativeTimeSpanString(item.timestamp).toString()
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                if (item.tags.isNotEmpty()) item.tags.take(4).joinToString(" ") { it.replace('_', ' ') } else source,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (item.tags.isNotEmpty() && source.isNotBlank()) "$source · set $ago" else "Set $ago",
-                style = MaterialTheme.typography.bodySmall,
-                color = LocalContentColor.current.copy(alpha = 0.8f),
-            )
-        }
-        IconButton(onClick = onNever) { Icon(Icons.Default.Block, contentDescription = "Never show again") }
+    val title = if (item.tags.isNotEmpty()) item.tags.take(4).joinToString(" ") { it.replace('_', ' ') }
+    else source.ifBlank { "Current wallpaper" }
+    // The source is the title when there are no tags, so it isn't repeated here.
+    val from = fromCollection ?: source.takeIf { item.tags.isNotEmpty() && it.isNotBlank() }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = NowType.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            listOfNotNull("Set $ago", from?.let { "from $it" }).joinToString(" · "),
+            style = NowType.caption,
+            color = LocalContentColor.current.copy(alpha = 0.8f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
+/** One of the four equal actions: icon over a short label. Only Next is filled. */
 @Composable
-private fun RoundAction(icon: ImageVector, description: String, onClick: () -> Unit, onImage: Boolean) {
-    FilledTonalIconButton(
+private fun NowAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    onImage: Boolean,
+    modifier: Modifier = Modifier,
+    emphasised: Boolean = false,
+) {
+    Surface(
         onClick = onClick,
-        modifier = Modifier.size(52.dp),
-        colors = if (onImage) {
-            IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color.White.copy(alpha = 0.2f), contentColor = Color.White)
-        } else IconButtonDefaults.filledTonalIconButtonColors(),
-    ) { Icon(icon, contentDescription = description) }
+        shape = NowShape,
+        color = if (emphasised) MaterialTheme.colorScheme.primary else nowContainer(onImage),
+        contentColor = if (emphasised) MaterialTheme.colorScheme.onPrimary else nowContent(onImage),
+        modifier = modifier.height(64.dp),
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(NowIcon))
+            Spacer(Modifier.height(4.dp))
+            Text(label, style = NowType.caption, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
+/** The shared container for the cards at the bottom. */
 @Composable
-private fun SettingsGear(onClick: () -> Unit, onImage: Boolean) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.size(44.dp),
-        colors = if (onImage) {
-            IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = 0.3f), contentColor = Color.White)
-        } else IconButtonDefaults.iconButtonColors(),
-    ) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+private fun NowCard(onImage: Boolean, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = NowShape,
+        color = nowContainer(onImage),
+        contentColor = nowContent(onImage),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth(), content = content)
+    }
 }
 
 @Composable
@@ -491,121 +555,168 @@ private fun NowEmptyState(hasPool: Boolean, onGoToDiscover: () -> Unit, onSetOne
     }
 }
 
-/** Status dot, interval and what feeds rotation; opens [RotationSheet]. */
+/**
+ * Status dot, interval and what feeds rotation; opens [RotationSheet]. Rotation problems show as
+ * a second line in the same card.
+ */
 @Composable
-private fun RotationPill(
+private fun RotationCard(
     settings: RotatoSettings,
     lastRotationMs: Long,
     linkedCount: Int,
     poolSize: Int,
+    problemCount: Int,
     onImage: Boolean,
     onClick: () -> Unit,
+    onOpenProblems: () -> Unit,
 ) {
     val next = rememberNextChangeText(settings, lastRotationMs)
     val subline = listOfNotNull(
         next?.let { "Next $it" },
         if (linkedCount > 0) "$linkedCount collection${if (linkedCount == 1) "" else "s"}"
         else "$poolSize image${if (poolSize == 1) "" else "s"}",
-        if (settings.shuffleMode) "shuffle" else "in order",
+        if (settings.shuffleMode) "Shuffle" else "In order",
+        when (settings.wallpaperTarget) {
+            WallpaperTarget.HOME_ONLY -> "Home screen only"
+            WallpaperTarget.LOCK_ONLY -> "Lock screen only"
+            WallpaperTarget.BOTH -> null
+        },
     ).joinToString(" · ")
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = if (onImage) Color.Black.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (onImage) Color.White else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(if (settings.isEnabled) Color(0xFF4ADE80) else LocalContentColor.current.copy(alpha = 0.4f))
-            )
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+    NowCard(onImage) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = NowPad, vertical = NowGap),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(NowIcon), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (settings.isEnabled) Color(0xFF4ADE80) else LocalContentColor.current.copy(alpha = 0.4f))
+                )
+            }
+            Column(Modifier.weight(1f).padding(start = NowGap)) {
                 Text(
                     if (settings.isEnabled) "Rotating every ${rotationIntervalLabel(settings.intervalMinutes)}" else "Rotation off",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = NowType.title,
                 )
                 Text(
                     subline,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = NowType.caption,
                     color = LocalContentColor.current.copy(alpha = 0.75f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Rotation settings")
+            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Rotation settings", modifier = Modifier.size(NowIcon))
+        }
+        if (problemCount > 0) {
+            HorizontalDivider(color = LocalContentColor.current.copy(alpha = 0.12f))
+            val warning = if (onImage) Color(0xFFFFB4AB) else MaterialTheme.colorScheme.error
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenProblems)
+                    .padding(horizontal = NowPad, vertical = NowGap),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = warning, modifier = Modifier.size(NowIcon))
+                Text(
+                    "${if (problemCount == 1) "1 problem" else "$problemCount problems"} · Tap to see",
+                    style = NowType.body,
+                    color = warning,
+                    modifier = Modifier.padding(start = NowGap),
+                )
+            }
         }
     }
 }
 
+/** "Up next" and "History" as two labelled tabs, then whatever [body] shows for the selected one. */
 @Composable
-private fun RotationErrorChip(count: Int, onClick: () -> Unit) {
+private fun QueueCard(
+    tab: Int,
+    onTab: (Int) -> Unit,
+    upNextCount: Int,
+    historyCount: Int,
+    onImage: Boolean,
+    /** Opens the selected list full height; null where the list is already shown in full. */
+    onSeeAll: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    body: @Composable ColumnScope.() -> Unit,
+) {
+    NowCard(onImage, modifier) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 4.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            QueueTab(if (upNextCount > 0) "Up next · $upNextCount" else "Up next", selected = tab == TAB_UP_NEXT) { onTab(TAB_UP_NEXT) }
+            QueueTab(if (historyCount > 0) "History · $historyCount" else "History", selected = tab == TAB_HISTORY) { onTab(TAB_HISTORY) }
+            Spacer(Modifier.weight(1f))
+            if (onSeeAll != null) {
+                TextButton(
+                    onClick = onSeeAll,
+                    colors = ButtonDefaults.textButtonColors(contentColor = LocalContentColor.current),
+                ) { Text("See all", style = NowType.body) }
+            }
+        }
+        body()
+    }
+}
+
+@Composable
+private fun QueueTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    val content = LocalContentColor.current
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        color = if (selected) content.copy(alpha = 0.16f) else Color.Transparent,
+        contentColor = if (selected) content else content.copy(alpha = 0.7f),
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                if (count == 1) "1 rotation problem" else "$count rotation problems",
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
+        Text(
+            label,
+            style = NowType.body,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = NowGap, vertical = 6.dp),
+        )
     }
 }
 
-/** A few thumbnails of what's coming, with the way into Up next and History. */
 @Composable
-private fun UpNextStrip(
-    upcoming: List<File>,
-    queuedCount: Int,
-    shuffle: Boolean,
-    poolSize: Int,
-    onOpenUpNext: () -> Unit,
-    onOpenHistory: () -> Unit,
-) {
-    val labelColors = ButtonDefaults.textButtonColors(contentColor = LocalContentColor.current)
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onOpenUpNext, colors = labelColors, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                Text(if (queuedCount == 0) "Up next" else "Up next · $queuedCount", style = MaterialTheme.typography.labelLarge)
-            }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onOpenHistory, colors = labelColors, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                Text("History", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        if (upcoming.isEmpty()) {
-            Text(
-                when {
-                    poolSize == 0 -> "Nothing to show next yet"
-                    shuffle -> "Shuffling from $poolSize in your rotation"
-                    else -> "Nothing lined up"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = LocalContentColor.current.copy(alpha = 0.75f),
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+private fun QueueHelp(text: String) {
+    Text(
+        text,
+        style = NowType.caption,
+        color = LocalContentColor.current.copy(alpha = 0.75f),
+        modifier = Modifier.padding(start = NowPad, end = NowPad, top = 8.dp, bottom = NowPad),
+    )
+}
+
+/** A row of small thumbnails; tapping any opens the full list. */
+@Composable
+private fun ThumbStrip(models: List<Any>, onClick: () -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(start = NowPad, end = NowPad, top = 8.dp, bottom = NowPad),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        itemsIndexed(models, key = { i, m -> "$i:$m" }) { _, model ->
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(width = 44.dp, height = 64.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(LocalContentColor.current.copy(alpha = 0.12f))
+                    .clickable(onClick = onClick),
             )
-        } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(upcoming, key = { i, f -> "$i:" + f.absolutePath }) { _, file ->
-                    AsyncImage(
-                        model = file,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(width = 44.dp, height = 64.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .clickable(onClick = onOpenUpNext),
-                    )
-                }
-            }
         }
     }
 }
