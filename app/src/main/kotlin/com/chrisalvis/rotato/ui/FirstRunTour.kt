@@ -71,9 +71,9 @@ object FirstRunTour {
             if (supportsFoldPairs(context)) add("On your foldable, Pair sets one image for the cover screen and another for the inside.")
         }
         "home" -> listOf(
-            "This is your Library: everything Rotato rotates through. Your collections are on the second tab.",
-            "Tap a colour swatch to show only wallpapers in that colour, or Match a photo to find ones that go with any picture.",
-            "Settings › Rotation has the Rotato live wallpaper: crossfades, video wallpapers and double-tap for next.",
+            "Saved holds everything you keep. Everything rotating, at the top, is what Rotato cycles through as your wallpaper.",
+            "Collections sit below. Open one and tap Rotating to add it to your rotation; a green dot means it's in.",
+            "Use + to make a collection, add photos, import a shared one or save your rotation. Filter in any grid has colours, Match a photo and sorting.",
         )
         "now" -> listOf(
             "This is what's on your screen, with next, back and save one tap away. Never-again sits under the ⋮ menu.",

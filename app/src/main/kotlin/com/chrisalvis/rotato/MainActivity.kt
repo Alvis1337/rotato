@@ -369,21 +369,16 @@ class MainActivity : AppCompatActivity() {
                                     onNavigateToTaste = { navController.navigate("taste") },
                                 )
                             }
-                            // Library: what's in rotation, with Collections as its second tab.
-                            val collectionsShelf: @Composable () -> Unit = {
-                                BrowseScreen(
-                                    onGoToDiscover = { navController.navigate("discover") },
-                                    onSearchDiscover = { tag ->
-                                        brainrotViewModel.searchByTag(tag)
-                                        navController.navigate("discover") { launchSingleTop = true }
-                                    },
-                                )
-                            }
+                            // Saved: collections, with everything rotating as the first card.
                             composable("home") {
                                 HomeScreen(
                                     viewModel = homeViewModel,
                                     onBrowseFeed = { navController.navigate("browse") },
-                                    collectionsContent = collectionsShelf,
+                                    onGoToDiscover = { onTabSelected(1) },
+                                    onSearchDiscover = { tag ->
+                                        brainrotViewModel.searchByTag(tag)
+                                        onTabSelected(1)
+                                    },
                                 )
                             }
                             composable("now") {

@@ -4,6 +4,8 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -182,6 +184,76 @@ fun LibraryFilterRow(
                     )
                 }
             }
+        }
+    }
+}
+
+/** The Library's type, fold, NSFW and rating chips, wrapped onto lines for the filter sheet. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun LibraryFilterChips(
+    filter: LibraryFilter,
+    onChange: (LibraryFilter) -> Unit,
+    hasVideos: Boolean,
+    showFold: Boolean,
+    showNsfw: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (hasVideos || filter.kind != LibraryKind.ALL) {
+            LibraryKind.entries.forEach { k ->
+                FilterChip(
+                    selected = filter.kind == k,
+                    onClick = { onChange(filter.copy(kind = k)) },
+                    label = { Text(k.label) },
+                )
+            }
+        }
+        if (showFold) FilterChip(
+            selected = filter.foldOnly,
+            onClick = { onChange(filter.copy(foldOnly = !filter.foldOnly)) },
+            label = { Text("Fold-friendly") },
+        )
+        if (showNsfw) FilterChip(
+            selected = filter.nsfwOnly,
+            onClick = { onChange(filter.copy(nsfwOnly = !filter.nsfwOnly)) },
+            label = { Text("NSFW") },
+        )
+        FilterChip(
+            selected = filter.unratedOnly,
+            onClick = { onChange(filter.copy(unratedOnly = !filter.unratedOnly)) },
+            label = { Text("Unrated") },
+        )
+    }
+}
+
+/** The Library's sort order as one chip per choice. Off while a photo match or rainbow decides the order. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun LibrarySortChips(
+    filter: LibraryFilter,
+    onChange: (LibraryFilter) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LibrarySort.entries.forEach { s ->
+            FilterChip(
+                selected = filter.sort == s,
+                onClick = { onChange(filter.copy(sort = s)) },
+                enabled = enabled,
+                label = { Text(s.label) },
+            )
         }
     }
 }

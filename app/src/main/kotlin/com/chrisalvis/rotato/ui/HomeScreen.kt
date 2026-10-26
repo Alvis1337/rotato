@@ -22,6 +22,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.layout.Column
@@ -55,6 +56,9 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Delete
@@ -97,8 +101,6 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -165,13 +167,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * The Saved tab: "Everything rotating" (the Library pool) above the collections. Tapping the
+ * hero card opens the Library grid as a sub-screen with a back arrow.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     onBrowseFeed: () -> Unit = {},
-    /** The Collections shelf, shown as the Library's second tab. */
+    /** No longer shown: the Saved tab lists collections itself. Kept so existing callers compile. */
     collectionsContent: @Composable () -> Unit = {},
+    /** Opens Discover from the empty states. */
+    onGoToDiscover: () -> Unit = onBrowseFeed,
+    /** A tag tapped in a collection's viewer, searched on Discover. */
+    onSearchDiscover: (String) -> Unit = {},
 ) {
     val allImages by viewModel.images.collectAsStateWithLifecycle()
     // With the content filter on, NSFW images in the library aren't shown.
@@ -182,16 +192,17 @@ fun HomeScreen(
     }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    val setNowState by viewModel.setNowState.collectAsStateWithLifecycle()
-    val lastRotationMs by viewModel.lastRotationMs.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
-    val linkedCollections = remember(collections) { collections.filter { it.useAsRotation } }
+    val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
+    val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
 
     val dragSelectState = rememberDragSelectState<File>()
     val inSelectionMode = dragSelectState.inSelectionMode
 
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // The Library grid is a sub-screen of Saved, opened from the "Everything rotating" card.
+    var showLibrary by rememberSaveable { mutableStateOf(false) }
+    var libraryFilterOpen by rememberSaveable { mutableStateOf(false) }
+    var showSaveToListDialog by remember { mutableStateOf(false) }
     val pairedPaths by viewModel.pairedPaths.collectAsStateWithLifecycle()
     var foldPairCandidates by remember { mutableStateOf<Pair<File, File>?>(null) }
 
@@ -208,6 +219,7 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = inSelectionMode) { dragSelectState.disableSelectionMode() }
+    BackHandler(enabled = showLibrary && !inSelectionMode) { showLibrary = false }
 
     var batchCollectionPick by remember { mutableStateOf<List<File>?>(null) }
     batchCollectionPick?.let { picked ->
@@ -221,18 +233,47 @@ fun HomeScreen(
             }
         )
     }
+    if (showSaveToListDialog) {
+        SaveToCollectionDialog(
+            collections = collections,
+            onDismiss = { showSaveToListDialog = false },
+            onSelect = { listId ->
+                showSaveToListDialog = false
+                viewModel.saveRotationToList(listId)
+            }
+        )
+    }
 
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) viewModel.addImages(uris)
     }
+    val pickPhotos = {
+        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+    }
 
     // Refresh image pool every time this screen enters composition so wallpapers
     // downloaded from Collections show up immediately without restarting the app.
     LaunchedEffect(Unit) { viewModel.refreshFromFeeds() }
 
-    Scaffold(
+    if (!showLibrary) {
+        BrowseScreen(
+            onGoToDiscover = onGoToDiscover,
+            onSearchDiscover = onSearchDiscover,
+            savedHero = {
+                SavedHeroCard(
+                    images = images,
+                    rotating = settings.isEnabled,
+                    intervalMinutes = settings.intervalMinutes,
+                    hiddenNames = if (nsfwBlurEnabled) nsfwNames else emptySet(),
+                    onOpen = { showLibrary = true },
+                )
+            },
+            onSavedSearch = { showLibrary = true; libraryFilterOpen = true },
+            onAddPhotos = pickPhotos,
+        )
+    } else Scaffold(
         topBar = {
             if (inSelectionMode) {
                 TopAppBar(
@@ -301,51 +342,129 @@ fun HomeScreen(
                         }
                     }
                 )
+            } else {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { showLibrary = false }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Saved")
+                        }
+                    },
+                    title = {
+                        Column {
+                            Text("Everything rotating", fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(
+                                "${images.size} image${if (images.size == 1) "" else "s"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    actions = {
+                        // Rarely used Library actions; Play and Filter sit in the row under the bar.
+                        Box {
+                            var menuOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Add photos from device") },
+                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                    onClick = { menuOpen = false; pickPhotos() },
+                                )
+                                if (images.isNotEmpty() && collections.isNotEmpty()) DropdownMenuItem(
+                                    text = { Text(if (saveToListInProgress) "Saving…" else "Save all to collection…") },
+                                    leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null) },
+                                    enabled = !saveToListInProgress,
+                                    onClick = { menuOpen = false; showSaveToListDialog = true },
+                                )
+                                if (images.size > 1) DropdownMenuItem(
+                                    text = { Text("Find duplicates") },
+                                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                                    onClick = { menuOpen = false; viewModel.findDuplicates() },
+                                )
+                            }
+                        }
+                    }
+                )
             }
         }
     ) { padding ->
+        LibraryContent(
+            viewModel = viewModel,
+            images = images,
+            isLoading = isLoading,
+            collections = collections,
+            dragSelectState = dragSelectState,
+            inSelectionMode = inSelectionMode,
+            filterOpen = libraryFilterOpen,
+            onFilterOpenChange = { libraryFilterOpen = it },
+            onPhotoPick = pickPhotos,
+            onGoToDiscover = onGoToDiscover,
+            modifier = Modifier.padding(padding),
+        )
+    }
+}
+
+/** The wide "Everything rotating" card at the top of Saved: a peek at the Library pool. */
+@Composable
+private fun SavedHeroCard(
+    images: List<File>,
+    rotating: Boolean,
+    intervalMinutes: Int,
+    hiddenNames: Set<String>,
+    onOpen: () -> Unit,
+) {
+    // Newest first; NSFW pictures stay out of the always-visible peek while blur is on.
+    val peek = remember(images, hiddenNames) {
+        images.asSequence()
+            .filter { it.name !in hiddenNames }
+            .sortedByDescending { it.lastModified() }
+            .take(4)
+            .toList()
+    }
+    val on = rotating && images.isNotEmpty()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClickLabel = "Open everything rotating", onClick = onOpen)
+    ) {
+        SavedMosaic(
+            models = peek,
+            grid = false,
+            placeholder = Icons.Outlined.Wallpaper,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))))
+        )
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+                .align(Alignment.BottomStart)
+                .padding(16.dp)
         ) {
-            // Rotation status and History live on the Now tab; Stats in Settings › About & data.
-            if (!inSelectionMode) PrimaryTabRow(selectedTabIndex = selectedTab.coerceAtMost(1)) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Wallpaper, contentDescription = null) },
-                    text = { Text("In rotation") }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null) },
-                    text = { Text("Collections") }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SavedStatusDot(on = on, modifier = Modifier.size(10.dp))
+                Text(
+                    "Everything rotating",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
                 )
             }
-
-            when (selectedTab) {
-                0 -> LibraryContent(
-                    viewModel = viewModel,
-                    images = images,
-                    settings = settings,
-                    isLoading = isLoading,
-                    setNowState = setNowState,
-                    lastRotationMs = lastRotationMs,
-                    linkedCollections = linkedCollections,
-                    collections = collections,
-                    dragSelectState = dragSelectState,
-                    inSelectionMode = inSelectionMode,
-                    onPhotoPick = {
-                        photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                        )
-                        },
-                        onGoToDiscover = onBrowseFeed
-                )
-                else -> Box(Modifier.fillMaxSize()) { collectionsContent() }
-            }
+            Text(
+                text = when {
+                    images.isEmpty() -> "Nothing here yet. Save from Discover or add photos."
+                    on -> "${images.size} image${if (images.size == 1) "" else "s"} · every ${formatInterval(intervalMinutes)}"
+                    else -> "${images.size} image${if (images.size == 1) "" else "s"} · paused"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.85f),
+            )
         }
     }
 }
@@ -354,28 +473,22 @@ fun HomeScreen(
 private fun LibraryContent(
     viewModel: HomeViewModel,
     images: List<File>,
-    settings: RotatoSettings,
     isLoading: Boolean,
-    setNowState: SetNowState,
-    lastRotationMs: Long,
-    linkedCollections: List<LocalList>,
     collections: List<LocalList>,
     dragSelectState: DragSelectState<File>,
     inSelectionMode: Boolean,
+    filterOpen: Boolean,
+    onFilterOpenChange: (Boolean) -> Unit,
     onPhotoPick: () -> Unit,
     onGoToDiscover: () -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     val saveToListInProgress by viewModel.saveToListInProgress.collectAsStateWithLifecycle()
-    val rotationErrors by viewModel.rotationErrors.collectAsStateWithLifecycle()
     val wallpaperRatings by viewModel.wallpaperRatings.collectAsStateWithLifecycle()
     val nsfwFileNames by viewModel.nsfwFileNames.collectAsStateWithLifecycle()
     val nsfwBlurEnabled by viewModel.nsfwBlurEnabled.collectAsStateWithLifecycle()
     val lastSkipReason by viewModel.lastSkipReason.collectAsStateWithLifecycle()
-    val setNowErrorMessage by viewModel.setNowErrorMessage.collectAsStateWithLifecycle()
-    val hasPreviousWallpaper by viewModel.hasPreviousWallpaper.collectAsStateWithLifecycle()
     val pairedPaths by viewModel.pairedPaths.collectAsStateWithLifecycle()
-    var showSaveToListDialog by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
     // Colour filter: each image's colours are worked out once (cached) the first time it's used.
     var colourFilter by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedColour = colourFilter?.let { n -> com.chrisalvis.rotato.data.ImageColour.entries.find { it.name == n } }
@@ -452,6 +565,18 @@ private fun LibraryContent(
         val f = if (matchLook != null || rainbow) libraryFilter.copy(sort = LibrarySort.NAME) else libraryFilter
         f.apply(baseGridImages, wallpaperRatings, nsfwFileNames, foldNames)
     }
+    // Shown as a count on the Filter pill, so a narrowed grid never looks like a missing image.
+    val activeFilterCount = listOf(
+        libraryFilter.kind != LibraryKind.ALL,
+        libraryFilter.foldOnly,
+        libraryFilter.nsfwOnly,
+        libraryFilter.unratedOnly,
+        libraryFilter.sort != LibrarySort.NAME,
+        selectedColour != null,
+        matchLook != null,
+        rainbow,
+        tagQuery.isNotBlank(),
+    ).count { it }
 
     // Play: the Library (as currently filtered) in the full-screen feed.
     var reelStart by remember { mutableStateOf<Int?>(null) }
@@ -476,49 +601,82 @@ private fun LibraryContent(
             nsfwBlurEnabled = nsfwBlurEnabled,
         )
     }
-    if (showSaveToListDialog) {
-        SaveToCollectionDialog(
-            collections = collections,
-            onDismiss = { showSaveToListDialog = false },
-            onSelect = { listId ->
-                showSaveToListDialog = false
-                viewModel.saveRotationToList(listId)
-            }
-        )
-    }
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Rotation status and errors moved to the Now tab.
 
-        if (isLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    if (filterOpen) {
+        SavedFilterSheet(
+            showReset = activeFilterCount > 0,
+            onReset = {
+                libraryFilter = LibraryFilter()
+                colourFilter = null
+                matchLook = null
+                rainbow = false
+                tagQuery = ""
+            },
+            onDismiss = { onFilterOpenChange(false) },
+        ) {
+            SavedSheetSection("Search your photos")
+            if (photoTags.values.any { it.isNotEmpty() }) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = tagQuery,
+                    onValueChange = { tagQuery = it },
+                    placeholder = { Text("beach, sunset, cat…") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (tagQuery.isNotEmpty()) IconButton(onClick = { tagQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+            } else {
+                Text(
+                    "Tag your photos in Settings › Tools › Tag my photos to search by what's in them.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            SavedSheetSection("Colour")
+            ColourFilterRow(
+                selected = selectedColour,
+                loading = looksLoading || matchLoading,
+                matchCount = if ((selectedColour != null || matchLook != null) && !looksLoading) gridImages.size else null,
+                onSelect = { c -> matchLook = null; colourFilter = if (c == selectedColour) null else c?.name },
+                matchingPhoto = matchLook != null,
+                onMatchPhoto = {
+                    matchPicker.launch(PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                onClearMatch = { matchLook = null },
+                rainbow = rainbow,
+                onRainbow = { rainbow = !rainbow; if (rainbow) matchLook = null },
+            )
+            SavedSheetSection("Show")
+            LibraryFilterChips(
+                filter = libraryFilter,
+                onChange = { libraryFilter = it },
+                hasVideos = hasVideos,
+                showFold = foldCanvas != null,
+                showNsfw = nsfwInLibrary && !LocalNsfwHidden.current,
+            )
+            SavedSheetSection("Sort")
+            LibrarySortChips(
+                filter = libraryFilter,
+                onChange = { libraryFilter = it },
+                enabled = matchLook == null && !rainbow,
+            )
+            Text(
+                "${gridImages.size} of ${images.size} shown",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+            )
         }
+    }
 
-        if (lastSkipReason != null) {
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    Text(
-                        lastSkipReason!!,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
+    Column(modifier = modifier.fillMaxSize()) {
+        if (isLoading || saveToListInProgress) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
         val duplicateScan by viewModel.duplicateScan.collectAsStateWithLifecycle()
@@ -544,14 +702,11 @@ private fun LibraryContent(
             )
         }
 
-        // Unfolded: the picture opens in a pane beside the grid instead of over it.
-        val libraryTwoPane = viewerBesideGrid()
         // The viewer keeps the order it opened with: rating an image under "Top rated" or
         // "Unrated" would otherwise re-sort the pages and slide a different one under the finger.
-        // Deleted images still drop out.
+        // Deleted images still drop out. It always opens full screen, even unfolded.
         val openedOrder = remember(selectedFile) { gridImages }
         val viewerImages = remember(openedOrder, images) { val live = images.toHashSet(); openedOrder.filter { it in live } }
-        val preview: @Composable (Boolean, Modifier) -> Unit = { inline, paneModifier ->
         // Pages through the grid as filtered and sorted, starting at the tapped image.
         selectedFile?.takeIf { viewerImages.isNotEmpty() }?.let { file ->
             ImagePreviewDialog(
@@ -572,20 +727,57 @@ private fun LibraryContent(
                 onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) },
                 collections = collections,
                 onAddToCollection = { currentFile, listId -> viewModel.saveRotationToList(listId, listOf(currentFile)) },
-                inline = inline,
-                modifier = paneModifier,
             )
         }
 
+        if (!inSelectionMode && images.isNotEmpty()) {
+            // Health in context: one dismissible line, only when there's something to say.
+            val freeBytes by produceState(Long.MAX_VALUE, resumeTick, images.size) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { appContext.filesDir.usableSpace }
+            }
+            var dismissedNotice by rememberSaveable { mutableStateOf<String?>(null) }
+            val skipReason = lastSkipReason
+            // (key, text, warning): the key keeps a dismissed storage warning gone as free space ticks.
+            val notice: Triple<String, String, Boolean>? = when {
+                freeBytes < 1_000_000_000L -> Triple(
+                    "storage",
+                    "Storage low (${com.chrisalvis.rotato.data.StorageTools.format(freeBytes)} free). Settings › Tools › Storage can clear caches.",
+                    true,
+                )
+                skipReason != null -> Triple(skipReason, skipReason, false)
+                else -> null
+            }
+            if (notice != null && notice.first != dismissedNotice) {
+                SavedNoticeLine(
+                    text = notice.second,
+                    warning = notice.third,
+                    onDismiss = { dismissedNotice = notice.first },
+                )
+            }
+            SavedActionRow {
+                SavedPill(
+                    text = "Play",
+                    onClick = { reelStart = 0 },
+                    icon = Icons.Default.PlayArrow,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    enabled = gridImages.isNotEmpty(),
+                )
+                Spacer(Modifier.weight(1f))
+                SavedPill(
+                    text = "Filter",
+                    onClick = { onFilterOpenChange(true) },
+                    icon = Icons.Default.Tune,
+                    badgeCount = activeFilterCount,
+                )
+            }
         }
-        if (!libraryTwoPane) preview(false, Modifier)
 
-        Row(Modifier.weight(1f)) {
         PullToRefreshBox(
             isRefreshing = isLoading,
             onRefresh = viewModel::refreshImages,
             state = pullRefreshState,
-            modifier = Modifier.weight(1f).fillMaxHeight()
+            modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
             if (images.isEmpty()) {
                 EmptyState(
@@ -593,117 +785,35 @@ private fun LibraryContent(
                     onGoToDiscover = onGoToDiscover,
                     onAddPhotos = onPhotoPick
                 )
-            } else {
-                Column(modifier = Modifier.fillMaxSize()) {
-                if (!inSelectionMode) {
-                    // Health in context: warn here, where downloads land, before the phone fills up.
-                    val freeBytes by produceState(Long.MAX_VALUE, resumeTick, images.size) {
-                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { appContext.filesDir.usableSpace }
-                    }
-                    if (freeBytes < 1_000_000_000L) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
-                            Text(
-                                "Phone storage is low (${com.chrisalvis.rotato.data.StorageTools.format(freeBytes)} free). Settings › Tools › Storage can clear caches.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 8.dp)
-                    ) {
-                        Text(
-                            text = "Long press an image to select",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (gridImages.isNotEmpty()) {
-                            TextButton(onClick = { reelStart = 0 }) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Play", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                        if (images.size > 1) {
-                            TextButton(onClick = { viewModel.findDuplicates() }) {
-                                Text("Find duplicates", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
-                    if (photoTags.values.any { it.isNotEmpty() }) {
-                        androidx.compose.material3.OutlinedTextField(
-                            value = tagQuery,
-                            onValueChange = { tagQuery = it },
-                            placeholder = { Text("Search your photos: beach, sunset, cat…") },
-                            singleLine = true,
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            trailingIcon = {
-                                if (tagQuery.isNotEmpty()) IconButton(onClick = { tagQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search")
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                        )
-                    }
-                    // Stays up while a filter is on, so it can always be cleared.
-                    if (images.size > 1 || libraryFilter.active) {
-                        ColourFilterRow(
-                            selected = selectedColour,
-                            loading = looksLoading || matchLoading,
-                            matchCount = if ((selectedColour != null || matchLook != null) && !looksLoading) gridImages.size else null,
-                            onSelect = { c -> matchLook = null; colourFilter = if (c == selectedColour) null else c?.name },
-                            matchingPhoto = matchLook != null,
-                            onMatchPhoto = {
-                                matchPicker.launch(PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            },
-                            onClearMatch = { matchLook = null },
-                            rainbow = rainbow,
-                            onRainbow = { rainbow = !rainbow; if (rainbow) matchLook = null },
-                        )
-                        LibraryFilterRow(
-                            filter = libraryFilter,
-                            onChange = { libraryFilter = it },
-                            hasVideos = hasVideos,
-                            showFold = foldCanvas != null,
-                            showNsfw = nsfwInLibrary && !LocalNsfwHidden.current,
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
-                        if (libraryFilter.active && gridImages.isEmpty()) {
-                            Text(
-                                "Nothing in your Library matches these filters.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            )
-                        }
-                    }
-                }
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 100.dp),
-                    state = dragSelectState.gridState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .gridDragSelect(items = gridImages, state = dragSelectState),
-                    contentPadding = PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+            } else if (gridImages.isEmpty() && !looksLoading && !matchLoading) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
                 ) {
-                    items(gridImages, key = { it.absolutePath }) { file ->
-                        val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
-                        val thumbnailContent: @Composable () -> Unit = {
+                    Text(
+                        "Nothing in your Library matches these filters.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    TextButton(onClick = { onFilterOpenChange(true) }) { Text("Change filters") }
+                }
+            } else {
+                // Edge to edge, portrait tiles; unfolded gets more columns, never a pane beside the grid.
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(savedGridColumns(maxWidth)),
+                        state = dragSelectState.gridState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .gridDragSelect(items = gridImages, state = dragSelectState),
+                        contentPadding = PaddingValues(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        items(gridImages, key = { it.absolutePath }) { file ->
+                            val isSelected by remember { derivedStateOf { dragSelectState.isSelected(file) } }
                             ImageThumbnail(
                                 file = file,
                                 rating = wallpaperRatings[file.name] ?: 0,
@@ -715,96 +825,7 @@ private fun LibraryContent(
                                 onClick = { if (!inSelectionMode) selectedFile = file },
                             )
                         }
-
-                        thumbnailContent()
                     }
-                }
-                } // Column
-            }
-        }
-        if (libraryTwoPane && selectedFile != null && images.isNotEmpty()) {
-            preview(true, Modifier.weight(1.3f).fillMaxHeight())
-        }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.setPreviousWallpaper()
-                },
-                enabled = hasPreviousWallpaper && setNowState == SetNowState.IDLE,
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Previous wallpaper", modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Back")
-            }
-            OutlinedButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.setWallpaperNow()
-                },
-                enabled = images.isNotEmpty() && setNowState == SetNowState.IDLE,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                when (setNowState) {
-                    SetNowState.SETTING -> {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Setting...")
-                    }
-                    SetNowState.DONE -> {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Done!")
-                    }
-                    SetNowState.ERROR -> {
-                        Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(setNowErrorMessage ?: "Failed — retry?")
-                    }
-                    SetNowState.IDLE -> {
-                        Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Set Now")
-                    }
-                }
-            }
-            Button(
-                onClick = onPhotoPick,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Add Photos")
-            }
-        }
-        if (images.isNotEmpty()) {
-            OutlinedButton(
-                onClick = { showSaveToListDialog = true },
-                enabled = !saveToListInProgress && collections.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 12.dp),
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                if (saveToListInProgress) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Saving...")
-                } else {
-                    Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Save to collection…")
                 }
             }
         }
@@ -1004,10 +1025,10 @@ private fun ImageThumbnail(
 
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
+            .aspectRatio(3f / 4f)
+            .clip(RoundedCornerShape(4.dp))
             .then(
-                if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                 else Modifier
             )
             .then(
@@ -1029,17 +1050,23 @@ private fun ImageThumbnail(
 
         NsfwBlurLayer(isNsfw, nsfwBlurEnabled, revealed, compact = true)
 
+        // Size and resolution live in the viewer; tiles only flag videos, with their length.
         if (badgeInfo?.isVideo == true && !isBlurred) {
-            Icon(
-                Icons.Default.PlayArrow,
-                contentDescription = "Video",
-                tint = Color.White,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    .padding(6.dp)
-                    .size(22.dp)
-            )
+                    .align(Alignment.BottomStart)
+                    .padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = "Video", tint = Color.White, modifier = Modifier.size(12.dp))
+                val durationMs = badgeInfo?.durationMs ?: 0L
+                if (durationMs > 0L) {
+                    Text(formatVideoDuration(durationMs), color = Color.White, fontSize = 10.sp, maxLines = 1)
+                }
+            }
         }
 
         if (foldFriendly) {
@@ -1066,23 +1093,6 @@ private fun ImageThumbnail(
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
             )
-        }
-
-        badgeInfo?.let { info ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(999.dp))
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text = "${info.width}×${info.height} · ${info.fileSizeText}",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    maxLines = 1
-                )
-            }
         }
 
         if (rating > 0) {
@@ -1173,7 +1183,13 @@ private data class ImageBadgeInfo(
     val height: Int,
     val fileSizeText: String,
     val isVideo: Boolean = false,
+    val durationMs: Long = 0L,
 )
+
+private fun formatVideoDuration(ms: Long): String {
+    val totalSec = ms / 1000L
+    return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
+}
 
 private fun readImageBadgeInfo(file: File): ImageBadgeInfo? {
     if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) return readVideoBadgeInfo(file)
@@ -1196,8 +1212,9 @@ private fun readVideoBadgeInfo(file: File): ImageBadgeInfo? {
         val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
         val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
         if (w <= 0 || h <= 0) return null
+        val duration = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
         val (width, height) = if (rotation % 180 != 0) h to w else w to h
-        ImageBadgeInfo(width, height, formatFileSize(file.length()), isVideo = true)
+        ImageBadgeInfo(width, height, formatFileSize(file.length()), isVideo = true, durationMs = duration)
     } catch (e: Exception) {
         null
     } finally {
