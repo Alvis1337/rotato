@@ -32,11 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material.icons.filled.Style
-import androidx.compose.material.icons.filled.ViewAgenda
-import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -76,53 +72,22 @@ import com.chrisalvis.rotato.data.MinResolution
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/** How Discover lays out results. Grid is the default; the choice is remembered. */
+/**
+ * How Discover lays out results. Grid is the default; the choice is remembered. The header's
+ * tabs offer Grid, Feed and Swipe; Compact is Grid's small-tile size, switched in Filters.
+ */
 enum class DiscoverViewMode(val key: String, val label: String) {
     GRID("grid", "Grid"),
     COMPACT("compact", "Compact grid"),
     SWIPE("swipe", "Swipe"),
     FEED("feed", "Feed");
 
+    /** Either size of grid. */
+    val isGrid: Boolean get() = this == GRID || this == COMPACT
+
     companion object {
         fun of(key: String) = entries.firstOrNull { it.key == key } ?: GRID
     }
-}
-
-/** The layout picker in Discover's header. */
-@Composable
-internal fun DiscoverLayoutButton(mode: DiscoverViewMode, onSelect: (DiscoverViewMode) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }) { Icon(mode.icon(), contentDescription = "Layout: ${mode.label}") }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DiscoverViewMode.entries.forEach { m ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(m.label)
-                            Text(m.hint(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    },
-                    leadingIcon = { Icon(m.icon(), contentDescription = null) },
-                    onClick = { open = false; onSelect(m) },
-                )
-            }
-        }
-    }
-}
-
-private fun DiscoverViewMode.icon() = when (this) {
-    DiscoverViewMode.GRID -> Icons.Default.ViewAgenda
-    DiscoverViewMode.COMPACT -> Icons.Default.GridView
-    DiscoverViewMode.SWIPE -> Icons.Default.Style
-    DiscoverViewMode.FEED -> Icons.Default.ViewDay
-}
-
-private fun DiscoverViewMode.hint() = when (this) {
-    DiscoverViewMode.GRID -> "Big cards, shaped like each image"
-    DiscoverViewMode.COMPACT -> "Small squares, lots at once"
-    DiscoverViewMode.SWIPE -> "One at a time: right saves, left skips"
-    DiscoverViewMode.FEED -> "Full screen, just scroll"
 }
 
 /**

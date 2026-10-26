@@ -217,6 +217,9 @@ fun BrainrotScreen(
     val interestAlignEnabled by vm.interestAlignEnabled.collectAsStateWithLifecycle()
     val interestProfiles by vm.interestProfiles.collectAsStateWithLifecycle()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
+    // Which grid size the Grid tab goes back to after a turn in Feed or Swipe.
+    var compactPreferred by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(viewMode) { if (viewMode.isGrid) compactPreferred = viewMode == DiscoverViewMode.COMPACT }
     val shuffleVersion by vm.shuffleVersion.collectAsStateWithLifecycle()
     val searchCoverage by vm.searchCoverage.collectAsStateWithLifecycle()
     val manifestMap = remember(manifests) { manifests.associateBy { it.id } }
@@ -234,7 +237,8 @@ fun BrainrotScreen(
     val coroutineScope = rememberCoroutineScope()
     val showScrollTop by remember(gridMode) {
         derivedStateOf {
-            if (gridMode) compactGridState.firstVisibleItemIndex > 8 else gridState.firstVisibleItemIndex > 5
+            // Only once well down: a screen or two of tiles, not the first flick.
+            if (gridMode) compactGridState.firstVisibleItemIndex > 30 else gridState.firstVisibleItemIndex > 12
         }
     }
     val shouldLoadMore by remember(gridMode) {
@@ -535,6 +539,8 @@ fun BrainrotScreen(
                 onSetInterestAlign = { vm.setInterestAlignEnabled(it) },
                 onToggleProfile = { vm.toggleDiscoverProfile(it) },
                 sourcesContent = sourcesRow,
+                compactGrid = if (viewMode.isGrid) viewMode == DiscoverViewMode.COMPACT else null,
+                onSetCompactGrid = { vm.setViewMode(if (it) DiscoverViewMode.COMPACT else DiscoverViewMode.GRID) },
                 onTaste = { showSettings = false; onNavigateToTaste() },
                 onDismiss = { showSettings = false }
             )
@@ -569,14 +575,19 @@ fun BrainrotScreen(
         }
     }
 
-        // Header and control pill float over the content and tuck away while scrolling down.
+        // The header and Shuffle float over the content and tuck away while scrolling down.
         val chrome = remember { ChromeOnScroll() }
         val density = LocalDensity.current
         var topInset by remember { mutableStateOf(112.dp) }
-        // Everything that narrows the feed lives in one sheet; its icon carries a dot when any of it is on.
-        val filtersOn = (nsfwMode && !nsfwHidden) || brainrotFilters.videoOnly || brainrotFilters.isFoldFriendly ||
-            brainrotFilters.minResolution != MinResolution.ANY || brainrotFilters.aspectRatio != AspectRatio.ANY ||
-            allSources.any { !it.enabled }
+        // Everything that narrows the feed lives in one sheet; its button counts how much of it is on.
+        val filterCount = listOf(
+            nsfwMode && !nsfwHidden,
+            brainrotFilters.videoOnly,
+            brainrotFilters.isFoldFriendly,
+            brainrotFilters.minResolution != MinResolution.ANY,
+            brainrotFilters.aspectRatio != AspectRatio.ANY,
+            allSources.any { !it.enabled },
+        ).count { it }
         val topItemUrl by remember(gridMode) {
             derivedStateOf {
                 val index = if (gridMode) compactGridState.firstVisibleItemIndex else gridState.firstVisibleItemIndex
@@ -850,13 +861,23 @@ fun BrainrotScreen(
             if (!noSources) {
                 Box(Modifier.align(Alignment.TopStart).then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth())) {
                     DiscoverTopBar(
-                        visible = chrome.visible || selectedItem != null,
+                        // The feed's tabs stay put, like a reel app's; elsewhere the header hides on scroll.
+                        visible = chrome.visible || selectedItem != null || viewMode == DiscoverViewMode.FEED,
                         query = searchQuery,
                         pinned = pinnedSearches,
+                        viewMode = viewMode,
+                        filterCount = filterCount,
                         onOpenSearch = { showSearch = true },
                         onClearSearch = { vm.setSearchQuery("") },
                         onSelectPinned = { vm.setSearchQuery(it) },
                         onPinCurrent = { vm.pinCurrentSearch() },
+                        onOpenFilters = { showSettings = true },
+                        onOpenSettings = onNavigateToSettings,
+                        onSelectMode = { mode ->
+                            // Back to Grid comes back at the size it was last used at.
+                            vm.setViewMode(if (mode == DiscoverViewMode.GRID && compactPreferred) DiscoverViewMode.COMPACT else mode)
+                            chrome.visible = true
+                        },
                         coverage = searchCoverage.takeIf { searchQuery.isNotBlank() && it.isNotEmpty() }?.joinToString(" · ") { c ->
                             when {
                                 c.skipped != null -> "${c.name}: ${c.skipped}"
@@ -924,29 +945,37 @@ fun BrainrotScreen(
                         }
                     }
                 } else {
+                    // Shuffle floats in the grids and the deck; the feed keeps serving fresh items on its own.
                     Box(
                         Modifier
                             .align(Alignment.BottomStart)
                             .then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth()),
-                        contentAlignment = Alignment.Center,
+                        contentAlignment = Alignment.BottomEnd,
                     ) {
-                        DiscoverControlPill(
-                            visible = chrome.visible || viewMode == DiscoverViewMode.SWIPE,
+                        DiscoverShuffleButton(
+                            visible = viewMode != DiscoverViewMode.FEED && !noResults &&
+                                (chrome.visible || viewMode == DiscoverViewMode.SWIPE),
                             busy = busy,
-                            filtersOn = filtersOn,
-                            viewMode = viewMode,
-                            showTop = showScrollTop && (viewMode == DiscoverViewMode.GRID || viewMode == DiscoverViewMode.COMPACT),
                             onShuffle = { vm.surpriseMe() },
-                            onFilters = { showSettings = true },
-                            onLayout = { vm.setViewMode(it) },
-                            onTop = {
-                                coroutineScope.launch {
-                                    if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
-                                }
-                                chrome.visible = true
-                            },
                         )
                     }
+                }
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .then(if (paneOpen) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth())
+                        .then(if (chrome.visible) Modifier.padding(top = topInset) else Modifier.statusBarsPadding().padding(top = 8.dp)),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    DiscoverBackToTop(
+                        visible = showScrollTop && viewMode.isGrid && selectedItem == null,
+                        onClick = {
+                            coroutineScope.launch {
+                                if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
+                            }
+                            chrome.visible = true
+                        },
+                    )
                 }
                                 if (showSearch) {
                                     SearchBar(
@@ -2226,6 +2255,9 @@ private fun DiscoverSettingsSheetContent(
     onSetInterestAlign: (Boolean) -> Unit,
     onToggleProfile: (String) -> Unit,
     sourcesContent: @Composable () -> Unit = {},
+    /** In a grid layout: whether it's the small-tile size. Null hides the switch. */
+    compactGrid: Boolean? = null,
+    onSetCompactGrid: (Boolean) -> Unit = {},
     onTaste: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
@@ -2242,6 +2274,17 @@ private fun DiscoverSettingsSheetContent(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Filters", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = onTaste) { Text("Taste") }
+        }
+        if (compactGrid != null) Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Compact grid", style = MaterialTheme.typography.bodyMedium)
+                Text("Small square tiles, more on screen at once", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+            Switch(checked = compactGrid, onCheckedChange = onSetCompactGrid)
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             sourcesContent()
