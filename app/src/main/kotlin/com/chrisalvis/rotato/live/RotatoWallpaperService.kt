@@ -435,6 +435,10 @@ class RotatoWallpaperService : WallpaperService() {
             }
         }
 
+        private val srcRect = RectF()
+        private val dstRect = RectF()
+        private val drawMatrix = android.graphics.Matrix()
+
         private fun drawImage(canvas: Canvas, frame: Frame, now: Long, reveal: Float) {
             val bmp = frame.bitmap
             if (bmp.isRecycled) return
@@ -471,13 +475,14 @@ class RotatoWallpaperService : WallpaperService() {
             val slackY = (cropRect.height() - srcH) / 2f
             val cx = cropRect.centerX() + panX.coerceIn(-1f, 1f) * slackX
             val cy = cropRect.centerY() + panY.coerceIn(-1f, 1f) * slackY
-            val src = Rect(
-                (cx - srcW / 2f).toInt().coerceAtLeast(0),
-                (cy - srcH / 2f).toInt().coerceAtLeast(0),
-                (cx + srcW / 2f).toInt().coerceAtMost(bmp.width),
-                (cy + srcH / 2f).toInt().coerceAtMost(bmp.height),
-            )
-            canvas.drawBitmap(bmp, src, Rect(0, 0, width, height), paint)
+            // Sub-pixel source edges: rounding each edge to whole pixels made the picture step and
+            // its scale wobble by a pixel from frame to frame, a visible shimmer on a still image.
+            val left = (cx - srcW / 2f).coerceIn(0f, (bmp.width - srcW).coerceAtLeast(0f))
+            val top = (cy - srcH / 2f).coerceIn(0f, (bmp.height - srcH).coerceAtLeast(0f))
+            srcRect.set(left, top, left + srcW, top + srcH)
+            dstRect.set(0f, 0f, width.toFloat(), height.toFloat())
+            drawMatrix.setRectToRect(srcRect, dstRect, android.graphics.Matrix.ScaleToFit.FILL)
+            canvas.drawBitmap(bmp, drawMatrix, paint)
         }
 
         private fun startSensors() {
@@ -510,8 +515,9 @@ class RotatoWallpaperService : WallpaperService() {
             baseRoll = br + (roll - br) * 0.01f
             val targetX = ((roll - br) / 0.35f).coerceIn(-1f, 1f)
             val targetY = ((pitch - bp) / 0.35f).coerceIn(-1f, 1f)
-            tiltX += (targetX - tiltX) * 0.2f
-            tiltY += (targetY - tiltY) * 0.2f
+            // Ignore the sensor's tiny noise while the phone rests, or the picture trembles.
+            if (abs(targetX - tiltX) > 0.015f) tiltX += (targetX - tiltX) * 0.12f
+            if (abs(targetY - tiltY) > 0.015f) tiltY += (targetY - tiltY) * 0.12f
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
