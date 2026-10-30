@@ -59,6 +59,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -257,11 +258,6 @@ fun BrainrotScreen(
         snapshotFlow { shouldLoadMore && !loading && !loadingMore && !endReached && selectedItem == null }
             .collect { ready -> if (ready) vm.loadMore() }
     }
-    LaunchedEffect(resetVersion, gridMode) {
-        if (resetVersion > 0) {
-            if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
-        }
-    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -321,6 +317,18 @@ fun BrainrotScreen(
         } else if (selectedItem != null) {
             val idx = gridItems.indexOfFirst { it.id == selectedItem!!.id && it.source == selectedItem!!.source }
             if (idx >= 0) restoreScrollIndex = idx
+        }
+    }
+    // A new search (or any reset) starts at the top. The grid is empty while the first page loads,
+    // so scroll again once it arrives; a scroll on the empty grid alone could be lost, and closing
+    // the viewer to search a tag must not restore the old position over the new results.
+    LaunchedEffect(resetVersion, gridMode) {
+        if (resetVersion > 0) {
+            restoreScrollIndex = -1
+            if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
+            snapshotFlow { gridItems.isNotEmpty() }.first { it }
+            withFrameNanos { }
+            if (gridMode) compactGridState.scrollToItem(0) else gridState.scrollToItem(0)
         }
     }
     var showCreateListDialog by remember { mutableStateOf(false) }
