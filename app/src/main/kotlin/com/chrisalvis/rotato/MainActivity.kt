@@ -328,6 +328,12 @@ class MainActivity : AppCompatActivity() {
                         NavHost(
                             navController = navController,
                             startDestination = if (setupDone == true) "discover" else "setup",
+                            // Quick fades: the default 700ms crossfade left the old page's header
+                            // showing through while the new page's top bar slowly faded over it.
+                            enterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) },
+                            exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) },
+                            popEnterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) },
+                            popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(paddingValues)
@@ -481,7 +487,7 @@ class MainActivity : AppCompatActivity() {
                                 )
                             }
                             composable("taste") {
-                                TasteScreen(vm = tasteViewModel)
+                                TasteScreen(vm = tasteViewModel, onNavigateBack = { navController.popBackStack() })
                             }
                         }
                         if (showBottomBar) {

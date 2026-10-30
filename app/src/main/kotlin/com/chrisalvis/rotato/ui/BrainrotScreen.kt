@@ -543,7 +543,14 @@ fun BrainrotScreen(
                 sourcesContent = sourcesRow,
                 compactGrid = viewMode == DiscoverViewMode.COMPACT,
                 onSetCompactGrid = { vm.setViewMode(if (it) DiscoverViewMode.COMPACT else DiscoverViewMode.GRID) },
-                onTaste = { showSettings = false; onNavigateToTaste() },
+                // Let the sheet slide away first, so it isn't still on screen over the Taste page.
+                onTaste = {
+                    coroutineScope.launch {
+                        runCatching { settingsSheetState.hide() }
+                        showSettings = false
+                        onNavigateToTaste()
+                    }
+                },
                 onDismiss = { showSettings = false }
             )
         }

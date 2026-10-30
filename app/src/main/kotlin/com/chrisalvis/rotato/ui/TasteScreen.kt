@@ -40,6 +40,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
@@ -77,7 +78,7 @@ import com.chrisalvis.rotato.data.TagTier
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TasteScreen(vm: TasteViewModel = viewModel()) {
+fun TasteScreen(vm: TasteViewModel = viewModel(), onNavigateBack: (() -> Unit)? = null) {
     val sfwTagTiers by vm.sfwTagTiers.collectAsStateWithLifecycle()
     val nsfwTagTiers by vm.nsfwTagTiers.collectAsStateWithLifecycle()
     val nsfwMode by vm.nsfwMode.collectAsStateWithLifecycle()
@@ -97,7 +98,18 @@ fun TasteScreen(vm: TasteViewModel = viewModel()) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Taste") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Taste") },
+                navigationIcon = {
+                    if (onNavigateBack != null) {
+                        androidx.compose.material3.IconButton(onClick = onNavigateBack) {
+                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             if (selectedTab == 1) {
                 FloatingActionButton(onClick = { vm.startEditProfile(null) }) {
