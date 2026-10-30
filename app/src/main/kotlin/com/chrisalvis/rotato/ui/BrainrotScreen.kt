@@ -2873,51 +2873,16 @@ private fun ImageDetailsSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetailsHeader(
+                    title = wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
+                    subtitle = "From ${sourceDisplayName(wallpaper.source)}",
                 )
                 ImageInfoPills(onClick = {}, wallpaper = wallpaper, foldCanvas = foldCanvas, position = null)
             }
 
-            // Set and the rarer ways to keep it: Library (rotation) and the Fold pair.
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(onClick = onSetWallpaper) {
-                    Icon(Icons.Outlined.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Set")
-                }
-                if (!wallpaper.isVideo) {
-                    FilledTonalButton(onClick = onLibrary, enabled = !isDownloading) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (isDownloading) "Adding…" else "Add to Library")
-                    }
-                }
-                if (foldPairState != null) {
-                    FilledTonalButton(onClick = onFoldPair, enabled = foldPairState != FoldPairState.Busy) {
-                        Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            when (foldPairState) {
-                                FoldPairState.Busy -> "Pairing…"
-                                FoldPairState.Idle -> "Fold pair"
-                                FoldPairState.PickedHere -> "Cover ✓"
-                                FoldPairState.ReadyToPair -> "Pair"
-                            }
-                        )
-                    }
-                }
-            }
-
-            SheetSection("Collections") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailsLabel("Collections")
                 CollectionPills(
                     lists = lists,
                     savedIn = savedIn,
@@ -2928,72 +2893,58 @@ private fun ImageDetailsSheet(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DetailsGroup {
+                if (!wallpaper.isVideo) {
+                    DetailsRow(Icons.Default.Smartphone, "Try it on", onTryOn)
+                    DetailsRow(
+                        Icons.Default.Download,
+                        if (isDownloading) "Adding to Library…" else "Add to Library",
+                        onLibrary,
+                        enabled = !isDownloading,
+                    )
+                }
+                if (foldPairState != null) {
+                    DetailsRow(
+                        Icons.Default.Smartphone,
+                        when (foldPairState) {
+                            FoldPairState.Busy -> "Pairing…"
+                            FoldPairState.Idle -> "Use for the cover screen"
+                            FoldPairState.PickedHere -> "Picked for the cover screen"
+                            FoldPairState.ReadyToPair -> "Pair with the cover image"
+                        },
+                        onFoldPair,
+                        trailing = "Fold pair",
+                        enabled = foldPairState != FoldPairState.Busy,
+                    )
+                }
+                DetailsRow(
+                    Icons.Default.SaveAlt,
+                    if (isSavingToGallery) "Saving to gallery…" else "Save to phone gallery",
+                    onSaveToGallery,
+                    enabled = !isSavingToGallery,
+                )
                 val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
                 if (page != null) {
-                    FilledTonalButton(onClick = {
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(page))) }
-                    }) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Open post")
-                    }
-                }
-                FilledTonalButton(onClick = onSaveToGallery, enabled = !isSavingToGallery) {
-                    Icon(Icons.Default.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isSavingToGallery) "Saving…" else "Save to gallery")
-                }
-            }
-            if (!wallpaper.isVideo) {
-                OutlinedButton(onClick = onTryOn, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Try it on")
+                    DetailsRow(
+                        Icons.Default.OpenInNew,
+                        "Open post",
+                        { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(page))) } },
+                        trailing = sourceDisplayName(wallpaper.source),
+                        divider = false,
+                    )
                 }
             }
 
             if (wallpaper.tags.isNotEmpty()) {
-                SheetSection("Tags · tap to search, hold for options") {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        wallpaper.tags.forEach { tag ->
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .combinedClickable(
-                                        onClick = { onTagSearch(tag) },
-                                        onLongClick = { onTagActions(tag) }
-                                    )
-                            ) {
-                                Text(
-                                    tag.replace('_', ' '),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                )
-                            }
-                        }
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailsLabel("Tags · tap to search, hold for more")
+                    DetailsTags(wallpaper.tags, onTap = onTagSearch, onHold = onTagActions)
                 }
             }
 
-            HorizontalDivider()
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                val danger = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                TextButton(onClick = onReport, colors = danger) {
-                    Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Report")
-                }
-                TextButton(onClick = onBlock, colors = danger) {
-                    Icon(Icons.Default.Block, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Never show again")
-                }
+            DetailsGroup {
+                DetailsRow(Icons.Default.Block, "Never show again", onBlock, danger = true)
+                DetailsRow(Icons.Default.Flag, "Report", onReport, danger = true, divider = false)
             }
         }
     }

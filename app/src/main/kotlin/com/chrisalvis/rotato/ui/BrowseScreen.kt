@@ -2682,13 +2682,10 @@ private fun CollectionImageSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: wallpaper.animeTitle.ifBlank { "This image" },
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetailsHeader(
+                    title = wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: wallpaper.animeTitle.ifBlank { "This image" },
+                    subtitle = wallpaper.animeTitle.takeIf { it.isNotBlank() && wallpaper.tags.isNotEmpty() },
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     CollectionInfoPills(wallpaper, null)
@@ -2696,9 +2693,30 @@ private fun CollectionImageSheet(
             }
 
             // The main actions (Set, Rotate, Try it on, Play next, Share) live on the viewer's
-            // bottom bar; this sheet holds the rarer ones.
+            // bottom bar; this sheet holds the rarer ones as one list.
+            DetailsGroup {
+                if (foldPairLabel != null) {
+                    DetailsRow(Icons.Default.Smartphone, foldPairLabel, onFoldPair, trailing = "Fold pair", enabled = foldPairEnabled)
+                }
+                if (onSetAsCover != null) {
+                    DetailsRow(Icons.Default.FolderOpen, "Use as collection cover", onSetAsCover)
+                }
+                DetailsRow(Icons.Default.Download, "Save to phone gallery", onSaveToGallery)
+                DetailsRow(Icons.Default.ContentCopy, "Copy link", onCopyUrl)
+                val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
+                if (page != null) {
+                    DetailsRow(
+                        Icons.Default.OpenInNew,
+                        "Open post",
+                        { runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(page))) } },
+                        divider = false,
+                    )
+                }
+            }
+
             if (moveTargets.isNotEmpty()) {
-                SheetSection("Move to") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailsLabel("Move to")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         moveTargets.forEach { target ->
                             AssistChip(
@@ -2712,80 +2730,24 @@ private fun CollectionImageSheet(
                 }
             }
 
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
-                if (page != null) {
-                    FilledTonalButton(onClick = {
-                        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(page))) }
-                    }) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Open post")
-                    }
-                }
-                FilledTonalButton(onClick = onSaveToGallery) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Save to gallery")
-                }
-                FilledTonalButton(onClick = onCopyUrl) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Copy link")
-                }
-                if (onSetAsCover != null) {
-                    FilledTonalButton(onClick = onSetAsCover) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Use as cover")
-                    }
-                }
-                if (foldPairLabel != null) {
-                    FilledTonalButton(onClick = onFoldPair, enabled = foldPairEnabled) {
-                        Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(foldPairLabel)
-                    }
-                }
-            }
-
             if (wallpaper.tags.isNotEmpty()) {
-                SheetSection("Tags · tap to find more, hold for options") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        wallpaper.tags.forEach { tag ->
-                            Box {
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .combinedClickable(onClick = { onTagSearch(tag) }, onLongClick = { tagMenu = tag })
-                                ) {
-                                    Text(
-                                        tag.replace('_', ' '),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                    )
-                                }
-                                // Same tag actions as Discover: search, or tune your taste.
-                                DropdownMenu(expanded = tagMenu == tag, onDismissRequest = { tagMenu = null }) {
-                                    DropdownMenuItem(text = { Text("Find more in Discover") }, onClick = { tagMenu = null; onTagSearch(tag) })
-                                    DropdownMenuItem(text = { Text("Show me more of this") }, onClick = { tagMenu = null; onTagTier(tag, com.chrisalvis.rotato.data.TagTier.LOVE) })
-                                    DropdownMenuItem(text = { Text("Never show this") }, onClick = { tagMenu = null; onTagTier(tag, com.chrisalvis.rotato.data.TagTier.NEVER) })
-                                }
-                            }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box {
+                        DetailsLabel("Tags · tap to find more, hold for more")
+                        // Same tag actions as Discover: search, or tune your taste.
+                        DropdownMenu(expanded = tagMenu != null, onDismissRequest = { tagMenu = null }) {
+                            val tag = tagMenu.orEmpty()
+                            DropdownMenuItem(text = { Text("Find more in Discover") }, onClick = { tagMenu = null; onTagSearch(tag) })
+                            DropdownMenuItem(text = { Text("Show me more of this") }, onClick = { tagMenu = null; onTagTier(tag, com.chrisalvis.rotato.data.TagTier.LOVE) })
+                            DropdownMenuItem(text = { Text("Never show this") }, onClick = { tagMenu = null; onTagTier(tag, com.chrisalvis.rotato.data.TagTier.NEVER) })
                         }
                     }
+                    DetailsTags(wallpaper.tags, onTap = onTagSearch, onHold = { tagMenu = it })
                 }
             }
             if (onRemove != null) {
-                TextButton(
-                    onClick = onRemove,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Remove from collection")
+                DetailsGroup {
+                    DetailsRow(Icons.Default.Delete, "Remove from collection", onRemove, danger = true, divider = false)
                 }
             }
         }

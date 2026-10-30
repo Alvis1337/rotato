@@ -1611,13 +1611,7 @@ private fun LibraryImageDetailsSheet(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                )
+                DetailsHeader(title, "Saved on this phone")
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1640,7 +1634,8 @@ private fun LibraryImageDetailsSheet(
                 }
             }
 
-            SheetSection("Your rating") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailsLabel("Your rating")
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1662,7 +1657,8 @@ private fun LibraryImageDetailsSheet(
 
             val colours = look?.colours.orEmpty()
             if (colours.isNotEmpty()) {
-                SheetSection("Colours") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DetailsLabel("Colours")
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1681,26 +1677,25 @@ private fun LibraryImageDetailsSheet(
                             }
                         }
                     }
-                    if (onFindSimilar != null) {
-                        FilledTonalButton(onClick = onFindSimilar) {
-                            Icon(Icons.Default.ImageSearch, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Find similar")
-                        }
-                    }
                 }
             }
 
-            Column {
-                DetailsSheetRow(Icons.Default.SaveAlt, "Save to phone gallery", onClick = onSaveToGallery)
-                DetailsSheetRow(
+            DetailsGroup {
+                if (onFindSimilar != null && colours.isNotEmpty()) {
+                    DetailsRow(Icons.Default.ImageSearch, "Find similar colours", onFindSimilar, trailing = "in Saved")
+                }
+                DetailsRow(Icons.Default.SaveAlt, "Save to phone gallery", onSaveToGallery, divider = false)
+            }
+            DetailsGroup {
+                DetailsRow(
                     Icons.Default.Delete,
                     "Remove from Saved",
-                    tint = MaterialTheme.colorScheme.error,
-                    onClick = {
+                    {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onRemove()
                     },
+                    danger = true,
+                    divider = false,
                 )
             }
         }

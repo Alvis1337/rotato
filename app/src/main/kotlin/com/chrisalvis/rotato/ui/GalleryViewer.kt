@@ -3,6 +3,7 @@ package com.chrisalvis.rotato.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -261,4 +262,133 @@ internal fun sizeCaption(resolution: String): String? {
     if (parts.size != 2) return null
     val (w, h) = parts[0] to parts[1]
     return sizeClassOf(w, h)?.let { "$it · $w × $h" }
+}
+
+// ── Details sheet pieces, shared by every viewer so the sheet reads as one tidy list ──
+
+/** The sheet's heading: the image's name and one line of where it's from. */
+@Composable
+internal fun DetailsHeader(title: String, subtitle: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!subtitle.isNullOrBlank()) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** A small grey label over a section of the sheet. */
+@Composable
+internal fun DetailsLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** Rows grouped on one rounded card, separated by hairlines, like the rotation sheet. */
+@Composable
+internal fun DetailsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        content = content,
+    )
+}
+
+/** One action in a [DetailsGroup]: icon, label, and optionally a short note on the right. */
+@Composable
+internal fun DetailsRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    trailing: String? = null,
+    danger: Boolean = false,
+    enabled: Boolean = true,
+    divider: Boolean = true,
+) {
+    val tint = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Column {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled, onClick = onClick)
+                .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(16.dp))
+            Text(label, color = tint, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            if (trailing != null) {
+                Text(trailing, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (divider) {
+            Box(
+                Modifier
+                    .padding(start = 54.dp)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            )
+        }
+    }
+}
+
+/**
+ * Tags as quiet chips, the first dozen only until "Show all" is tapped, so a post with fifty tags
+ * doesn't bury everything below it. Tap searches; hold (when [onHold] is given) offers options.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun DetailsTags(tags: List<String>, onTap: (String) -> Unit, onHold: ((String) -> Unit)? = null) {
+    if (tags.isEmpty()) return
+    var expanded by remember(tags) { mutableStateOf(false) }
+    val limit = 12
+    val shown = if (expanded) tags else tags.take(limit)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        shown.forEach { tag ->
+            Text(
+                tag.replace('_', ' '),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .combinedClickable(onClick = { onTap(tag) }, onLongClick = onHold?.let { { it(tag) } })
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+            )
+        }
+        if (tags.size > limit) {
+            Text(
+                if (expanded) "Show less" else "Show all ${tags.size}",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+            )
+        }
+    }
 }
