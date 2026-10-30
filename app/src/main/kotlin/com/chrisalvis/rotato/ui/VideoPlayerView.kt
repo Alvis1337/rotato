@@ -25,7 +25,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.VolumeOff
@@ -66,6 +68,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -224,6 +227,15 @@ fun Modifier.volumeUpUnmutes(): Modifier {
         .focusable()
 }
 
+/** Playback speed picked with the speed button; kept for the rest of the session so the next video plays the same. */
+object VideoSpeedState {
+    val steps = listOf(1f, 1.5f, 2f, 0.5f)
+    var speed by mutableFloatStateOf(1f)
+    fun next() { speed = steps[(steps.indexOf(speed) + 1) % steps.size] }
+    fun label(value: Float = speed): String =
+        (if (value % 1f == 0f) value.toInt().toString() else value.toString().removePrefix("0")) + "×"
+}
+
 private fun formatDuration(ms: Long): String {
     if (ms <= 0) return "0:00"
     val totalSeconds = ms / 1000
@@ -263,7 +275,17 @@ fun VideoPlayerView(
     /** Double-tap and long-press for the caller (e.g. the feed's save and open); the tap layer would otherwise swallow them. */
     onDoubleTap: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    /**
+     * Viewer mode: the caller owns its chrome and passes whether it shows. A tap then toggles it
+     * (instead of play/pause); the seek bar, speed, mute and the centre play/pause and ±10 buttons
+     * show only with it, and it hides itself a moment after playback starts. Holding either side
+     * plays at 2× until released.
+     */
+    controlsVisible: Boolean = true,
+    onControlsVisibleChange: ((Boolean) -> Unit)? = null,
 ) {
+    val managed = onControlsVisibleChange != null
+    val showControls = !managed || controlsVisible
     val context = LocalContext.current
     remember { VideoMuteState.load(context) }
     var isMuted by remember(url) { mutableStateOf(if (showMuteButton) VideoMuteState.muted else muted) }
@@ -336,6 +358,26 @@ fun VideoPlayerView(
     var durationMs by remember(exoPlayer) { mutableLongStateOf(0L) }
     var seekFeedback by remember(exoPlayer) { mutableStateOf<Int?>(null) } // seek delta in seconds, for the transient overlay
     var userSeeking by remember(exoPlayer) { mutableStateOf(false) }
+    // Holding the video plays it at 2× until the finger lifts.
+    var holdingFast by remember(exoPlayer) { mutableStateOf(false) }
+    // Bumped by any touch on the controls, so they stay up while being used.
+    var controlsTouch by remember(exoPlayer) { mutableIntStateOf(0) }
+    val holdScope = androidx.compose.runtime.rememberCoroutineScope()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    LaunchedEffect(exoPlayer, VideoSpeedState.speed, holdingFast) {
+        exoPlayer.setPlaybackSpeed(if (holdingFast) 2f else VideoSpeedState.speed)
+    }
+    if (managed) {
+        val hide by androidx.compose.runtime.rememberUpdatedState(onControlsVisibleChange)
+        LaunchedEffect(controlsVisible, isPlaying, userSeeking, controlsTouch, hasError) {
+            if (controlsVisible && isPlaying && !userSeeking && !hasError) {
+                delay(2_500)
+                hide?.invoke(false)
+            }
+        }
+        // Holding for 2× hides everything so the video is the only thing on screen.
+        LaunchedEffect(holdingFast) { if (holdingFast) hide?.invoke(false) }
+    }
     var draggedFraction by remember(exoPlayer) { mutableFloatStateOf(0f) }
     // The texture view paints its first frame stretched to the whole view before the player's
     // frame layout learns the video's shape, so it stays invisible until a frame has rendered
@@ -435,18 +477,37 @@ fun VideoPlayerView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(exoPlayer, allowDoubleTapSeek, onDoubleTap, onLongPress) {
+                    .pointerInput(exoPlayer, allowDoubleTapSeek, onDoubleTap, onLongPress, managed, controlsVisible) {
                         detectTapGestures(
+                            onPress = {
+                                // Without a caller long-press, holding plays at 2× until release.
+                                if (onLongPress == null) {
+                                val fast = holdScope.launch {
+                                    delay(viewConfiguration.longPressTimeoutMillis)
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    exoPlayer.playWhenReady = true
+                                    holdingFast = true
+                                }
+                                tryAwaitRelease()
+                                fast.cancel()
+                                holdingFast = false
+                                }
+                            },
                             onTap = {
-                                exoPlayer.playWhenReady = !exoPlayer.playWhenReady
-                                isPlaying = exoPlayer.playWhenReady
+                                if (managed) {
+                                    onControlsVisibleChange?.invoke(!controlsVisible)
+                                } else {
+                                    exoPlayer.playWhenReady = !exoPlayer.playWhenReady
+                                    isPlaying = exoPlayer.playWhenReady
+                                }
                             },
                             onDoubleTap = { offset ->
                                 if (allowDoubleTapSeek) {
                                     if (offset.x < size.width / 2f) seekBy(-10) else seekBy(10)
                                 } else onDoubleTap?.invoke()
                             },
-                            onLongPress = onLongPress?.let { cb -> { _: androidx.compose.ui.geometry.Offset -> cb() } },
+                            // Always set, so a hold never ends in a tap; the 2× itself runs from onPress.
+                            onLongPress = { onLongPress?.invoke() },
                         )
                     }
             )
@@ -497,7 +558,35 @@ fun VideoPlayerView(
             }
         }
 
-        if (allowTapToToggle && !isPlaying && !isBuffering && !hasError) {
+        if (managed) {
+            AnimatedVisibility(
+                visible = controlsVisible && !hasError && !holdingFast,
+                modifier = Modifier.align(Alignment.Center),
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(32.dp),
+                ) {
+                    CentreButton(Icons.Default.Replay10, "Back 10 seconds", 52.dp) { seekBy(-10); controlsTouch++ }
+                    if (isBuffering && isPlaying) {
+                        Box(Modifier.size(72.dp))
+                    } else {
+                        CentreButton(
+                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (isPlaying) "Pause" else "Play",
+                            72.dp,
+                        ) {
+                            exoPlayer.playWhenReady = !exoPlayer.playWhenReady
+                            isPlaying = exoPlayer.playWhenReady
+                            controlsTouch++
+                        }
+                    }
+                    CentreButton(Icons.Default.Forward10, "Forward 10 seconds", 52.dp) { seekBy(10); controlsTouch++ }
+                }
+            }
+        } else if (allowTapToToggle && !isPlaying && !isBuffering && !hasError) {
             Icon(
                 Icons.Default.PlayArrow,
                 contentDescription = "Play",
@@ -508,6 +597,23 @@ fun VideoPlayerView(
                     .background(Color.Black.copy(alpha = 0.4f), CircleShape)
                     .padding(12.dp)
             )
+        }
+
+        AnimatedVisibility(
+            visible = holdingFast,
+            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 12.dp),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("2×", color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Icon(Icons.Default.FastForward, contentDescription = null, tint = Color.White, modifier = Modifier.padding(start = 4.dp).size(18.dp))
+            }
         }
 
         AnimatedVisibility(
@@ -536,7 +642,7 @@ fun VideoPlayerView(
             }
         }
 
-        if (showMuteButton) {
+        if (showMuteButton && !(managed && showSeekBar) && showControls) {
             Icon(
                 if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
                 contentDescription = if (isMuted) "Unmute" else "Mute",
@@ -552,7 +658,7 @@ fun VideoPlayerView(
             )
         }
 
-        if (progressLine && !showSeekBar && durationMs > 0) {
+        if ((progressLine && !showSeekBar || managed && !showControls) && durationMs > 0) {
             androidx.compose.material3.LinearProgressIndicator(
                 progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
                 color = Color.White,
@@ -562,7 +668,7 @@ fun VideoPlayerView(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp),
             )
         }
-        if (showSeekBar && durationMs > 0) {
+        if (showSeekBar && showControls && durationMs > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -587,6 +693,7 @@ fun VideoPlayerView(
                 Slider(
                     value = if (userSeeking) draggedFraction else (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f),
                     onValueChange = {
+                        controlsTouch++
                         userSeeking = true
                         draggedFraction = it
                     },
@@ -622,7 +729,44 @@ fun VideoPlayerView(
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall
                 )
+                if (managed) {
+                    Text(
+                        VideoSpeedState.label(),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        modifier = Modifier
+                            .padding(start = 10.dp)
+                            .background(Color.White.copy(alpha = 0.16f), CircleShape)
+                            .clickable(onClickLabel = "Change speed") { VideoSpeedState.next(); controlsTouch++ }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                    if (showMuteButton) Icon(
+                        if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                        contentDescription = if (isMuted) "Unmute" else "Mute",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .size(32.dp)
+                            .background(Color.White.copy(alpha = 0.16f), CircleShape)
+                            .clickable { toggleMute(); controlsTouch++ }
+                            .padding(7.dp)
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CentreButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, size: Dp, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(size)
+            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            .clickable(onClickLabel = label, onClick = onClick)
+    ) {
+        Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(size * 0.45f))
     }
 }

@@ -2483,7 +2483,9 @@ private fun WallpaperUrlPreviewDialog(
                         showMuteButton = true,
                         showSeekBar = true,
                         allowDoubleTapSeek = true,
-                        seekBarBottomInset = if (inline) 0.dp else bottomPanelHeight
+                        seekBarBottomInset = if (inline) 0.dp else bottomPanelHeight,
+                        controlsVisible = chromeVisible,
+                        onControlsVisibleChange = { chromeVisible = it },
                     )
                 } else if (wp.isVideo) {
                     val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }

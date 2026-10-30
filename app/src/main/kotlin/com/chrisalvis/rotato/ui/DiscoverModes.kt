@@ -233,18 +233,24 @@ internal fun DiscoverFeed(
         var burst by remember { mutableStateOf(0) }
         val saved = isSaved(wp)
         val save = { if (onSave != null) { if (!saved) onSave(wp); burst++ } }
+        // Caption and actions fade out while a video plays; a tap brings them back.
+        var chromeVisible by remember { mutableStateOf(true) }
+        val chromeAlpha by androidx.compose.animation.core.animateFloatAsState(if (chromeVisible) 1f else 0f, label = "reelChrome")
         Box(Modifier.fillMaxSize()) {
             ReelMedia(
                 wp = wp,
                 playing = active && page == pager.currentPage && !blurred,
                 onDoubleTap = { if (onSave != null) save() },
-                onLongPress = { onOpen(wp) },
+                // Holding a video plays it at 2×; "More" opens it instead.
+                onLongPress = if (wp.isVideo) null else ({ onOpen(wp) }),
+                controlsVisible = chromeVisible,
+                onControlsVisibleChange = { chromeVisible = it },
                 modifier = Modifier
                     .fillMaxSize()
                     .nsfwContentBlur(wp.isNsfw, nsfwBlurEnabled, revealed)
                     .pointerInput(wp.id, blurred, saved) {
                         detectTapGestures(
-                            onTap = { if (blurred) revealed = true },
+                            onTap = { if (blurred) revealed = true else chromeVisible = !chromeVisible },
                             onDoubleTap = { if (!blurred && onSave != null) save() },
                             onLongPress = { onOpen(wp) },
                         )
@@ -255,6 +261,7 @@ internal fun DiscoverFeed(
             Box(
                 Modifier
                     .fillMaxSize()
+                    .graphicsLayer { alpha = chromeAlpha }
                     .background(
                         androidx.compose.ui.graphics.Brush.verticalGradient(
                             0f to Color.Black.copy(alpha = 0.35f),
@@ -267,9 +274,10 @@ internal fun DiscoverFeed(
             SaveBurst(burst, Modifier.align(Alignment.Center))
 
             // Action rail, right side.
-            Column(
+            if (chromeAlpha > 0f) Column(
                 Modifier
                     .align(Alignment.BottomEnd)
+                    .graphicsLayer { alpha = chromeAlpha }
                     .navigationBarsPadding()
                     .padding(end = 8.dp, bottom = 92.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -291,9 +299,10 @@ internal fun DiscoverFeed(
             }
 
             // Caption, bottom left: where it's from, then its tags (tap one to search it).
-            Column(
+            if (chromeAlpha > 0f) Column(
                 Modifier
                     .align(Alignment.BottomStart)
+                    .graphicsLayer { alpha = chromeAlpha }
                     .navigationBarsPadding()
                     .padding(start = 14.dp, end = 84.dp, bottom = 92.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -365,6 +374,8 @@ private fun ReelMedia(
     modifier: Modifier,
     onDoubleTap: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    controlsVisible: Boolean = true,
+    onControlsVisibleChange: ((Boolean) -> Unit)? = null,
 ) {
     val still = if (wp.isVideo) wp.thumbUrl.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) } ?: wp.gridUrl.takeUnless { MediaType.isVideoUrl(it) }
     else wp.sampleUrl.takeIf { it.isNotBlank() && !MediaType.isVideoUrl(it) } ?: wp.fullUrl.ifBlank { wp.thumbUrl }
@@ -390,6 +401,8 @@ private fun ReelMedia(
                 posterUrl = still,
                 onDoubleTap = onDoubleTap,
                 onLongPress = onLongPress,
+                controlsVisible = controlsVisible,
+                onControlsVisibleChange = onControlsVisibleChange,
             )
         } else {
             AsyncImage(

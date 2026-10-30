@@ -1773,6 +1773,8 @@ private fun WallpaperDetailOverlay(
                     allowDoubleTapSeek = true,
                     // In a pane the video already ends above the dock, so its seek bar sits at its own bottom.
                     seekBarBottomInset = if (inPane) 0.dp else bottomPanelHeight,
+                    controlsVisible = chromeVisible,
+                    onControlsVisibleChange = { chromeVisible = it },
                     posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) },
                 )
             } else if (item.isVideo) {
