@@ -7,9 +7,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -18,8 +28,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -117,7 +125,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -155,13 +162,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.ui.platform.LocalDensity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -727,6 +730,23 @@ private fun LibraryContent(
                 onSetRating = { currentFile, rating -> viewModel.setRating(currentFile, rating) },
                 collections = collections,
                 onAddToCollection = { currentFile, listId -> viewModel.saveRotationToList(listId, listOf(currentFile)) },
+                // Same as "match a photo", with this image as the photo: the grid shows what goes with it.
+                onFindSimilar = { currentFile ->
+                    selectedFile = null
+                    matchLoading = true
+                    matchScope.launch {
+                        val look = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            com.chrisalvis.rotato.data.ImageAnalysis.lookFor(appContext, currentFile)
+                        }
+                        matchLoading = false
+                        if (look == null || look.colours.isEmpty()) {
+                            android.widget.Toast.makeText(appContext, "Couldn't read this image's colours", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            colourFilter = null
+                            matchLook = look
+                        }
+                    }
+                },
             )
         }
 
@@ -1232,6 +1252,24 @@ private fun formatFileSize(bytes: Long): String {
     return String.format(Locale.US, "%.1f GB", gib)
 }
 
+/** A readable caption from a file name: separators become spaces and long hash-like runs go. */
+private fun friendlyFileTitle(file: File): String {
+    val words = file.nameWithoutExtension
+        .replace('_', ' ')
+        .replace('-', ' ')
+        .split(' ')
+        .filter { it.isNotBlank() }
+    val kept = words.filterNot { w ->
+        val hasDigit = w.any { it.isDigit() }
+        (w.length >= 12 && hasDigit) ||
+            (w.length >= 8 && hasDigit && w.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' })
+    }
+    val title = kept.joinToString(" ").trim()
+    return title.ifBlank {
+        if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) "Saved video" else "Saved image"
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImagePreviewDialog(
@@ -1247,6 +1285,8 @@ private fun ImagePreviewDialog(
     /** Same viewer actions as Discover and Collections: collection, screen preview, share. */
     collections: List<LocalList> = emptyList(),
     onAddToCollection: (File, String) -> Unit = { _, _ -> },
+    /** Shows the Library images whose colours go with this one; the button is hidden when null. */
+    onFindSimilar: ((File) -> Unit)? = null,
     /** Unfolded: shown in a pane beside the grid instead of a full-screen dialog. */
     inline: Boolean = false,
     modifier: Modifier = Modifier,
@@ -1270,7 +1310,6 @@ private fun ImagePreviewDialog(
         )
     }
     val coroutineScope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val swipeThresholdPx = remember(density) { with(density) { 150.dp.toPx() } }
     val initialPage = remember(images, initialFile.absolutePath) {
@@ -1281,9 +1320,17 @@ private fun ImagePreviewDialog(
     val currentFile by remember(images, pagerState) {
         derivedStateOf { images.getOrNull(pagerState.currentPage) }
     }
-    var showZoom by remember { mutableStateOf(false) }
+    // Zoom happens in place on the current page; one tap hides/shows everything around the image.
+    val zoom = remember { ZoomState() }
+    val zoomed = zoom.zoomed
+    var chromeVisible by remember { mutableStateOf(true) }
+    var showDetails by remember { mutableStateOf(false) }
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
+    // Height of the bottom bar above the nav bar, so a video's seek bar sits above its buttons.
+    // The bar pads for the nav bar itself and VideoPlayerView adds that inset again, so it's left out.
+    var bottomPanelHeight by remember { mutableStateOf(0.dp) }
+    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
 
     LaunchedEffect(images.size, pagerState.currentPage) {
         if (images.isEmpty()) {
@@ -1295,7 +1342,7 @@ private fun ImagePreviewDialog(
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) { showZoom = false }
+    LaunchedEffect(pagerState.currentPage) { zoom.reset() }
 
     PreviewHost(inline = inline, onDismiss = onDismiss, modifier = modifier) {
         Box(
@@ -1305,8 +1352,9 @@ private fun ImagePreviewDialog(
                     translationY = offsetY.value
                     alpha = (1f - (offsetY.value / 600f)).coerceIn(0f, 1f)
                 }
-                .pointerInput(isDismissing, showZoom) {
-                    if (isDismissing || showZoom) return@pointerInput
+                .pointerInput(isDismissing, zoomed) {
+                    // Swipe down to close; off while zoomed, where a drag pans the image instead.
+                    if (isDismissing || zoomed) return@pointerInput
                     awaitPointerEventScope {
                         while (true) {
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -1317,10 +1365,8 @@ private fun ImagePreviewDialog(
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id }
                                 if (change == null || !change.pressed) break
-                                if (event.changes.count { it.pressed } >= 2) {
-                                    coroutineScope.launch { showZoom = true }
-                                    break@detect
-                                }
+                                // A second finger is a pinch; leave it to the zoom.
+                                if (event.changes.count { it.pressed } >= 2) break@detect
                                 val delta = change.position - change.previousPosition
                                 totalDy += delta.y
                                 totalDx += delta.x
@@ -1379,244 +1425,306 @@ private fun ImagePreviewDialog(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.aboveTabletopFold().fillMaxSize(),
-                beyondViewportPageCount = 1
+                beyondViewportPageCount = 1,
+                userScrollEnabled = !zoomed,
             ) { page ->
                 val pageFile = images.getOrNull(page) ?: return@HorizontalPager
+                val isCurrent = page == pagerState.currentPage
                 if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(pageFile)) {
                     // Only the page in view plays; neighbours show their first frame.
-                    if (page == pagerState.currentPage) {
+                    if (isCurrent) {
                         VideoPlayerView(
                             url = android.net.Uri.fromFile(pageFile).toString(),
                             modifier = Modifier.fillMaxSize(),
                             allowTapToToggle = true,
                             showMuteButton = true,
+                            showSeekBar = true,
+                            allowDoubleTapSeek = true,
+                            seekBarBottomInset = bottomPanelHeight,
+                            controlsVisible = chromeVisible,
+                            onControlsVisibleChange = { chromeVisible = it },
                         )
                     } else {
                         AsyncImage(model = pageFile, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                     }
                     return@HorizontalPager
                 }
-                AsyncImage(
-                    model = pageFile,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures(onDoubleTap = { showZoom = true })
-                        }
-                )
-            }
-
-            // Close button
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-            }
-
-            // Page counter
-            if (images.size > 1) {
-                Text(
-                    "${pagerState.currentPage + 1} / ${images.size}",
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(12.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White
-                )
-            }
-
-            // Bottom gradient panel
-            currentFile?.let { file ->
-                val fileSize = remember(file) { "%.1f MB".format(file.length() / 1_048_576.0) }
-                val imageDimens = remember(file) {
-                    if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) {
-                        return@remember readVideoBadgeInfo(file)?.let { "${it.width}×${it.height} · video" }
-                    }
-                    try {
-                        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(file.absolutePath, opts)
-                        if (opts.outWidth > 0) "${opts.outWidth}×${opts.outHeight}" else null
-                    } catch (_: Exception) { null }
-                }
-                val currentRating = wallpaperRatings[file.name] ?: 0
-
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                            )
-                        )
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 40.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .clipToBounds()
+                        .onSizeChanged { if (isCurrent) zoom.size = it }
                 ) {
-                    // Metadata badges
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        imageDimens?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                    AsyncImage(
+                        model = pageFile,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zoomTransform(zoom, active = isCurrent)
+                            .zoomGestures(
+                                zoom,
+                                active = isCurrent,
+                                onTap = { chromeVisible = !chromeVisible },
                             )
-                        }
-                        Text(
-                            fileSize,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier
-                                .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = chromeVisible && !zoomed,
+                enter = fadeIn(tween(180)),
+                exit = fadeOut(tween(180)),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                ViewerTopBar(
+                    position = if (images.size > 1) "${pagerState.currentPage + 1} of ${images.size}" else null,
+                    onBack = onDismiss,
+                    onDetails = { showDetails = true },
+                )
+            }
+
+            currentFile?.let { file ->
+                val isVideo = remember(file) { com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file) }
+                val info by produceState<ImageBadgeInfo?>(null, file) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching { readImageBadgeInfo(file) }.getOrNull()
+                    }
+                }
+                val fileSize = remember(file) { formatFileSize(file.length()) }
+                val rating = wallpaperRatings[file.name] ?: 0
+                val title = remember(file) { friendlyFileTitle(file) }
+                val subtitle = listOfNotNull(
+                    if (isVideo) {
+                        val d = info?.durationMs ?: 0L
+                        if (d > 0L) "Video · ${formatVideoDuration(d)}" else "Video"
+                    } else null,
+                    info?.let { i -> sizeClassOf(i.width, i.height)?.let { "$it · ${i.width} × ${i.height}" } },
+                    fileSize,
+                    if (rating > 0) "★ $rating" else null,
+                ).joinToString(" · ")
+                val actions = buildList {
+                    add(ViewerAction(Icons.Outlined.Wallpaper, "Set", onClick = { onSetWallpaper(file) }, primary = true))
+                    if (collections.isNotEmpty()) {
+                        add(ViewerAction(Icons.Outlined.BookmarkBorder, "Save", onClick = { collectionPickFor = file }))
+                    }
+                    if (!isVideo) {
+                        add(ViewerAction(Icons.Default.Smartphone, "Try it on", onClick = { screenPreviewFor = file }))
+                    }
+                    add(ViewerAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Play next", onClick = { onPlayNext(file) }))
+                    add(ViewerAction(Icons.Default.Share, "Share", onClick = { shareLibraryFile(viewerContext, file) }))
+                }
+
+                AnimatedVisibility(
+                    visible = chromeVisible && !zoomed,
+                    enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { it / 3 },
+                    exit = fadeOut(tween(180)) + slideOutVertically(tween(180)) { it / 3 },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) {
+                    ViewerBottomBar(
+                        title = title,
+                        subtitle = subtitle,
+                        actions = actions,
+                        onDetails = { showDetails = true },
+                        filmstrip = images,
+                        currentIndex = pagerState.currentPage,
+                        onJump = { i -> coroutineScope.launch { pagerState.scrollToPage(i) } },
+                        modifier = Modifier.onGloballyPositioned {
+                            bottomPanelHeight = with(density) { (it.size.height - navBarBottomPx).coerceAtLeast(0).toDp() }
+                        },
+                    )
+                }
+
+                if (showDetails) {
+                    LibraryImageDetailsSheet(
+                        file = file,
+                        title = title,
+                        info = info,
+                        isVideo = isVideo,
+                        fileSize = fileSize,
+                        rating = rating,
+                        onSetRating = { star -> onSetRating(file, star) },
+                        onFindSimilar = onFindSimilar?.let { cb -> { showDetails = false; cb(file) } },
+                        onSaveToGallery = { onSaveToGallery(file) },
+                        onRemove = { showDetails = false; onRemove(file) },
+                        onDismiss = { showDetails = false },
+                    )
+                }
+            }
+
+            // Back while zoomed zooms out instead of closing the viewer.
+            BackHandler(enabled = zoomed) { zoom.reset() }
+        }
+    }
+}
+
+private fun shareLibraryFile(context: android.content.Context, file: File) {
+    runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val type = if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) "video/*" else "image/*"
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            this.type = type
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(android.content.Intent.createChooser(send, "Share wallpaper"))
+    }.onFailure {
+        android.widget.Toast.makeText(context, "Couldn't share this file", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** Everything about one Saved image that doesn't need to be on screen all the time. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun LibraryImageDetailsSheet(
+    file: File,
+    title: String,
+    info: ImageBadgeInfo?,
+    isVideo: Boolean,
+    fileSize: String,
+    rating: Int,
+    onSetRating: (Int) -> Unit,
+    onFindSimilar: (() -> Unit)?,
+    onSaveToGallery: () -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val look by produceState<com.chrisalvis.rotato.data.ImageLook?>(null, file, isVideo) {
+        if (isVideo) return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.chrisalvis.rotato.data.ImageAnalysis.lookFor(context.applicationContext, file) }.getOrNull()
+        }
+    }
+    val pillContainer = MaterialTheme.colorScheme.surfaceVariant
+    val pillContent = MaterialTheme.colorScheme.onSurfaceVariant
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (isVideo) {
+                        val d = info?.durationMs ?: 0L
+                        InfoPill(if (d > 0L) "Video · ${formatVideoDuration(d)}" else "Video", container = pillContainer, content = pillContent, bold = true)
+                    }
+                    if (info != null) {
+                        sizeClassOf(info.width, info.height)?.let { InfoPill(it, container = pillContainer, content = pillContent, bold = true) }
+                        InfoPill("${info.width} × ${info.height}", container = pillContainer, content = pillContent)
+                        val ratio = info.width.toFloat() / info.height
+                        InfoPill(
+                            if (ratio > 1.15f) "Landscape" else if (ratio < 0.87f) "Portrait" else "Square",
+                            container = pillContainer,
+                            content = pillContent,
                         )
                     }
+                    InfoPill(fileSize, container = pillContainer, content = pillContent)
+                }
+            }
 
-                    // Star rating
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            SheetSection("Your rating") {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    (1..5).forEach { star ->
+                        Icon(
+                            imageVector = if (star <= rating) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                            contentDescription = "Rate $star",
+                            tint = if (star <= rating) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .clickable { onSetRating(star) }
+                                .padding(2.dp)
+                        )
+                    }
+                }
+            }
+
+            val colours = look?.colours.orEmpty()
+            if (colours.isNotEmpty()) {
+                SheetSection("Colours") {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        (1..5).forEach { star ->
-                            Icon(
-                                imageVector = if (star <= currentRating) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                                contentDescription = "Rate $star",
-                                tint = if (star <= currentRating) Color(0xFFFFD700) else Color.White.copy(alpha = 0.35f),
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .clickable { onSetRating(file, star) }
-                            )
+                        colours.forEach { colour ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(colour.swatch))
+                                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(colour.label, style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
-
-                    // Action row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FilledIconButton(
-                            onClick = { onSetWallpaper(file) },
-                            modifier = Modifier.size(56.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(
-                                Icons.Default.Wallpaper,
-                                contentDescription = "Set as Wallpaper",
-                                modifier = Modifier.size(26.dp),
-                                tint = Color.White
-                            )
-                        }
-
-                        OutlinedIconButton(
-                            onClick = { onSaveToGallery(file) },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(
-                                Icons.Default.SaveAlt,
-                                contentDescription = "Save to gallery",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        OutlinedIconButton(
-                            onClick = { onPlayNext(file) },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.PlaylistAdd,
-                                contentDescription = "Play next",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        if (collections.isNotEmpty()) OutlinedIconButton(
-                            onClick = { collectionPickFor = file },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Add to collection", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-
-                        if (!com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) OutlinedIconButton(
-                            onClick = { screenPreviewFor = file },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(Icons.Default.Wallpaper, contentDescription = "Preview on my screens", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-
-                        OutlinedIconButton(
-                            onClick = {
-                                runCatching {
-                                    val uri = androidx.core.content.FileProvider.getUriForFile(viewerContext, "${viewerContext.packageName}.fileprovider", file)
-                                    val type = if (com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)) "video/*" else "image/*"
-                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        this.type = type
-                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    viewerContext.startActivity(android.content.Intent.createChooser(send, "Share wallpaper"))
-                                }.onFailure {
-                                    android.widget.Toast.makeText(viewerContext, "Couldn't share this file", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-
-                        Spacer(Modifier.weight(1f))
-
-                        OutlinedIconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onRemove(file)
-                            },
-                            modifier = Modifier.size(44.dp),
-                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Remove",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
+                    if (onFindSimilar != null) {
+                        FilledTonalButton(onClick = onFindSimilar) {
+                            Icon(Icons.Default.ImageSearch, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Find similar")
                         }
                     }
                 }
             }
 
-            if (showZoom) {
-                currentFile?.let { file ->
-                    ZoomFileImageDialog(file = file, onDismiss = { showZoom = false })
-                }
+            Column {
+                DetailsSheetRow(Icons.Default.SaveAlt, "Save to phone gallery", onClick = onSaveToGallery)
+                DetailsSheetRow(
+                    Icons.Default.Delete,
+                    "Remove from Saved",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onRemove()
+                    },
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun DetailsSheetRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = tint)
     }
 }
 
@@ -1630,63 +1738,6 @@ internal fun PreviewHost(inline: Boolean, onDismiss: () -> Unit, modifier: Modif
             onDismissRequest = onDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) { Box(Modifier.volumeUpUnmutes()) { content() } }
-    }
-}
-
-@Composable
-private fun ZoomFileImageDialog(file: File, onDismiss: () -> Unit) {
-    BackHandler(onBack = onDismiss)
-    var scale by remember { mutableStateOf(1f) }
-    var panOffset by remember { mutableStateOf(Offset.Zero) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val next = (scale * zoomChange).coerceIn(1f, 8f)
-        scale = next
-        panOffset = if (next > 1f) panOffset + panChange * next else Offset.Zero
-    }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = {
-                        if (scale > 1.5f) {
-                            scale = 1f
-                            panOffset = Offset.Zero
-                        } else {
-                            scale = 2.5f
-                        }
-                    })
-                }
-        ) {
-            AsyncImage(
-                model = file,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = panOffset.x
-                        translationY = panOffset.y
-                    }
-                    .transformable(state = transformState)
-            )
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close zoom", tint = Color.White)
-            }
-        }
     }
 }
 

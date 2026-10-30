@@ -1568,7 +1568,8 @@ private fun WallpaperDetailOverlay(
     var chromeVisible by remember { mutableStateOf(true) }
     val zoomed = zoom.zoomed
     var showInfoExpanded by remember { mutableStateOf(false) }
-    var dockHinted by rememberSaveable { mutableStateOf(false) }
+    var saveMenu by remember { mutableStateOf(false) }
+    var showTryOn by remember { mutableStateOf(false) }
     // Skip moves on to the next image; this offers a few seconds to take it back.
     var undoVisible by remember { mutableStateOf(false) }
     var undoTick by remember { mutableIntStateOf(0) }
@@ -1877,59 +1878,63 @@ private fun WallpaperDetailOverlay(
                 else -> Unit
             }
         }
-        // One set of actions, shown in the dock and again at the top of the details sheet, so
-        // the expanded view reads as the dock grown taller rather than a different screen.
-        val actions: @Composable (Modifier) -> Unit = { mod ->
-            ViewerActions(
-                wallpaper = wallpaper,
-                saved = savedIn.isNotEmpty(),
-                isDownloading = isDownloading,
-                foldPairState = foldPairState,
-                lists = lists,
-                savedIn = savedIn,
-                lockedHiddenCount = lockedHiddenCount,
-                onToggleInList = { list -> onToggleInList(wallpaper, list) },
-                onCreateList = { onAddToList(wallpaper, null) },
-                onUnlockLists = onUnlockLists,
-                onSetWallpaper = { onSetWallpaper(wallpaper) },
-                onLibrary = { onDownloadToRotation(wallpaper) },
-                onFoldPair = onFoldPair,
-                onShare = shareWallpaper,
-                onSkip = {
-                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    showInfoExpanded = false
-                    onSkip(wallpaper)
-                    undoVisible = true
-                    undoTick++
-                },
-                modifier = mod,
-            )
+        val onSkipCurrent: () -> Unit = {
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            showInfoExpanded = false
+            onSkip(wallpaper)
+            undoVisible = true
+            undoTick++
         }
+        val saved = savedIn.isNotEmpty()
+        // The five main actions, labelled, in the bottom bar. Library and fold pair live in the
+        // details sheet.
+        val viewerActions = listOfNotNull(
+            // Videos can be set too: they play through Rotato's live wallpaper.
+            ViewerAction(Icons.Outlined.Wallpaper, "Set", onClick = { onSetWallpaper(wallpaper) }, primary = true),
+            ViewerAction(
+                if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                if (saved) "Saved" else "Save",
+                onClick = { if (lists.isEmpty() && lockedHiddenCount == 0) onAddToList(wallpaper, null) else saveMenu = true },
+                active = saved,
+            ),
+            if (!wallpaper.isVideo) ViewerAction(Icons.Default.Smartphone, "Try it on", onClick = { showTryOn = true }) else null,
+            ViewerAction(Icons.Default.ThumbDown, "Not for me", onClick = onSkipCurrent),
+            ViewerAction(Icons.Default.Share, "Share", onClick = shareWallpaper),
+        )
+        val (resW, resH) = remember(wallpaper.resolution) {
+            wallpaper.resolution.lowercase().split('x', '×').mapNotNull { it.trim().toIntOrNull() }
+                .let { if (it.size == 2) it[0] to it[1] else 0 to 0 }
+        }
+        val foldFriendly = foldCanvas != null && resW > 0 && resH > 0 &&
+            com.chrisalvis.rotato.data.isFoldFriendly(resW, resH, foldCanvas)
+        val captionTitle = wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source)
+        val captionSubtitle = listOfNotNull(
+            sourceDisplayName(wallpaper.source),
+            sizeCaption(wallpaper.resolution),
+            if (foldFriendly) "Fold-friendly" else null,
+            if (wallpaper.isVideo) "Video" else null,
+        ).joinToString(" · ")
+        // The nav-bar inset ViewerBottomBar pads itself with; left out of the measured height
+        // because VideoPlayerView adds navigationBarsPadding() to its seek bar on its own.
+        val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
 
-        // Facts about the image float as glass pills over the image itself; no scrim, so the
-        // picture runs edge to edge. Tapping them opens the details.
+        // Back, "12 of 148", details: glass buttons over the image, no scrim.
         AnimatedVisibility(
             visible = chromeVisible && !zoomed,
             enter = fadeIn(tween(180)),
             exit = fadeOut(tween(180)),
             modifier = Modifier.align(Alignment.TopStart)
         ) {
-            ImageInfoPills(
-                onClick = { showInfoExpanded = true },
-                wallpaper = wallpaper,
-                foldCanvas = foldCanvas,
-                position = if (items.size > 1) "${pagerState.currentPage + 1} / ${items.size}" +
+            ViewerTopBar(
+                position = if (items.size > 1) "${pagerState.currentPage + 1} of ${items.size}" +
                     (if (loadingMore && pagerState.currentPage >= items.size - 3) " · loading more…" else "") else null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                onBack = onDismiss,
+                onDetails = { showInfoExpanded = true },
             )
         }
 
-        // The dock: a floating glass card holding the image's name and the main actions, with a
-        // handle that says it can be pulled up. Pulling it (or swiping up anywhere) opens the
-        // same card at full height with everything else.
+        // The bottom bar: caption, filmstrip and the labelled actions over a gradient. Dragging
+        // it up (or tapping the caption) opens the details.
         AnimatedVisibility(
             visible = chromeVisible && !zoomed,
             enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { it / 3 },
@@ -1939,27 +1944,56 @@ private fun WallpaperDetailOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // navigationBarsPadding must come before the measurement below, or the reported
-                    // height double-counts the nav-bar inset once here and again in VideoPlayerView's
-                    // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
-                    .navigationBarsPadding()
-                    .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                    .onGloballyPositioned {
+                        bottomPanelHeight = with(density) { (it.size.height - navBarBottomPx).coerceAtLeast(0).toDp() }
+                    },
                 contentAlignment = Alignment.BottomCenter
             ) {
-                ViewerDock(
-                    title = wallpaper.tags.firstOrNull()?.replace('_', ' ') ?: sourceDisplayName(wallpaper.source),
-                    subtitle = wallpaper.tags.drop(1).let { rest ->
-                        if (rest.isEmpty()) null
-                        else rest.take(3).joinToString(" · ") { it.replace('_', ' ') } + if (rest.size > 3) " · +${rest.size - 3}" else ""
-                    },
-                    onExpand = { showInfoExpanded = true },
-                    actions = actions,
-                    hint = !dockHinted,
-                    onHinted = { dockHinted = true },
-                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
+                ViewerBottomBar(
+                    title = captionTitle,
+                    subtitle = captionSubtitle,
+                    actions = viewerActions,
+                    onDetails = { showInfoExpanded = true },
+                    filmstrip = items.map { if (it.isVideo) it.thumbUrl.takeUnless { u -> u.isBlank() || MediaType.isVideoUrl(u) } else it.gridUrl },
+                    currentIndex = pagerState.currentPage,
+                    onJump = { i -> coroutineScope.launch { pagerState.scrollToPage(i) } },
                 )
+                // Anchor for the Save menu: it opens over the bar, from its top edge.
+                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(0.dp)) {
+                    DropdownMenu(expanded = saveMenu, onDismissRequest = { saveMenu = false }) {
+                        lists.forEach { list ->
+                            val inList = list.id in savedIn
+                            DropdownMenuItem(
+                                text = { Text(list.name) },
+                                leadingIcon = {
+                                    Icon(if (inList) Icons.Default.Check else Icons.Default.Add, contentDescription = null)
+                                },
+                                onClick = { onToggleInList(wallpaper, list) }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("New collection…") },
+                            leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
+                            onClick = { saveMenu = false; onAddToList(wallpaper, null) }
+                        )
+                        if (lockedHiddenCount > 0) {
+                            DropdownMenuItem(
+                                text = { Text("Unlock $lockedHiddenCount locked") },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                onClick = { saveMenu = false; onUnlockLists() }
+                            )
+                        }
+                    }
+                }
             }
+        }
+
+        if (showTryOn && !wallpaper.isVideo) {
+            ScreenPreviewDialog(
+                imageUrl = wallpaper.fullUrl.ifBlank { wallpaper.sampleUrl },
+                onSet = { onSetWallpaper(wallpaper) },
+                onDismiss = { showTryOn = false },
+            )
         }
 
         LaunchedEffect(undoTick) {
@@ -2034,7 +2068,11 @@ private fun WallpaperDetailOverlay(
             ImageDetailsSheet(
                 wallpaper = wallpaper,
                 foldCanvas = foldCanvas,
-                actions = actions,
+                isDownloading = isDownloading,
+                onLibrary = { onDownloadToRotation(wallpaper) },
+                foldPairState = foldPairState,
+                onFoldPair = { showInfoExpanded = false; onFoldPair() },
+                onTryOn = { showInfoExpanded = false; showTryOn = true },
                 lists = lists,
                 savedIn = savedIn,
                 lockedHiddenCount = lockedHiddenCount,
@@ -2741,91 +2779,6 @@ private fun ImageInfoPills(
 
 private enum class FoldPairState { Idle, PickedHere, ReadyToPair, Busy }
 
-/** The main actions as labelled buttons; used by the dock and by the details sheet. */
-@Composable
-private fun ViewerActions(
-    wallpaper: BrainrotWallpaper,
-    saved: Boolean,
-    isDownloading: Boolean,
-    foldPairState: FoldPairState?,
-    lists: List<LocalList>,
-    savedIn: Set<String>,
-    lockedHiddenCount: Int,
-    onToggleInList: (LocalList) -> Unit,
-    onCreateList: () -> Unit,
-    onUnlockLists: () -> Unit,
-    onSetWallpaper: () -> Unit,
-    onLibrary: () -> Unit,
-    onFoldPair: () -> Unit,
-    onShare: () -> Unit,
-    onSkip: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.SpaceEvenly) {
-        Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
-            var menu by remember { mutableStateOf(false) }
-            DockAction(
-                icon = if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                label = if (saved) "Saved" else "Save",
-                highlighted = true,
-                onClick = { if (lists.isEmpty() && lockedHiddenCount == 0) onCreateList() else menu = true }
-            )
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                lists.forEach { list ->
-                    val inList = list.id in savedIn
-                    DropdownMenuItem(
-                        text = { Text(list.name) },
-                        leadingIcon = {
-                            Icon(if (inList) Icons.Default.Check else Icons.Default.Add, contentDescription = null)
-                        },
-                        onClick = { onToggleInList(list) }
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text("New collection…") },
-                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
-                    onClick = { menu = false; onCreateList() }
-                )
-                if (lockedHiddenCount > 0) {
-                    DropdownMenuItem(
-                        text = { Text("Unlock $lockedHiddenCount locked") },
-                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                        onClick = { menu = false; onUnlockLists() }
-                    )
-                }
-            }
-        }
-        // Videos can be set too: they play through Rotato's live wallpaper.
-        DockAction(Icons.Outlined.Wallpaper, "Set", onClick = onSetWallpaper, modifier = Modifier.weight(1f))
-        if (!wallpaper.isVideo) {
-            DockAction(
-                Icons.Default.Download,
-                if (isDownloading) "Adding…" else "Library",
-                enabled = !isDownloading,
-                onClick = onLibrary,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        if (foldPairState != null) {
-            DockAction(
-                Icons.Default.Smartphone,
-                when (foldPairState) {
-                    FoldPairState.Busy -> "Pairing…"
-                    FoldPairState.Idle -> if (LocalConfiguration.current.screenWidthDp < 400) "Pair" else "Fold pair"
-                    FoldPairState.PickedHere -> "Cover ✓"
-                    FoldPairState.ReadyToPair -> "Pair"
-                },
-                highlighted = foldPairState == FoldPairState.PickedHere || foldPairState == FoldPairState.ReadyToPair,
-                enabled = foldPairState != FoldPairState.Busy,
-                onClick = onFoldPair,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        DockAction(Icons.Default.Share, "Share", onClick = onShare, modifier = Modifier.weight(1f))
-        DockAction(Icons.Default.SkipNext, "Skip", onClick = onSkip, modifier = Modifier.weight(1f))
-    }
-}
-
 /** Collections as toggle pills, the same idea as the unfolded rail, for the details sheet. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -2888,7 +2841,11 @@ private fun CollectionPills(
 private fun ImageDetailsSheet(
     wallpaper: BrainrotWallpaper,
     foldCanvas: com.chrisalvis.rotato.data.WallpaperCanvas?,
-    actions: @Composable (Modifier) -> Unit,
+    isDownloading: Boolean,
+    onLibrary: () -> Unit,
+    foldPairState: FoldPairState?,
+    onFoldPair: () -> Unit,
+    onTryOn: () -> Unit,
     lists: List<LocalList>,
     savedIn: Set<String>,
     lockedHiddenCount: Int,
@@ -2906,10 +2863,6 @@ private fun ImageDetailsSheet(
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    var showScreenPreview by remember { mutableStateOf(false) }
-    if (showScreenPreview) {
-        ScreenPreviewDialog(imageUrl = wallpaper.fullUrl, onSet = onSetWallpaper, onDismiss = { showScreenPreview = false })
-    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
@@ -2931,7 +2884,38 @@ private fun ImageDetailsSheet(
                 ImageInfoPills(onClick = {}, wallpaper = wallpaper, foldCanvas = foldCanvas, position = null)
             }
 
-            actions(Modifier.fillMaxWidth())
+            // Set and the rarer ways to keep it: Library (rotation) and the Fold pair.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = onSetWallpaper) {
+                    Icon(Icons.Outlined.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Set")
+                }
+                if (!wallpaper.isVideo) {
+                    FilledTonalButton(onClick = onLibrary, enabled = !isDownloading) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (isDownloading) "Adding…" else "Add to Library")
+                    }
+                }
+                if (foldPairState != null) {
+                    FilledTonalButton(onClick = onFoldPair, enabled = foldPairState != FoldPairState.Busy) {
+                        Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            when (foldPairState) {
+                                FoldPairState.Busy -> "Pairing…"
+                                FoldPairState.Idle -> "Fold pair"
+                                FoldPairState.PickedHere -> "Cover ✓"
+                                FoldPairState.ReadyToPair -> "Pair"
+                            }
+                        )
+                    }
+                }
+            }
 
             SheetSection("Collections") {
                 CollectionPills(
@@ -2962,10 +2946,10 @@ private fun ImageDetailsSheet(
                 }
             }
             if (!wallpaper.isVideo) {
-                OutlinedButton(onClick = { showScreenPreview = true }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onTryOn, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Preview on my screens")
+                    Text("Try it on")
                 }
             }
 

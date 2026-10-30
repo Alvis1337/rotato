@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -2351,6 +2352,7 @@ private fun WallpaperUrlPreviewDialog(
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
+    var showScreenPreview by remember { mutableStateOf(false) }
     var dockHinted by remember { mutableStateOf(false) }
     // Measured height of the bottom info/action panel below — the video's seek bar reads this
     // so it renders above the panel instead of sitting underneath its (touchable) rows.
@@ -2457,11 +2459,11 @@ private fun WallpaperUrlPreviewDialog(
 
             HorizontalPager(
                 state = pagerState,
-                // Beside the grid, keep the picture between the info pills and the dock instead of under them.
+                // Beside the grid, keep the picture between the top bar and the bottom bar instead of under them.
                 modifier = Modifier
                     .aboveTabletopFold()
                     .fillMaxSize()
-                    .then(if (inline) Modifier.statusBarsPadding().padding(top = 56.dp, bottom = bottomPanelHeight) else Modifier),
+                    .then(if (inline) Modifier.statusBarsPadding().padding(top = 60.dp, bottom = bottomPanelHeight) else Modifier),
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !zoomed,
             ) { page ->
@@ -2528,51 +2530,30 @@ private fun WallpaperUrlPreviewDialog(
                 }
             }
 
-            // Same language as Discover: glass pills over the image at the top, a dock at the
-            // bottom that pulls up into a sheet with everything else. One tap hides it all.
+            // The shared viewer look (GalleryViewer.kt): back / "12 of 148" / details along the top;
+            // caption, filmstrip and the main labelled actions along the bottom. Everything rarer
+            // lives in the details sheet. One tap on the image hides it all.
             currentWallpaper?.let { wp ->
                 val inRotation = isInRotation(wp)
-                val actions: @Composable (Modifier) -> Unit = { mod ->
-                    Row(mod, horizontalArrangement = Arrangement.SpaceEvenly) {
-                        // Same actions as Discover's viewer; videos play through the live wallpaper.
-                        DockAction(Icons.Outlined.Wallpaper, "Set", onClick = { onSetWallpaper(wp) }, modifier = Modifier.weight(1f))
-                        DockAction(
-                            if (inRotation) Icons.Default.Check else Icons.Default.Download,
-                            if (inRotation) "In Library" else "Library",
-                            highlighted = inRotation,
-                            enabled = !wp.isVideo,
+                val actions = buildList {
+                    add(ViewerAction(Icons.Outlined.Wallpaper, "Set", onClick = { onSetWallpaper(wp) }, primary = true))
+                    add(
+                        ViewerAction(
+                            Icons.Default.Autorenew,
+                            if (inRotation) "Rotating" else "Rotate",
                             onClick = { onToggleRotation(wp) },
-                            modifier = Modifier.weight(1f)
+                            active = inRotation,
+                            // Videos play through the live wallpaper, not the rotation.
+                            enabled = !wp.isVideo,
                         )
-                        if (canFoldPair && !wp.isVideo) {
-                            val pickedHere = foldPairOuter?.let { it.fullUrl == wp.fullUrl } == true
-                            DockAction(
-                                Icons.Default.Smartphone,
-                                when {
-                                    foldPairBusy -> "Pairing…"
-                                    pickedHere -> "Cover ✓"
-                                    foldPairOuter != null -> "Pair"
-                                    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400 -> "Pair"
-                                    else -> "Fold pair"
-                                },
-                                highlighted = foldPairOuter != null,
-                                enabled = !foldPairBusy,
-                                onClick = { onFoldPair(wp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        DockAction(Icons.Default.Share, "Share", onClick = { onShare(wp) }, modifier = Modifier.weight(1f))
-                        if (wp.entryId.isNotBlank()) {
-                            DockAction(
-                                Icons.Default.Delete, "Remove",
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onRemoveFromCollection(wp)
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                    )
+                    if (!wp.isVideo) {
+                        add(ViewerAction(Icons.Default.Smartphone, "Try it on", onClick = { showScreenPreview = true }))
                     }
+                    if (onPlayNext != null && inRotation && !wp.isVideo) {
+                        add(ViewerAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Play next", onClick = { onPlayNext(wp) }))
+                    }
+                    add(ViewerAction(Icons.Default.Share, "Share", onClick = { onShare(wp) }))
                 }
 
                 androidx.compose.animation.AnimatedVisibility(
@@ -2581,32 +2562,11 @@ private fun WallpaperUrlPreviewDialog(
                     exit = androidx.compose.animation.fadeOut(tween(180)),
                     modifier = Modifier.align(Alignment.TopStart)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        @OptIn(ExperimentalLayoutApi::class)
-                        FlowRow(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(
-                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = { showDetails = true }
-                                ),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) { CollectionInfoPills(wp, if (wallpapers.size > 1) "${pagerState.currentPage + 1} / ${wallpapers.size}" else null) }
-                        IconButton(
-                            onClick = { onDismiss(currentWallpaper) },
-                            modifier = Modifier.size(36.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
-                        }
-                    }
+                    ViewerTopBar(
+                        position = if (wallpapers.size > 1) "${pagerState.currentPage + 1} of ${wallpapers.size}" else null,
+                        onBack = { onDismiss(currentWallpaper) },
+                        onDetails = { showDetails = true },
+                    )
                 }
 
                 androidx.compose.animation.AnimatedVisibility(
@@ -2615,36 +2575,39 @@ private fun WallpaperUrlPreviewDialog(
                     exit = androidx.compose.animation.fadeOut(tween(180)) + androidx.compose.animation.slideOutVertically(tween(180)) { it / 3 },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // navigationBarsPadding must come before the measurement below, or the reported
-                            // height double-counts the nav-bar inset once here and again in VideoPlayerView's
-                            // own navigationBarsPadding() when this height is passed through as seekBarBottomInset.
-                            .navigationBarsPadding()
-                            .onGloballyPositioned { bottomPanelHeight = with(density) { it.size.height.toDp() } }
-                            .padding(12.dp),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        ViewerDock(
-                            title = wp.tags.firstOrNull()?.replace('_', ' ') ?: wp.animeTitle.ifBlank { wp.source.replaceFirstChar { it.uppercase() } },
-                            subtitle = wp.tags.drop(1).let { rest ->
-                                if (rest.isEmpty()) wp.animeTitle.takeIf { wp.tags.isNotEmpty() && it.isNotBlank() }
-                                else rest.take(3).joinToString(" · ") { it.replace('_', ' ') } + if (rest.size > 3) " · +${rest.size - 3}" else ""
-                            },
-                            onExpand = { showDetails = true },
-                            actions = actions,
-                            hint = !dockHinted,
-                            onHinted = { dockHinted = true },
-                            modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
-                        )
-                    }
+                    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
+                    ViewerBottomBar(
+                        title = wp.tags.firstOrNull()?.replace('_', ' ') ?: wp.animeTitle.ifBlank { wp.source.replaceFirstChar { it.uppercase() } },
+                        subtitle = listOfNotNull(
+                            wp.source.takeIf { it.isNotBlank() }?.let { if (it == "device") "On device" else it.replaceFirstChar { c -> c.uppercase() } },
+                            "Video".takeIf { wp.isVideo },
+                            sizeCaption(wp.resolution),
+                        ).joinToString(" · ").ifBlank { null },
+                        actions = actions,
+                        onDetails = { showDetails = true },
+                        filmstrip = wallpapers.map { it.thumbUrl.ifBlank { it.sampleUrl } },
+                        currentIndex = pagerState.currentPage,
+                        onJump = { coroutineScope.launch { pagerState.scrollToPage(it) } },
+                        // ViewerBottomBar applies navigationBarsPadding itself, so leave the nav-bar inset
+                        // out of the reported height: VideoPlayerView adds its own navigationBarsPadding()
+                        // on top of seekBarBottomInset, and counting it here too would double it.
+                        modifier = Modifier.onGloballyPositioned {
+                            bottomPanelHeight = with(density) { (it.size.height - navBarBottomPx).coerceAtLeast(0).toDp() }
+                        },
+                    )
+                }
+
+                if (showScreenPreview) {
+                    ScreenPreviewDialog(
+                        imageUrl = wp.fullUrl.ifBlank { wp.sampleUrl.ifBlank { wp.thumbUrl } },
+                        onSet = { showScreenPreview = false; onSetWallpaper(wp) },
+                        onDismiss = { showScreenPreview = false },
+                    )
                 }
 
                 if (showDetails) {
                     CollectionImageSheet(
                         wallpaper = wp,
-                        actions = actions,
                         moveTargets = if (wp.entryId.isNotBlank()) moveTargets else emptyList(),
                         onMoveTo = { target -> showDetails = false; onMoveTo(wp, target) },
                         onCopyUrl = { onCopyUrl(wp) },
@@ -2652,8 +2615,22 @@ private fun WallpaperUrlPreviewDialog(
                         onSetAsCover = if (wp.isVideo) null else ({ showDetails = false; onSetAsCover(wp) }),
                         onTagSearch = { tag -> showDetails = false; onTagSearch(tag) },
                         onTagTier = onTagTier,
-                        onSetWallpaper = { showDetails = false; onSetWallpaper(wp) },
-                        onPlayNext = if (onPlayNext != null && inRotation && !wp.isVideo) ({ showDetails = false; onPlayNext(wp) }) else null,
+                        foldPairLabel = if (canFoldPair && !wp.isVideo) {
+                            val pickedHere = foldPairOuter?.let { it.fullUrl == wp.fullUrl } == true
+                            when {
+                                foldPairBusy -> "Pairing…"
+                                pickedHere -> "Cover screen ✓"
+                                foldPairOuter != null -> "Pair with cover"
+                                else -> "Fold pair"
+                            }
+                        } else null,
+                        foldPairEnabled = !foldPairBusy,
+                        onFoldPair = { onFoldPair(wp) },
+                        onRemove = if (wp.entryId.isNotBlank()) ({
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showDetails = false
+                            onRemoveFromCollection(wp)
+                        }) else null,
                         onDismiss = { showDetails = false },
                     )
                 }
@@ -2673,12 +2650,11 @@ private fun CollectionInfoPills(wp: BrowseWallpaper, position: String?) {
     if (position != null) InfoPill(position)
 }
 
-/** The Collections viewer's dock at full height: facts, the same actions, moving, and tags. */
+/** The Collections viewer's details sheet: facts, the rarer actions, moving, tags, and removing. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun CollectionImageSheet(
     wallpaper: BrowseWallpaper,
-    actions: @Composable (Modifier) -> Unit,
     moveTargets: List<LocalList>,
     onMoveTo: (LocalList) -> Unit,
     onCopyUrl: () -> Unit,
@@ -2686,16 +2662,16 @@ private fun CollectionImageSheet(
     onSetAsCover: (() -> Unit)? = null,
     onTagSearch: (String) -> Unit = {},
     onTagTier: (String, com.chrisalvis.rotato.data.TagTier) -> Unit = { _, _ -> },
-    onSetWallpaper: () -> Unit = {},
-    onPlayNext: (() -> Unit)? = null,
+    /** Label for the fold-pair button, or null to hide it. */
+    foldPairLabel: String? = null,
+    foldPairEnabled: Boolean = true,
+    onFoldPair: () -> Unit = {},
+    /** Removes the image from this collection; null hides the button. */
+    onRemove: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     var tagMenu by remember { mutableStateOf<String?>(null) }
-    var showScreenPreview by remember { mutableStateOf(false) }
-    if (showScreenPreview) {
-        ScreenPreviewDialog(imageUrl = wallpaper.fullUrl, onSet = onSetWallpaper, onDismiss = { showScreenPreview = false })
-    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)) {
         Column(
             modifier = Modifier
@@ -2719,8 +2695,8 @@ private fun CollectionImageSheet(
                 }
             }
 
-            actions(Modifier.fillMaxWidth())
-
+            // The main actions (Set, Rotate, Try it on, Play next, Share) live on the viewer's
+            // bottom bar; this sheet holds the rarer ones.
             if (moveTargets.isNotEmpty()) {
                 SheetSection("Move to") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2737,13 +2713,6 @@ private fun CollectionImageSheet(
             }
 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (onPlayNext != null) {
-                    FilledTonalButton(onClick = onPlayNext) {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Play next")
-                    }
-                }
                 val page = wallpaper.pageUrl.takeIf { it.startsWith("http") }
                 if (page != null) {
                     FilledTonalButton(onClick = {
@@ -2771,11 +2740,11 @@ private fun CollectionImageSheet(
                         Text("Use as cover")
                     }
                 }
-                if (!wallpaper.isVideo) {
-                    FilledTonalButton(onClick = { showScreenPreview = true }) {
+                if (foldPairLabel != null) {
+                    FilledTonalButton(onClick = onFoldPair, enabled = foldPairEnabled) {
                         Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Preview on my screens")
+                        Text(foldPairLabel)
                     }
                 }
             }
@@ -2807,6 +2776,16 @@ private fun CollectionImageSheet(
                             }
                         }
                     }
+                }
+            }
+            if (onRemove != null) {
+                TextButton(
+                    onClick = onRemove,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Remove from collection")
                 }
             }
         }
