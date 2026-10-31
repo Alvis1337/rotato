@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -111,11 +113,19 @@ internal fun ViewerBottomBar(
     filmstrip: List<Any?> = emptyList(),
     currentIndex: Int = 0,
     onJump: (Int) -> Unit = {},
+    /** Any touch on the bar, so a playing video's controls don't hide while it's being used. */
+    onTouch: () -> Unit = {},
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         modifier = modifier
             .fillMaxWidth()
+            .pointerInput(onTouch) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    onTouch()
+                }
+            }
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.85f))))
             .pointerInput(onDetails) {
                 var dragged = 0f

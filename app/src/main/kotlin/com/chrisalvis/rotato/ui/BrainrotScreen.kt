@@ -515,6 +515,8 @@ fun BrainrotScreen(
     }
 
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // One tap on Taste opens it once, even if tapped again while the sheet slides away.
+    var openingTaste by remember { mutableStateOf(false) }
     if (showSettings) {
         ModalBottomSheet(
             onDismissRequest = { showSettings = false },
@@ -545,10 +547,17 @@ fun BrainrotScreen(
                 onSetCompactGrid = { vm.setViewMode(if (it) DiscoverViewMode.COMPACT else DiscoverViewMode.GRID) },
                 // Let the sheet slide away first, so it isn't still on screen over the Taste page.
                 onTaste = {
-                    coroutineScope.launch {
-                        runCatching { settingsSheetState.hide() }
-                        showSettings = false
-                        onNavigateToTaste()
+                    if (!openingTaste) {
+                        openingTaste = true
+                        coroutineScope.launch {
+                            try {
+                                settingsSheetState.hide()
+                            } finally {
+                                showSettings = false
+                                openingTaste = false
+                            }
+                            onNavigateToTaste()
+                        }
                     }
                 },
                 onDismiss = { showSettings = false }
@@ -1581,6 +1590,8 @@ private fun WallpaperDetailOverlay(
     val zoom = remember { ZoomState() }
     var showFoldPreview by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
+    // Touches on the bar keep a playing video's controls (and the bar) up.
+    var barTouch by remember { mutableIntStateOf(0) }
     val zoomed = zoom.zoomed
     var showInfoExpanded by remember { mutableStateOf(false) }
     var saveMenu by remember { mutableStateOf(false) }
@@ -1608,6 +1619,8 @@ private fun WallpaperDetailOverlay(
 
     // Fire whenever wallpaper changes — covers both manual swipes and list-shrink advances.
     LaunchedEffect(wallpaper) {
+        // A video may have hidden the chrome; the next page starts with it showing.
+        chromeVisible = true
         zoom.reset()
         showInfoExpanded = false
         onPageChanged(wallpaper)
@@ -1758,7 +1771,7 @@ private fun WallpaperDetailOverlay(
             modifier = Modifier
                 .aboveTabletopFold()
                 .fillMaxSize()
-                .then(if (inPane) Modifier.statusBarsPadding().padding(top = 56.dp, bottom = bottomPanelHeight) else Modifier),
+                .then(if (inPane) Modifier.statusBarsPadding().padding(top = 60.dp, bottom = bottomPanelHeight) else Modifier),
             beyondViewportPageCount = 1,
             userScrollEnabled = !zoomed,
         ) { page ->
@@ -1790,7 +1803,9 @@ private fun WallpaperDetailOverlay(
                     // In a pane the video already ends above the dock, so its seek bar sits at its own bottom.
                     seekBarBottomInset = if (inPane) 0.dp else bottomPanelHeight,
                     controlsVisible = chromeVisible,
-                    onControlsVisibleChange = { chromeVisible = it },
+                    // Stays up while a menu or the details are open.
+                        onControlsVisibleChange = { if (it || !(saveMenu || showInfoExpanded)) chromeVisible = it },
+                        controlsActivity = barTouch,
                     posterUrl = item.thumbUrl.ifBlank { item.sampleUrl }.takeUnless { it.isBlank() || MediaType.isVideoUrl(it) },
                 )
             } else if (item.isVideo) {
@@ -1965,6 +1980,7 @@ private fun WallpaperDetailOverlay(
                 contentAlignment = Alignment.BottomCenter
             ) {
                 ViewerBottomBar(
+                    onTouch = { barTouch++ },
                     title = captionTitle,
                     subtitle = captionSubtitle,
                     actions = viewerActions,

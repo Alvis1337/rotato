@@ -1324,6 +1324,8 @@ private fun ImagePreviewDialog(
     val zoom = remember { ZoomState() }
     val zoomed = zoom.zoomed
     var chromeVisible by remember { mutableStateOf(true) }
+    // Touches on the bar keep a playing video's controls (and the bar) up.
+    var barTouch by remember { mutableIntStateOf(0) }
     var showDetails by remember { mutableStateOf(false) }
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
@@ -1342,7 +1344,7 @@ private fun ImagePreviewDialog(
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) { zoom.reset() }
+    LaunchedEffect(pagerState.currentPage) { zoom.reset(); chromeVisible = true }
 
     PreviewHost(inline = inline, onDismiss = onDismiss, modifier = modifier) {
         Box(
@@ -1442,7 +1444,9 @@ private fun ImagePreviewDialog(
                             allowDoubleTapSeek = true,
                             seekBarBottomInset = bottomPanelHeight,
                             controlsVisible = chromeVisible,
-                            onControlsVisibleChange = { chromeVisible = it },
+                            // Stays up while a menu or the details are open.
+                        onControlsVisibleChange = { if (it || !(showDetails)) chromeVisible = it },
+                        controlsActivity = barTouch,
                         )
                     } else {
                         AsyncImage(model = pageFile, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
@@ -1522,6 +1526,7 @@ private fun ImagePreviewDialog(
                     modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
                     ViewerBottomBar(
+                    onTouch = { barTouch++ },
                         title = title,
                         subtitle = subtitle,
                         actions = actions,

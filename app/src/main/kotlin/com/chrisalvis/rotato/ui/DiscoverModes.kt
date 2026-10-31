@@ -236,6 +236,9 @@ internal fun DiscoverFeed(
         // Caption and actions fade out while a video plays; a tap brings them back.
         var chromeVisible by remember { mutableStateOf(true) }
         val chromeAlpha by androidx.compose.animation.core.animateFloatAsState(if (chromeVisible) 1f else 0f, label = "reelChrome")
+        // Back on a page whose video isn't playing, its caption and actions show again.
+        val pagePlaying = active && page == pager.currentPage && !blurred
+        LaunchedEffect(pagePlaying) { if (!pagePlaying) chromeVisible = true }
         Box(Modifier.fillMaxSize()) {
             ReelMedia(
                 wp = wp,

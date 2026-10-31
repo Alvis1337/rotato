@@ -283,6 +283,8 @@ fun VideoPlayerView(
      */
     controlsVisible: Boolean = true,
     onControlsVisibleChange: ((Boolean) -> Unit)? = null,
+    /** Bumped by the caller when its own chrome is touched; restarts the auto-hide countdown. */
+    controlsActivity: Int = 0,
 ) {
     val managed = onControlsVisibleChange != null
     val showControls = !managed || controlsVisible
@@ -364,13 +366,18 @@ fun VideoPlayerView(
     var controlsTouch by remember(exoPlayer) { mutableIntStateOf(0) }
     val holdScope = androidx.compose.runtime.rememberCoroutineScope()
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    LaunchedEffect(exoPlayer, VideoSpeedState.speed, holdingFast) {
-        exoPlayer.setPlaybackSpeed(if (holdingFast) 2f else VideoSpeedState.speed)
+    // The chosen speed belongs to the viewers, where its button is; elsewhere (Play, previews)
+    // videos play at normal speed unless held.
+    val usesChosenSpeed = managed && showSeekBar
+    LaunchedEffect(exoPlayer, VideoSpeedState.speed, holdingFast, usesChosenSpeed) {
+        exoPlayer.setPlaybackSpeed(if (holdingFast) 2f else if (usesChosenSpeed) VideoSpeedState.speed else 1f)
     }
+    val latestControlsVisible by androidx.compose.runtime.rememberUpdatedState(controlsVisible)
     if (managed) {
         val hide by androidx.compose.runtime.rememberUpdatedState(onControlsVisibleChange)
-        LaunchedEffect(controlsVisible, isPlaying, userSeeking, controlsTouch, hasError) {
-            if (controlsVisible && isPlaying && !userSeeking && !hasError) {
+        // Waits for real playback (not the first buffering), so nothing hides before a frame shows.
+        LaunchedEffect(controlsVisible, isPlaying, isBuffering, userSeeking, controlsTouch, controlsActivity, hasError) {
+            if (controlsVisible && isPlaying && !isBuffering && !userSeeking && !hasError) {
                 delay(2_500)
                 hide?.invoke(false)
             }
@@ -477,25 +484,35 @@ fun VideoPlayerView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(exoPlayer, allowDoubleTapSeek, onDoubleTap, onLongPress, managed, controlsVisible) {
+                    .pointerInput(exoPlayer, allowDoubleTapSeek, onDoubleTap, onLongPress, managed) {
                         detectTapGestures(
                             onPress = {
                                 // Without a caller long-press, holding plays at 2× until release.
                                 if (onLongPress == null) {
-                                val fast = holdScope.launch {
-                                    delay(viewConfiguration.longPressTimeoutMillis)
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    exoPlayer.playWhenReady = true
-                                    holdingFast = true
-                                }
-                                tryAwaitRelease()
-                                fast.cancel()
-                                holdingFast = false
+                                    val wasPlaying = exoPlayer.playWhenReady
+                                    val fast = holdScope.launch {
+                                        delay(viewConfiguration.longPressTimeoutMillis)
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        exoPlayer.playWhenReady = true
+                                        holdingFast = true
+                                    }
+                                    // finally: the gesture can be cancelled mid-hold (the page
+                                    // changes, the player is rebuilt); 2× must never stick.
+                                    try {
+                                        tryAwaitRelease()
+                                    } finally {
+                                        fast.cancel()
+                                        if (holdingFast) {
+                                            holdingFast = false
+                                            // A paused video goes back to paused after the hold.
+                                            if (!wasPlaying) runCatching { exoPlayer.playWhenReady = false }
+                                        }
+                                    }
                                 }
                             },
                             onTap = {
                                 if (managed) {
-                                    onControlsVisibleChange?.invoke(!controlsVisible)
+                                    onControlsVisibleChange?.invoke(!latestControlsVisible)
                                 } else {
                                     exoPlayer.playWhenReady = !exoPlayer.playWhenReady
                                     isPlaying = exoPlayer.playWhenReady

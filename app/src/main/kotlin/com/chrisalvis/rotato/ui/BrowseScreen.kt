@@ -2349,6 +2349,8 @@ private fun WallpaperUrlPreviewDialog(
     val zoom = remember { ZoomState() }
     val zoomed = zoom.zoomed
     var chromeVisible by remember { mutableStateOf(true) }
+    // Touches on the bar keep a playing video's controls (and the bar) up.
+    var barTouch by remember { mutableIntStateOf(0) }
     val offsetY = remember { Animatable(0f) }
     var isDismissing by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
@@ -2360,7 +2362,7 @@ private fun WallpaperUrlPreviewDialog(
 
     BackHandler(onBack = { onDismiss(currentWallpaper) })
 
-    LaunchedEffect(pagerState.currentPage) { zoom.reset() }
+    LaunchedEffect(pagerState.currentPage) { zoom.reset(); chromeVisible = true }
     BackHandler(enabled = zoomed) { zoom.reset() }
 
     // When an item is removed, either close the dialog (list empty) or
@@ -2487,7 +2489,9 @@ private fun WallpaperUrlPreviewDialog(
                         allowDoubleTapSeek = true,
                         seekBarBottomInset = if (inline) 0.dp else bottomPanelHeight,
                         controlsVisible = chromeVisible,
-                        onControlsVisibleChange = { chromeVisible = it },
+                        // Stays up while a menu or the details are open.
+                        onControlsVisibleChange = { if (it || !(showDetails)) chromeVisible = it },
+                        controlsActivity = barTouch,
                     )
                 } else if (wp.isVideo) {
                     val posterUrl = wp.thumbUrl.ifBlank { wp.sampleUrl }.takeUnless { it.isBlank() || com.chrisalvis.rotato.data.MediaType.isVideoUrl(it) }
@@ -2577,6 +2581,7 @@ private fun WallpaperUrlPreviewDialog(
                 ) {
                     val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
                     ViewerBottomBar(
+                    onTouch = { barTouch++ },
                         title = wp.tags.firstOrNull()?.replace('_', ' ') ?: wp.animeTitle.ifBlank { wp.source.replaceFirstChar { it.uppercase() } },
                         subtitle = listOfNotNull(
                             wp.source.takeIf { it.isNotBlank() }?.let { if (it == "device") "On device" else it.replaceFirstChar { c -> c.uppercase() } },
