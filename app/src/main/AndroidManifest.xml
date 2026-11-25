@@ -153,6 +153,22 @@
                 android:resource="@xml/rotato_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".worker.DailyPickReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".worker.DailyPickWidgetProvider"
+            android:exported="true"
+            android:label="Rotato Daily Pick">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/daily_pick_widget_info" />
+        </receiver>
+
         <service
             android:name=".worker.RotationTileService"
             android:exported="true"
