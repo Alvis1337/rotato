@@ -9,6 +9,8 @@ import com.chrisalvis.rotato.data.HdMatch
 import com.chrisalvis.rotato.data.HdUpgrade
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.LocalListsPreferences
+import com.chrisalvis.rotato.data.ArtistRule
+import com.chrisalvis.rotato.data.NowPlaying
 import com.chrisalvis.rotato.data.OfflinePack
 import com.chrisalvis.rotato.data.PhotoTagger
 import com.chrisalvis.rotato.data.PlaceRule
@@ -222,5 +224,39 @@ class ToolsViewModel(application: Application) : AndroidViewModel(application) {
     fun setElsewhere(collectionId: String) {
         PlaceRules.setElsewhere(app, collectionId)
         _elsewhere.update { collectionId }
+    }
+
+    // --- Now playing ---
+    private val _nowPlayingEnabled = MutableStateFlow(NowPlaying.enabled(app))
+    val nowPlayingEnabled: StateFlow<Boolean> = _nowPlayingEnabled.asStateFlow()
+    private val _albumArt = MutableStateFlow(NowPlaying.albumArt(app))
+    val albumArt: StateFlow<Boolean> = _albumArt.asStateFlow()
+    private val _artistRules = MutableStateFlow(NowPlaying.rules(app))
+    val artistRules: StateFlow<List<ArtistRule>> = _artistRules.asStateFlow()
+
+    fun lastArtist(): String = NowPlaying.lastArtist(app)
+
+    fun setNowPlayingEnabled(on: Boolean) {
+        NowPlaying.setEnabled(app, on)
+        _nowPlayingEnabled.update { on }
+    }
+
+    fun setAlbumArt(on: Boolean) {
+        NowPlaying.setAlbumArt(app, on)
+        _albumArt.update { on }
+    }
+
+    fun addArtistRule(artist: String, collectionId: String) {
+        val name = artist.trim()
+        if (name.isEmpty()) return
+        val updated = _artistRules.value.filter { !it.artist.equals(name, ignoreCase = true) } + ArtistRule(name, collectionId)
+        NowPlaying.setRules(app, updated)
+        _artistRules.update { updated }
+    }
+
+    fun removeArtistRule(artist: String) {
+        val updated = _artistRules.value.filter { it.artist != artist }
+        NowPlaying.setRules(app, updated)
+        _artistRules.update { updated }
     }
 }

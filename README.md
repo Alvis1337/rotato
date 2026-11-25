@@ -15,6 +15,8 @@ Discover, collect and rotate wallpapers on Android, with extra polish for foldab
   the subject clear of the clock, and optional night or time-of-day rules.
 - **Live wallpaper, screen saver, widget, Quick Settings tiles,** Tasker and Routines actions,
   and fold-aware crops and fold pairs on foldables.
+- **Wear OS watch:** your phone's wallpaper on a tile and on watch faces with a photo slot, with
+  Previous, Save and Next from the wrist (see below).
 - **Content filter:** one switch hides every NSFW feature, image and locked collection.
 
 ## Sources and plugins
@@ -28,6 +30,22 @@ any URL or add your own store index.
 The iPhone app uses the same store index and manifests from this repo, so keep their paths
 stable.
 
+## Wear OS watch
+
+The `wear` module is a companion app for Wear OS 3 and later (API 30+). It needs the phone app;
+it doesn't fetch anything itself.
+
+- **Tile:** the wallpaper with Save and Next. Tap the picture to open the watch app.
+- **Watch faces:** pick "Rotato wallpaper" for any photo (background or small image) complication
+  slot, and the face shows the phone's wallpaper.
+- **Watch app:** full-screen wallpaper with Previous, Save and Next.
+
+The phone sends a 480px square crop over the Wearable Data Layer each time the wallpaper changes,
+only while a watch with Rotato is in range. NSFW wallpapers are blurred on the watch whenever
+notification thumbnails are. Each release has a `rotato-wear-*.apk` beside the phone APK; install
+it on the watch with `adb install` (over Wi-Fi debugging). The watch and phone apps must come from
+the same release signing key, or the same debug key for `Rotato Dev`, or they can't see each other.
+
 ## Backups
 
 Settings → About & Data exports sources (with API keys), preferences, collections and installed
@@ -35,7 +53,7 @@ plugins to a JSON file. The iPhone app restores the same file, and its backups r
 
 ## Building
 
-Android Studio, JDK 21, `./gradlew assembleDebug`. Release builds are signed in CI from the
+Android Studio, JDK 21, `./gradlew assembleDebug` (phone in `app`, watch in `wear`). Release builds are signed in CI from the
 repository secrets; every push to `main` publishes a release APK (docs-only changes don't).
 MyAnimeList needs `mal.clientId` / `mal.clientSecret` in `local.properties`.
 

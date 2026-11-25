@@ -106,6 +106,8 @@ class RotatoWidgetProvider : AppWidgetProvider() {
         }
 
         fun refreshAll(context: Context) {
+            // Every change of wallpaper lands here, so the watch app is kept in step from one place.
+            com.chrisalvis.rotato.watch.WatchSync.push(context)
             context.sendBroadcast(Intent(context, RotatoWidgetProvider::class.java).apply {
                 action = ACTION_REFRESH_WIDGET
             })
