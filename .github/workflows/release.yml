@@ -138,7 +138,12 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           name: rotato ${{ steps.tag.outputs.name }}
           body_path: ${{ steps.changelog.outputs.notes_file }}
-          # Phone APK first: older in-app update checks take the first .apk they find.
-          files: |
-            ${{ steps.apk.outputs.path }}
-            ${{ steps.apk.outputs.wear_path }}
+          files: ${{ steps.apk.outputs.path }}
+
+      # The watch APK goes up in its own later step so the phone APK is always the release's
+      # first asset: app versions before the Wear OS companion take the first .apk they find.
+      - name: Attach Wear OS APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          files: ${{ steps.apk.outputs.wear_path }}
