@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Rotato"
 include(":app")
+include(":wear")

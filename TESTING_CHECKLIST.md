@@ -66,3 +66,20 @@ This is the manual test pass to run before trusting it.
 - Stealth mode's "remember and restore previous NSFW mode" logic — the trickiest bit of state to get right, most worth double-checking by toggling it on/off a few times in a row
 - The downscale/upscale "blur" used for the notification thumbnail — never seen the actual rendered result, could look worse than intended
 - NSFW-blur reveal state is in-memory only — force-closing the app and reopening will re-blur everything (expected, but confirm it doesn't feel broken)
+
+## Wear OS companion (added 2026-11-25)
+
+Install the phone APK and `rotato-wear-*.apk` from the same release (or both debug builds).
+
+- [ ] Opening the watch app shows the phone's current wallpaper within a few seconds
+- [ ] Next on the watch changes the phone's wallpaper, and the watch picture follows
+- [ ] Previous on the watch goes back on the phone
+- [ ] Save on the watch adds the wallpaper to Favorites and the watch shows "Saved to Favorites!"
+- [ ] Tile: add "Rotato wallpaper", see the picture; Save and Next work from the tile
+- [ ] Tile with nothing synced yet shows the "Open Rotato on your phone" message and Sync works
+- [ ] Watch face with a photo complication: pick "Rotato wallpaper" and it shows and updates on rotation
+- [ ] Interval rotation (phone screen off) still updates the watch
+- [ ] NSFW wallpaper shows blurred on the watch when "blur NSFW thumbnails" is on
+- [ ] Live wallpaper mode and video wallpapers still send a picture (a frame for videos)
+- [ ] Phone with no watch paired: no errors, battery use unchanged
+

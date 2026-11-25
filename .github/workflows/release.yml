@@ -77,6 +77,11 @@ jobs:
           mv "$APK" "$DEST"
           echo "path=$DEST" >> $GITHUB_OUTPUT
           echo "name=rotato-${{ steps.tag.outputs.name }}.apk" >> $GITHUB_OUTPUT
+          # Wear OS companion, signed with the same key (the Data Layer requires it).
+          WEAR_APK=$(find wear/build/outputs/apk/release -name "*.apk" | head -1)
+          WEAR_DEST="${{ github.workspace }}/rotato-wear-${{ steps.tag.outputs.name }}.apk"
+          mv "$WEAR_APK" "$WEAR_DEST"
+          echo "wear_path=$WEAR_DEST" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         id: changelog
@@ -133,4 +138,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           name: rotato ${{ steps.tag.outputs.name }}
           body_path: ${{ steps.changelog.outputs.notes_file }}
-          files: ${{ steps.apk.outputs.path }}
+          # Phone APK first: older in-app update checks take the first .apk they find.
+          files: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.apk.outputs.wear_path }}
