@@ -62,6 +62,11 @@ import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.NowPlaying
 import com.chrisalvis.rotato.data.PlaceRules
 import com.chrisalvis.rotato.data.StorageTools
+import com.chrisalvis.rotato.data.WeatherKind
+import com.chrisalvis.rotato.data.WeatherRules
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 
 /** Settings › Tools: utilities that look after your wallpapers and the phone they're on. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,6 +107,7 @@ fun ToolsScreen(onNavigateBack: () -> Unit) {
             ToolCard { TaggerSection(vm) }
             ToolCard { OfflineSection(vm) }
             ToolCard { PlaceSection(vm) }
+            ToolCard { WeatherSection(vm) }
             ToolCard { NowPlayingSection(vm) }
         }
     }
@@ -306,6 +312,112 @@ private fun PlaceSection(vm: ToolsViewModel) {
             CollectionPicker(label = if (elsewhere.isBlank()) "Pick a collection" else "Change", collections = usable) { vm.setElsewhere(it.id) }
             if (elsewhere.isNotBlank()) TextButton(onClick = { vm.setElsewhere("") }) { Text("Leave as is") }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WeatherSection(vm: ToolsViewModel) {
+    val context = LocalContext.current
+    val enabled by vm.weatherEnabled.collectAsStateWithLifecycle()
+    val rules by vm.weatherRules.collectAsStateWithLifecycle()
+    val otherwise by vm.weatherOtherwise.collectAsStateWithLifecycle()
+    val place by vm.weatherPlace.collectAsStateWithLifecycle()
+    val now by vm.weatherNow.collectAsStateWithLifecycle()
+    val results by vm.placeResults.collectAsStateWithLifecycle()
+    val searching by vm.placeSearching.collectAsStateWithLifecycle()
+    val collections by vm.collections.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
+    val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (result.values.any { it } && !vm.useDeviceLocation()) {
+            Toast.makeText(context, "No location fix yet. Search for your town instead.", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val usable = collections.filter { !it.isLocked }
+    fun name(id: String) = usable.firstOrNull { it.id == id }?.name ?: "a removed collection"
+
+    SettingsSection(title = "Weather rules") {
+        Hint("Rotate from a different collection when it rains, snows or the sun is out. Weather comes from Open-Meteo, free and with no account.")
+        SettingsToggleRow(
+            title = "Switch by weather",
+            subtitle = if (enabled) "On. Checks the sky each rotation, at most every 30 minutes" else "Off",
+            checked = enabled,
+            onCheckedChange = vm::setWeatherEnabled,
+        )
+        if (!enabled) return@SettingsSection
+
+        // Where to read the weather for.
+        Text("Where", style = MaterialTheme.typography.bodyMedium)
+        Hint(place?.let { p -> if (WeatherRules.useDeviceLocation(context)) "Following your location" else p.name } ?: "Pick a place so Rotato knows whose sky to check")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = {
+                    if (WeatherRules.hasLocation(context)) {
+                        if (!vm.useDeviceLocation()) Toast.makeText(context, "No location fix yet. Search for your town instead.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION))
+                    }
+                },
+                label = { Text("Use my location") },
+            )
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Or search for a town") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { vm.searchPlaces(query) }),
+            trailingIcon = {
+                TextButton(onClick = { vm.searchPlaces(query) }, enabled = query.isNotBlank() && !searching) { Text("Search") }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (searching) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        results.forEach { result ->
+            TextButton(onClick = { vm.pickPlace(result); query = "" }, modifier = Modifier.fillMaxWidth()) {
+                Text(result.name, modifier = Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (place == null) return@SettingsSection
+
+        now?.let { (kind, temp, at) ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Box(Modifier.weight(1f)) {
+                    Hint(
+                        "Now: ${kind.label}, ${temp.toInt()}° · " +
+                            android.text.format.DateUtils.getRelativeTimeSpanString(at).toString().lowercase(),
+                    )
+                }
+                TextButton(onClick = vm::refreshWeather) { Text("Check now") }
+            }
+        } ?: TextButton(onClick = vm::refreshWeather) { Text("Check now") }
+        HorizontalDivider()
+
+        WeatherKind.entries.forEach { kind ->
+            val target = rules[kind]
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(kind.label + if (kind == now?.first) " (now)" else "", style = MaterialTheme.typography.bodyMedium)
+                    Hint(if (target == null) "No rule" else "Rotates ${name(target)}")
+                }
+                if (target != null) {
+                    IconButton(onClick = { vm.setWeatherRule(kind, null) }) {
+                        Icon(Icons.Default.Close, contentDescription = "Remove rule for ${kind.label}")
+                    }
+                } else if (usable.isNotEmpty()) {
+                    CollectionPicker(label = "Pick", collections = usable) { vm.setWeatherRule(kind, it.id) }
+                }
+            }
+        }
+        HorizontalDivider()
+        Text("Any other weather", style = MaterialTheme.typography.bodyMedium)
+        Hint(if (otherwise.isBlank()) "Rotation stays as it is" else "Rotates ${name(otherwise)}")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CollectionPicker(label = if (otherwise.isBlank()) "Pick a collection" else "Change", collections = usable) { vm.setWeatherOtherwise(it.id) }
+            if (otherwise.isNotBlank()) TextButton(onClick = { vm.setWeatherOtherwise("") }) { Text("Leave as is") }
+        }
+        Hint("Weather wins over place rules when both have a rule. A seasonal schedule in its dates wins over both.")
     }
 }
 

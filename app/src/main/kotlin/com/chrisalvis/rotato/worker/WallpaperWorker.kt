@@ -86,6 +86,8 @@ class WallpaperWorker(
     private suspend fun rotate(): Result {
         // Place rules first, so this rotation already draws from the collection for where you are.
         runCatching { com.chrisalvis.rotato.data.PlaceRules.apply(applicationContext, rotate = false) }
+        // Then weather rules, so a rainy-day collection wins over the place one when both apply.
+        runCatching { com.chrisalvis.rotato.data.WeatherRules.apply(applicationContext, rotate = false) }
         val repository = ImageRepository(applicationContext)
         val prefs = RotatoPreferences(applicationContext)
         val listPrefs = LocalListsPreferences(applicationContext)

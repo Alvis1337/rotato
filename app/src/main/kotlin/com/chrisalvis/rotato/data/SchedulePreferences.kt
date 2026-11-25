@@ -83,6 +83,12 @@ class SchedulePreferences(private val context: Context) {
                 lastLockedMs = o.optLong("lastLockedMs", 0L),
                 lastFiredMs = o.optLong("lastFiredMs", 0L),
                 lastFiredResult = o.optString("lastFiredResult", ""),
+                dateRange = o.optJSONObject("dateRange")?.let { r ->
+                    runCatching {
+                        DateRange(r.getInt("sm"), r.getInt("sd"), r.getInt("em"), r.getInt("ed"))
+                    }.getOrNull()
+                },
+                revertAtEnd = o.optBoolean("revertAtEnd", true),
             )
         }
     } catch (_: Exception) { emptyList() }
@@ -101,6 +107,10 @@ class SchedulePreferences(private val context: Context) {
                     put("lastLockedMs", e.lastLockedMs)
                     put("lastFiredMs", e.lastFiredMs)
                     put("lastFiredResult", e.lastFiredResult)
+                    e.dateRange?.let { r ->
+                        put("dateRange", JSONObject().put("sm", r.startMonth).put("sd", r.startDay).put("em", r.endMonth).put("ed", r.endDay))
+                    }
+                    put("revertAtEnd", e.revertAtEnd)
                 })
             }
         }.toString()

@@ -1073,6 +1073,7 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     private fun isInScheduleWindow(entry: ScheduleEntry): Boolean {
         val now = java.util.Calendar.getInstance()
         if (now.get(java.util.Calendar.DAY_OF_WEEK) !in entry.days) return false
+        if (!entry.inDateRange(now)) return false
         val nowMins = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
         return nowMins >= entry.startHour * 60 + entry.startMinute
     }

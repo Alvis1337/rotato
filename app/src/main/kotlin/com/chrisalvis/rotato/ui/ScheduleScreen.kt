@@ -28,12 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.chrisalvis.rotato.data.DateRange
 import com.chrisalvis.rotato.data.LocalList
 import com.chrisalvis.rotato.data.ScheduleEntry
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 // Day order: Mon→Sun displayed left to right
 private val DAY_ORDER = listOf(
@@ -154,7 +156,7 @@ fun ScheduleScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "Schedules swap your active wallpaper collection at a set time each week — great for different vibes by day.",
+                        "Schedules swap your active wallpaper collection at a set time each week — great for different vibes by day. Turn on \"Only on certain dates\" for a season, like a Christmas collection in December.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -260,10 +262,21 @@ private fun ScheduleEntryCard(
                         }
                     }
                     Text(
-                        formatTime(entry.startHour, entry.startMinute),
+                        formatTime(entry.startHour, entry.startMinute) +
+                            (entry.dateRange?.let { " · ${it.label}" } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    if (entry.isSeasonal) {
+                        Text(
+                            buildString {
+                                append(if (entry.seasonActive()) "In season now · weekly schedules wait" else "Every year")
+                                if (entry.revertAtEnd) append(" · switches back after")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (collectionDetails.isNotBlank()) {
                         Text(
                             collectionDetails,
@@ -386,6 +399,21 @@ private fun ScheduleEditDialog(
     var minute by rememberSaveable(entry.id) { mutableIntStateOf(entry.startMinute) }
     var selectedListIds by rememberSaveable(entry.id, stateSaver = StringSetSaver) { mutableStateOf(entry.listIds) }
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
+    // Seasonal dates stay out of sight until the switch is turned on.
+    var seasonal by rememberSaveable(entry.id) { mutableStateOf(entry.dateRange != null) }
+    var range by rememberSaveable(entry.id, stateSaver = DateRangeSaver) {
+        mutableStateOf(entry.dateRange ?: DateRange(12, 1, 12, 26))
+    }
+    var revertAtEnd by rememberSaveable(entry.id) { mutableStateOf(entry.revertAtEnd) }
+    var showRangePicker by rememberSaveable { mutableStateOf(false) }
+
+    if (showRangePicker) {
+        SeasonRangePickerDialog(
+            initial = range,
+            onPick = { range = it; showRangePicker = false },
+            onDismiss = { showRangePicker = false },
+        )
+    }
 
     if (showTimePicker) {
         val state = rememberTimePickerState(initialHour = hour, initialMinute = minute)
@@ -433,6 +461,55 @@ private fun ScheduleEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(formatTime(hour, minute))
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(value = seasonal, onValueChange = { on ->
+                            seasonal = on
+                            // A season usually means every day of it.
+                            if (on && entry.dateRange == null) days = DAY_ORDER.map { it.first }.toSet()
+                        }),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Only on certain dates", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "For a season or holiday, like Christmas from Dec 1 to 26",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = seasonal, onCheckedChange = null)
+                }
+                if (seasonal) {
+                    OutlinedButton(
+                        onClick = { showRangePicker = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(range.label)
+                    }
+                    Text(
+                        "Repeats every year. While these dates are on, this schedule wins over your weekly ones.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .toggleable(value = revertAtEnd, onValueChange = { revertAtEnd = it }),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Checkbox(checked = revertAtEnd, onCheckedChange = null)
+                        Text(
+                            "Switch back when the dates end",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
 
                 Text("Collections", style = MaterialTheme.typography.labelMedium)
@@ -531,7 +608,16 @@ private fun ScheduleEditDialog(
             TextButton(
                 onClick = {
                     if (days.isNotEmpty()) {
-                        onSave(entry.copy(days = days, startHour = hour, startMinute = minute, listIds = selectedListIds))
+                        onSave(
+                            entry.copy(
+                                days = days,
+                                startHour = hour,
+                                startMinute = minute,
+                                listIds = selectedListIds,
+                                dateRange = if (seasonal) range else null,
+                                revertAtEnd = revertAtEnd,
+                            )
+                        )
                     }
                 },
                 enabled = days.isNotEmpty(),
@@ -539,6 +625,59 @@ private fun ScheduleEditDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+private val DateRangeSaver = Saver<DateRange, ArrayList<Int>>(
+    save = { arrayListOf(it.startMonth, it.startDay, it.endMonth, it.endDay) },
+    restore = { DateRange(it[0], it[1], it[2], it[3]) },
+)
+
+/** Picks a yearly range. The picker needs real dates, so this year (and next, if it wraps) stand in. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SeasonRangePickerDialog(
+    initial: DateRange,
+    onPick: (DateRange) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val utc = TimeZone.getTimeZone("UTC")
+    val year = Calendar.getInstance().get(Calendar.YEAR)
+    fun millis(y: Int, month: Int, day: Int): Long = Calendar.getInstance(utc).apply {
+        clear()
+        set(y, month - 1, 1)
+        set(Calendar.DAY_OF_MONTH, day.coerceAtMost(getActualMaximum(Calendar.DAY_OF_MONTH)))
+    }.timeInMillis
+    val wraps = initial.endMonth * 100 + initial.endDay < initial.startMonth * 100 + initial.startDay
+    val state = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = millis(year, initial.startMonth, initial.startDay),
+        initialSelectedEndDateMillis = millis(if (wraps) year + 1 else year, initial.endMonth, initial.endDay),
+    )
+    fun monthDay(ms: Long): Pair<Int, Int> = Calendar.getInstance(utc).apply { timeInMillis = ms }
+        .let { (it.get(Calendar.MONTH) + 1) to it.get(Calendar.DAY_OF_MONTH) }
+    val start = state.selectedStartDateMillis
+    val end = state.selectedEndDateMillis
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (start != null && end != null) {
+                        val (sm, sd) = monthDay(start)
+                        val (em, ed) = monthDay(end)
+                        onPick(DateRange(sm, sd, em, ed))
+                    }
+                },
+                enabled = start != null && end != null,
+            ) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DateRangePicker(
+            state = state,
+            title = { Text("Pick the dates", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) },
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
 
 private fun formatTime(hour: Int, minute: Int): String {
