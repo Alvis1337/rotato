@@ -136,6 +136,13 @@ class WallpaperWorker(
             return Result.success()
         }
 
+        // Now playing mode is showing album art (or an artist's collection): rotation waits until
+        // the music stops, then the wallpaper from before comes back.
+        if (!manual && com.chrisalvis.rotato.data.NowPlaying.isShowing(applicationContext)) {
+            prefs.setLastSkipReason("Paused: music is playing (Now playing mode)")
+            return Result.success()
+        }
+
         // Auto-pause: charging
         if (!manual && autoPause.chargingEnabled) {
             val bm = applicationContext.getSystemService(BatteryManager::class.java)
