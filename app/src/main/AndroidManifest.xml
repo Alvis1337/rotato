@@ -211,6 +211,18 @@
                 android:resource="@xml/rotato_wallpaper" />
         </service>
 
+        <!-- Now playing mode (opt-in): notification access is how Android shares what's playing.
+             Rotato reads media sessions only, never the notifications themselves. -->
+        <service
+            android:name=".worker.NowPlayingService"
+            android:exported="true"
+            android:label="@string/now_playing_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".data.PlaceRulesReceiver"
             android:exported="false" />

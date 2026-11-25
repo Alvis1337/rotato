@@ -62,6 +62,22 @@ This is the manual test pass to run before trusting it.
 - [ ] Tapping it OFF: rotation and NSFW mode should return to whatever they were before you activated stealth
 - [ ] Tile shows "Not set up" (or similar) if no stealth collection has been chosen yet, and tapping it does nothing destructive in that state
 
+## Now playing mode
+
+- [ ] Settings → Tools → Now playing: the switch is off by default and nothing else shows until it's on
+- [ ] Turning it on opens Android's notification access screen for Rotato; after allowing it, the card says "On"
+- [ ] Sideloaded APK on Android 13+: if the access switch is greyed out, App info → ⋮ → "Allow restricted settings" unlocks it (the hint in the card says so)
+- [ ] Play music in Spotify / YouTube Music / a local player: within a couple of seconds the wallpaper becomes the cover over a blurred backdrop
+- [ ] Next track on the same album: wallpaper doesn't flicker or re-set. Track from a different album: it changes
+- [ ] Pause for a few seconds and resume: wallpaper stays on the cover. Stop for 20+ seconds: your previous wallpaper comes back
+- [ ] While music plays, an automatic rotation is skipped ("Paused: music is playing" in the rotation log); after it stops, rotation carries on
+- [ ] Artist collections: after playing an artist, "When <artist> plays, show…" appears; pick a collection and that artist's songs show a wallpaper from it instead of the cover
+- [ ] Typing an artist name adds a rule too; songs credited "Artist A, Artist B" or "A feat. B" still match A's rule
+- [ ] "Use the album art" off: only artists with a collection change the wallpaper
+- [ ] With Rotato's live wallpaper on, the cover crossfades in and back out
+- [ ] Foldable: the cover is fully visible on both the cover screen and the inner screen
+- [ ] Turning the mode off while the cover is showing puts your wallpaper back right away
+
 ## Discover variety
 
 - [ ] With NSFW on, "Align with interests" on and "For you" on, note the first ~10 posts, pull to refresh: a mostly different set, in a different order
