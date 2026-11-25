@@ -133,6 +133,20 @@
             android:name=".worker.FavoriteWallpaperReceiver"
             android:exported="false" />
 
+        <!-- Wear OS companion: Next / Previous / Save / Sync from the watch app (wear module). -->
+        <service
+            android:name=".watch.WatchListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/rotato" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:path="/rotato_watch" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".worker.DislikeWallpaperReceiver"
             android:exported="false" />
@@ -195,6 +209,18 @@
             <meta-data
                 android:name="android.service.wallpaper"
                 android:resource="@xml/rotato_wallpaper" />
+        </service>
+
+        <!-- Now playing mode (opt-in): notification access is how Android shares what's playing.
+             Rotato reads media sessions only, never the notifications themselves. -->
+        <service
+            android:name=".worker.NowPlayingService"
+            android:exported="true"
+            android:label="@string/now_playing_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
 
         <receiver

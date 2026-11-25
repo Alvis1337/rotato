@@ -126,6 +126,8 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.drag.select.compose)
     implementation(libs.play.services.oss.licenses)
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

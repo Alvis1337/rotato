@@ -169,7 +169,7 @@ object GelbooruEngine : PluginEngine() {
         val pid = if (strategy == "json") {
             page0 = getJson("$url&pid=0")
             val count = page0?.optJSONObject("@attributes")?.optInt("count", 0) ?: 0
-            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else 0
+            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else guessPid(page0?.optJSONArray("post"), limit)
         } else {
             resolvePid(url, host, tagQuery, authSuffix, limit, extras)
         }
@@ -198,7 +198,9 @@ object GelbooruEngine : PluginEngine() {
                     Regex("count=\"(\\d+)\"").find(body)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
                 }
             }.getOrDefault(0)
-            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else 0
+            // No count (a refused or changed count endpoint) used to mean page 0, the newest posts,
+            // on every load: the same feed each time. Guess a page instead; past the end falls back.
+            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else (0..GUESS_PAGES).random()
         }
         "random" -> {
             val max = extras["countMax"]?.toIntOrNull() ?: 200
@@ -207,9 +209,18 @@ object GelbooruEngine : PluginEngine() {
         else -> { // "json"
             val page0Json = getJson("$apiBaseWithTags&pid=0") ?: return 0
             val count = page0Json.optJSONObject("@attributes")?.optInt("count", 0) ?: 0
-            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else 0
+            if (count > 0) (0..((count - 1) / limit).coerceIn(0, 100)).random() else guessPid(page0Json.optJSONArray("post"), limit)
         }
     }
+
+    /**
+     * A page to try when the site gave no post count. Only a full first page hints at more pages;
+     * a short one is everything there is. A guess past the end falls back to page 0 in [loadPage].
+     */
+    private fun guessPid(page0: JSONArray?, limit: Int): Int =
+        if (page0 != null && page0.length() >= limit) (0..GUESS_PAGES).random() else 0
+
+    private const val GUESS_PAGES = 20
 
     /** Fetches the post array at the given pid. Returns null on failure. */
     private fun loadArray(apiUrl: String, pid: Int, responseFormat: String): JSONArray? {

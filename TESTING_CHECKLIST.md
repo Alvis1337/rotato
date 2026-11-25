@@ -62,7 +62,49 @@ This is the manual test pass to run before trusting it.
 - [ ] Tapping it OFF: rotation and NSFW mode should return to whatever they were before you activated stealth
 - [ ] Tile shows "Not set up" (or similar) if no stealth collection has been chosen yet, and tapping it does nothing destructive in that state
 
+## Now playing mode
+
+- [ ] Settings → Tools → Now playing: the switch is off by default and nothing else shows until it's on
+- [ ] Turning it on opens Android's notification access screen for Rotato; after allowing it, the card says "On"
+- [ ] Sideloaded APK on Android 13+: if the access switch is greyed out, App info → ⋮ → "Allow restricted settings" unlocks it (the hint in the card says so)
+- [ ] Play music in Spotify / YouTube Music / a local player: within a couple of seconds the wallpaper becomes the cover over a blurred backdrop
+- [ ] Next track on the same album: wallpaper doesn't flicker or re-set. Track from a different album: it changes
+- [ ] Pause for a few seconds and resume: wallpaper stays on the cover. Stop for 20+ seconds: your previous wallpaper comes back
+- [ ] While music plays, an automatic rotation is skipped ("Paused: music is playing" in the rotation log); after it stops, rotation carries on
+- [ ] Artist collections: after playing an artist, "When <artist> plays, show…" appears; pick a collection and that artist's songs show a wallpaper from it instead of the cover
+- [ ] Typing an artist name adds a rule too; songs credited "Artist A, Artist B" or "A feat. B" still match A's rule
+- [ ] "Use the album art" off: only artists with a collection change the wallpaper
+- [ ] With Rotato's live wallpaper on, the cover crossfades in and back out
+- [ ] Foldable: the cover is fully visible on both the cover screen and the inner screen
+- [ ] Turning the mode off while the cover is showing puts your wallpaper back right away
+
+## Discover variety
+
+- [ ] With NSFW on, "Align with interests" on and "For you" on, note the first ~10 posts, pull to refresh: a mostly different set, in a different order
+- [ ] Toggle NSFW or "Align with interests" off and on again: the feed doesn't come back with the same posts it just showed
+- [ ] Close and reopen the app: the first screen isn't a repeat of the last session's first screen
+- [ ] Loved tags still show up noticeably more often near the top, and disliked ones lower
+- [ ] A narrow search (one rare tag) still fills the grid, re-using posts you've seen once it runs out of new ones
+- [ ] Rule34 and Reddit: a few refreshes turn up different posts, not the same newest/top page each time
+
 ## Known gaps / things I'm least confident about
 - Stealth mode's "remember and restore previous NSFW mode" logic — the trickiest bit of state to get right, most worth double-checking by toggling it on/off a few times in a row
 - The downscale/upscale "blur" used for the notification thumbnail — never seen the actual rendered result, could look worse than intended
 - NSFW-blur reveal state is in-memory only — force-closing the app and reopening will re-blur everything (expected, but confirm it doesn't feel broken)
+
+## Wear OS companion (added 2026-11-25)
+
+Install the phone APK and `rotato-wear-*.apk` from the same release (or both debug builds).
+
+- [ ] Opening the watch app shows the phone's current wallpaper within a few seconds
+- [ ] Next on the watch changes the phone's wallpaper, and the watch picture follows
+- [ ] Previous on the watch goes back on the phone
+- [ ] Save on the watch adds the wallpaper to Favorites and the watch shows "Saved to Favorites!"
+- [ ] Tile: add "Rotato wallpaper", see the picture; Save and Next work from the tile
+- [ ] Tile with nothing synced yet shows the "Open Rotato on your phone" message and Sync works
+- [ ] Watch face with a photo complication: pick "Rotato wallpaper" and it shows and updates on rotation
+- [ ] Interval rotation (phone screen off) still updates the watch
+- [ ] NSFW wallpaper shows blurred on the watch when "blur NSFW thumbnails" is on
+- [ ] Live wallpaper mode and video wallpapers still send a picture (a frame for videos)
+- [ ] Phone with no watch paired: no errors, battery use unchanged
+

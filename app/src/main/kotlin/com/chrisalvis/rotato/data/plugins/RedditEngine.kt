@@ -60,7 +60,7 @@ object RedditEngine : PluginEngine() {
     }
 
     /**
-     * The subreddit's top posts this month. With a client ID Rotato signs in as an app (no user
+     * The subreddit's top posts over a random window (week, month, year or all time). With a client ID Rotato signs in as an app (no user
      * account) and uses oauth.reddit.com; anonymous `.json` is refused (HTTP 403/429) from many
      * networks now. Refusals throw, so Source Health says why Reddit is empty.
      */
@@ -69,7 +69,9 @@ object RedditEngine : PluginEngine() {
         val words = query.trim().split(Regex("\\s+"))
             .filter { it.isNotBlank() && !it.startsWith("-") && !it.contains(':') }
             .joinToString(" ") { it.trimStart('~').replace('_', ' ') }
-        val (endpoint, params) = if (words.isBlank()) "top" to "limit=100&raw_json=1&t=month"
+        // The top posts of one fixed month were the same 100 on every load; each load now draws
+        // its window, so a refresh can turn up a different set.
+        val (endpoint, params) = if (words.isBlank()) "top" to "limit=100&raw_json=1&t=${TOP_WINDOWS.random()}"
             else "search" to "q=${words.urlEncode()}&restrict_sr=1&sort=relevance&t=all&limit=100&raw_json=1"
         val token = accessToken()
         val sub = subreddit.urlEncode()
@@ -90,6 +92,8 @@ object RedditEngine : PluginEngine() {
             return JSONObject(resp.body?.string() ?: throw IllegalStateException("Empty Reddit response"))
         }
     }
+
+    private val TOP_WINDOWS = listOf("week", "month", "year", "all")
 
     @Volatile private var cachedToken: Pair<String, Long>? = null
     private val deviceId = java.util.UUID.randomUUID().toString()

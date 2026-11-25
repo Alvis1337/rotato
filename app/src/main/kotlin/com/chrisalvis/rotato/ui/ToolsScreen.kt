@@ -34,8 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.chrisalvis.rotato.data.LocalList
+import com.chrisalvis.rotato.data.NowPlaying
 import com.chrisalvis.rotato.data.PlaceRules
 import com.chrisalvis.rotato.data.StorageTools
 import com.chrisalvis.rotato.data.WeatherKind
@@ -107,6 +108,7 @@ fun ToolsScreen(onNavigateBack: () -> Unit) {
             ToolCard { OfflineSection(vm) }
             ToolCard { PlaceSection(vm) }
             ToolCard { WeatherSection(vm) }
+            ToolCard { NowPlayingSection(vm) }
         }
     }
 }
@@ -416,6 +418,91 @@ private fun WeatherSection(vm: ToolsViewModel) {
             if (otherwise.isNotBlank()) TextButton(onClick = { vm.setWeatherOtherwise("") }) { Text("Leave as is") }
         }
         Hint("Weather wins over place rules when both have a rule. A seasonal schedule in its dates wins over both.")
+    }
+}
+
+@Composable
+private fun NowPlayingSection(vm: ToolsViewModel) {
+    val context = LocalContext.current
+    val enabled by vm.nowPlayingEnabled.collectAsStateWithLifecycle()
+    val albumArt by vm.albumArt.collectAsStateWithLifecycle()
+    val rules by vm.artistRules.collectAsStateWithLifecycle()
+    val collections by vm.collections.collectAsStateWithLifecycle()
+    var hasAccess by remember { mutableStateOf(NowPlaying.hasAccess(context)) }
+    var lastArtist by remember { mutableStateOf(vm.lastArtist()) }
+    var typed by remember { mutableStateOf("") }
+    LifecycleResumeEffect(Unit) {
+        hasAccess = NowPlaying.hasAccess(context)
+        lastArtist = vm.lastArtist()
+        onPauseOrDispose { }
+    }
+    val usable = collections.filter { !it.isLocked }
+    fun name(id: String) = usable.firstOrNull { it.id == id }?.name ?: "a removed collection"
+    fun openAccess() {
+        runCatching { context.startActivity(NowPlaying.accessIntent(context)) }
+            .onFailure { runCatching { context.startActivity(NowPlaying.accessListIntent()) } }
+    }
+
+    SettingsSection(title = "Now playing") {
+        Hint("While music plays, the wallpaper shows the album art, or a wallpaper from a collection you pick for that artist. It goes back to your wallpaper when the music stops, and rotation waits meanwhile.")
+        SettingsToggleRow(
+            title = "Wallpaper follows your music",
+            subtitle = when {
+                !enabled -> "Off"
+                !hasAccess -> "Needs notification access"
+                else -> "On"
+            },
+            checked = enabled,
+            onCheckedChange = { on ->
+                vm.setNowPlayingEnabled(on)
+                if (on && !NowPlaying.hasAccess(context)) openAccess()
+            },
+        )
+        if (!enabled) return@SettingsSection
+        if (!hasAccess) {
+            Hint("Android only tells apps what's playing if they have notification access. Rotato uses it just for the song and cover, and never reads your notifications.")
+            FilledTonalButton(onClick = { openAccess() }) { Text("Allow notification access") }
+            Hint("If the switch there is greyed out (\"Restricted setting\"), open Rotato's App info, tap the ⋮ menu, choose \"Allow restricted settings\", then try again.")
+        }
+        SettingsToggleRow(
+            title = "Use the album art",
+            subtitle = if (albumArt) "For any artist without a collection below" else "Only artists with a collection change the wallpaper",
+            checked = albumArt,
+            onCheckedChange = vm::setAlbumArt,
+        )
+        HorizontalDivider()
+        Text("Artist collections", style = MaterialTheme.typography.bodyMedium)
+        if (rules.isEmpty()) Hint("Pick a collection for an artist and their songs show a wallpaper from it instead of the cover.")
+        rules.forEach { rule ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(rule.artist, style = MaterialTheme.typography.bodyMedium)
+                    Hint("Shows ${name(rule.collectionId)}")
+                }
+                IconButton(onClick = { vm.removeArtistRule(rule.artist) }) { Icon(Icons.Default.Close, contentDescription = "Remove ${rule.artist}") }
+            }
+        }
+        if (usable.isEmpty()) {
+            Hint("Make a collection first to tie one to an artist.")
+            return@SettingsSection
+        }
+        val recent = lastArtist
+        if (recent.isNotBlank() && rules.none { it.artist.equals(recent, ignoreCase = true) }) {
+            CollectionPicker(label = "When $recent plays, show…", collections = usable) { vm.addArtistRule(recent, it.id) }
+        }
+        OutlinedTextField(
+            value = typed,
+            onValueChange = { typed = it },
+            label = { Text("Another artist") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (typed.isNotBlank()) {
+            CollectionPicker(label = "When ${typed.trim()} plays, show…", collections = usable) {
+                vm.addArtistRule(typed, it.id)
+                typed = ""
+            }
+        }
     }
 }
 
