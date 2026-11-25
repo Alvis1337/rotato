@@ -110,6 +110,8 @@ fun DiscoverSourcesSettingsScreen(
                             onCheckedChange = { viewModel.setDiscoverDataSaver(it) }
                         )
                     }
+
+                    DailyPickSettingsSection()
                 }
             }
         }
