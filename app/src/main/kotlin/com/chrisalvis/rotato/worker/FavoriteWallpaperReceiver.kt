@@ -28,36 +28,8 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val prefs = RotatoPreferences(context)
-                val listsPrefs = LocalListsPreferences(context)
-                val history = historyFromJson(prefs.historyJson.first())
-                val current = history.firstOrNull()
-                val lastThumbUrl = prefs.lastWallpaperThumbUrl.first()
-                val lastFullUrl = prefs.lastWallpaperFullUrl.first()
-                val lastSource = prefs.lastWallpaperSource.first()
-                val wallpaper = if (current != null) {
-                    wallpaperFromUrls(
-                        thumbUrl = lastThumbUrl.ifBlank { current.thumbUrl },
-                        fullUrl = lastFullUrl.ifBlank { current.fullUrl },
-                        source = lastSource.ifBlank { current.source },
-                        pageUrl = current.pageUrl,
-                        tags = current.tags,
-                    )
-                } else {
-                    wallpaperFromUrls(
-                        thumbUrl = lastThumbUrl,
-                        fullUrl = lastFullUrl,
-                        source = lastSource,
-                    )
-                }
-
-                when {
-                    wallpaper == null -> postConfirmation(context, "Nothing to save", "Wallpaper details are unavailable")
-                    saveWallpaperToFavorites(listsPrefs, wallpaper) -> {
-                        postConfirmation(context, "Saved to Favorites!", "Added to your Favorites collection")
-                    }
-                    else -> postConfirmation(context, "Already in Favorites", "This wallpaper is already saved")
-                }
+                val (title, text) = saveCurrent(context)
+                postConfirmation(context, title, text)
             } finally {
                 pendingResult.finish()
             }
@@ -86,6 +58,38 @@ class FavoriteWallpaperReceiver : BroadcastReceiver() {
     companion object {
         const val FAVORITES_LIST_NAME = "Favorites"
         private const val NOTIF_ID_FAVORITED = 1003
+
+        /** Saves the wallpaper on screen to Favorites; returns a (title, text) to show the person. */
+        suspend fun saveCurrent(context: Context): Pair<String, String> {
+            val prefs = RotatoPreferences(context)
+            val listsPrefs = LocalListsPreferences(context)
+            val history = historyFromJson(prefs.historyJson.first())
+            val current = history.firstOrNull()
+            val lastThumbUrl = prefs.lastWallpaperThumbUrl.first()
+            val lastFullUrl = prefs.lastWallpaperFullUrl.first()
+            val lastSource = prefs.lastWallpaperSource.first()
+            val wallpaper = if (current != null) {
+                wallpaperFromUrls(
+                    thumbUrl = lastThumbUrl.ifBlank { current.thumbUrl },
+                    fullUrl = lastFullUrl.ifBlank { current.fullUrl },
+                    source = lastSource.ifBlank { current.source },
+                    pageUrl = current.pageUrl,
+                    tags = current.tags,
+                )
+            } else {
+                wallpaperFromUrls(
+                    thumbUrl = lastThumbUrl,
+                    fullUrl = lastFullUrl,
+                    source = lastSource,
+                )
+            }
+
+            return when {
+                wallpaper == null -> "Nothing to save" to "Wallpaper details are unavailable"
+                saveWallpaperToFavorites(listsPrefs, wallpaper) -> "Saved to Favorites!" to "Added to your Favorites collection"
+                else -> "Already in Favorites" to "This wallpaper is already saved"
+            }
+        }
 
         suspend fun saveWallpaperToFavorites(
             listsPrefs: LocalListsPreferences,

@@ -70,7 +70,8 @@ object UpdateRepository {
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
                 val name = asset.optString("name", "")
-                if (name.endsWith(".apk")) {
+                // Releases also carry the Wear OS app (rotato-wear-*.apk); that one is for the watch.
+                if (name.endsWith(".apk") && !name.startsWith("rotato-wear")) {
                     downloadUrl = asset.optString("browser_download_url")
                     break
                 }
