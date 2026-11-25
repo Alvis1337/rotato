@@ -1,5 +1,6 @@
 <resources>
     <string name="widget_description">Your current wallpaper with Previous, Save and Next.</string>
+    <string name="daily_pick_widget_description">One fresh wallpaper picked for you each day, with Set, Save and Another.</string>
     <string name="live_wallpaper_label">Rotato</string>
     <string name="dream_label">Rotato slideshow</string>
     <string name="now_playing_label">Rotato now playing wallpaper</string>

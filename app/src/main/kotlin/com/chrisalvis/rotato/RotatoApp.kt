@@ -92,6 +92,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
             runCatching { ScheduleManager.scheduleAll(this@RotatoApp, SchedulePreferences(this@RotatoApp).entries.first()) }
             UnfoldWatcherService.sync(this@RotatoApp, RotatoPreferences(this@RotatoApp).rotateOnUnfold.first())
             com.chrisalvis.rotato.data.PlaceRules.register(this@RotatoApp)
+            runCatching { com.chrisalvis.rotato.worker.DailyPickWorker.sync(this@RotatoApp) }
         }
     }
 
@@ -203,6 +204,16 @@ class RotatoApp : Application(), ImageLoaderFactory {
                 NotificationManager.IMPORTANCE_MIN
             ).apply { description = "Silent notification Android requires while Rotato watches for the phone being unfolded" }
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_DAILY_PICK,
+                "Daily Pick",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "One fresh wallpaper picked for you each day"
+                setSound(null, null)
+            }
+        )
     }
 
     companion object {
@@ -213,6 +224,7 @@ class RotatoApp : Application(), ImageLoaderFactory {
         const val CHANNEL_LOCKED_LIST = "rotato_locked_list"
         const val CHANNEL_FILL = "rotato_fill"
         const val CHANNEL_UNFOLD = "rotato_unfold"
+        const val CHANNEL_DAILY_PICK = "rotato_daily_pick"
         private const val RELOCK_AFTER_MS = 5 * 60_000L
     }
 }
