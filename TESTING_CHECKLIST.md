@@ -77,6 +77,7 @@ This is the manual test pass to run before trusting it.
 - [ ] With Rotato's live wallpaper on, the cover crossfades in and back out
 - [ ] Foldable: the cover is fully visible on both the cover screen and the inner screen
 - [ ] Turning the mode off while the cover is showing puts your wallpaper back right away
+
 ## Discover variety
 
 - [ ] With NSFW on, "Align with interests" on and "For you" on, note the first ~10 posts, pull to refresh: a mostly different set, in a different order
