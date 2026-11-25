@@ -73,8 +73,11 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
             val todayDow = now.get(Calendar.DAY_OF_WEEK)
             val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
             val allEntries = schedPrefs.entries.first().map { if (it.id == entry.id) entry else it }
+            // While a seasonal schedule's dates are on, only seasonal schedules count.
+            val seasonOn = allEntries.any { it.seasonActive(now) }
             fun startedToday(e: ScheduleEntry) =
-                e.enabled && todayDow in e.days && e.startHour * 60 + e.startMinute <= nowMinutes
+                e.enabled && todayDow in e.days && e.inDateRange(now) && (!seasonOn || e.isSeasonal) &&
+                    e.startHour * 60 + e.startMinute <= nowMinutes
             // Only apply right away if this is the most recent entry to have started today;
             // if a later entry has already taken over, just re-arm this one for its next slot.
             val latestStartedToday = (allEntries + entry).filter { startedToday(it) }.maxOfOrNull { it.startHour * 60 + it.startMinute }

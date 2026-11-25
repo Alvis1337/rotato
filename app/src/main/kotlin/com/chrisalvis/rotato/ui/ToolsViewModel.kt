@@ -16,6 +16,9 @@ import com.chrisalvis.rotato.data.PlaceRules
 import com.chrisalvis.rotato.data.StorageItem
 import com.chrisalvis.rotato.data.StorageKind
 import com.chrisalvis.rotato.data.StorageTools
+import com.chrisalvis.rotato.data.WeatherKind
+import com.chrisalvis.rotato.data.WeatherPlace
+import com.chrisalvis.rotato.data.WeatherRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,7 +31,7 @@ import kotlinx.coroutines.launch
 /** A long-running tool's progress: [done] of [total], or a finished [message]. */
 data class ToolProgress(val done: Int = 0, val total: Int = 0, val running: Boolean = false, val message: String? = null)
 
-/** Backs the Tools screen: storage, collection doctor, HD upgrade, photo tags, offline pack, place rules. */
+/** Backs the Tools screen: storage, collection doctor, HD upgrade, photo tags, offline pack, place and weather rules. */
 class ToolsViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val listPrefs = LocalListsPreferences(app)
@@ -222,5 +225,69 @@ class ToolsViewModel(application: Application) : AndroidViewModel(application) {
     fun setElsewhere(collectionId: String) {
         PlaceRules.setElsewhere(app, collectionId)
         _elsewhere.update { collectionId }
+    }
+
+    // --- Weather rules ---
+    private val _weatherEnabled = MutableStateFlow(WeatherRules.enabled(app))
+    val weatherEnabled: StateFlow<Boolean> = _weatherEnabled.asStateFlow()
+    private val _weatherRules = MutableStateFlow(WeatherRules.rules(app))
+    val weatherRules: StateFlow<Map<WeatherKind, String>> = _weatherRules.asStateFlow()
+    private val _weatherOtherwise = MutableStateFlow(WeatherRules.otherwise(app))
+    val weatherOtherwise: StateFlow<String> = _weatherOtherwise.asStateFlow()
+    private val _weatherPlace = MutableStateFlow(WeatherRules.place(app))
+    val weatherPlace: StateFlow<WeatherPlace?> = _weatherPlace.asStateFlow()
+    private val _weatherNow = MutableStateFlow(WeatherRules.cached(app))
+    val weatherNow: StateFlow<Triple<WeatherKind, Double, Long>?> = _weatherNow.asStateFlow()
+    private val _placeResults = MutableStateFlow<List<WeatherPlace>>(emptyList())
+    val placeResults: StateFlow<List<WeatherPlace>> = _placeResults.asStateFlow()
+    private val _placeSearching = MutableStateFlow(false)
+    val placeSearching: StateFlow<Boolean> = _placeSearching.asStateFlow()
+
+    fun setWeatherEnabled(on: Boolean) {
+        WeatherRules.setEnabled(app, on)
+        _weatherEnabled.update { on }
+        if (on) refreshWeather()
+    }
+
+    fun setWeatherRule(kind: WeatherKind, collectionId: String?) {
+        WeatherRules.setRule(app, kind, collectionId)
+        _weatherRules.update { WeatherRules.rules(app) }
+    }
+
+    fun setWeatherOtherwise(collectionId: String) {
+        WeatherRules.setOtherwise(app, collectionId)
+        _weatherOtherwise.update { collectionId }
+    }
+
+    fun searchPlaces(query: String) {
+        viewModelScope.launch {
+            _placeSearching.update { true }
+            val found = WeatherRules.searchPlaces(query)
+            _placeResults.update { found }
+            _placeSearching.update { false }
+            if (found.isEmpty()) _toast.update { "No places found for \"$query\"" }
+        }
+    }
+
+    fun pickPlace(place: WeatherPlace, fromDevice: Boolean = false) {
+        WeatherRules.setPlace(app, place, fromDevice)
+        _weatherPlace.update { WeatherRules.place(app) }
+        _placeResults.update { emptyList() }
+        refreshWeather()
+    }
+
+    /** Uses the phone's last known location. False when there's no fix to use yet. */
+    fun useDeviceLocation(): Boolean {
+        val here = WeatherRules.deviceLocation(app) ?: return false
+        pickPlace(here, fromDevice = true)
+        return true
+    }
+
+    fun refreshWeather() {
+        viewModelScope.launch(Dispatchers.IO) {
+            WeatherRules.currentWeather(app, force = true)
+            _weatherNow.update { WeatherRules.cached(app) }
+            runCatching { WeatherRules.apply(app) }
+        }
     }
 }

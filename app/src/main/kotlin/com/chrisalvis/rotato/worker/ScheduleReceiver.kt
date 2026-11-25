@@ -86,6 +86,38 @@ class ScheduleReceiver : BroadcastReceiver() {
             return triggerResult
         }
 
+        /**
+         * The day after [ended]'s date range is over: apply whatever the other schedules call
+         * for now (the one that would have fired most recently), or the main rotation queue if
+         * none would have. Another seasonal schedule still in its range wins over weekly ones.
+         */
+        suspend fun applyAfterSeason(
+            context: Context,
+            ended: ScheduleEntry,
+            allEntries: List<ScheduleEntry>,
+            schedPrefs: SchedulePreferences,
+            listPrefs: LocalListsPreferences,
+        ): String {
+            val others = allEntries.filter { it.enabled && it.id != ended.id }
+            val seasonal = others.filter { it.seasonActive() }
+            val candidates = seasonal.ifEmpty { others.filter { !it.isSeasonal } }
+            val next = candidates
+                .mapNotNull { e -> ScheduleManager.previousTriggerTime(e)?.let { e to it } }
+                .maxByOrNull { it.second }
+                ?.first
+            val result = if (next != null) {
+                applyEntry(context, next, allEntries, schedPrefs, listPrefs)
+                "season over, back to another schedule"
+            } else {
+                // No schedule would be on now: turn every scheduled collection off.
+                applyEntry(context, ScheduleEntry(id = "season-end", days = emptySet(), startHour = 0, startMinute = 0), allEntries, schedPrefs, listPrefs)
+                "season over, back to the main queue"
+            }
+            schedPrefs.recordTrigger(ended.id, result)
+            ScheduleManager.scheduleIfEnabled(context, ended)
+            return result
+        }
+
         internal fun enqueueRotation(context: Context) {
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(
@@ -217,6 +249,18 @@ class ScheduleReceiver : BroadcastReceiver() {
                     if (!entry.enabled) {
                         // Entry was disabled after alarm was queued — skip silently.
                         schedPrefs.recordTrigger(entryId, "skipped: disabled")
+                        return@withTimeout
+                    }
+
+                    if (intent.action == ScheduleManager.ACTION_SEASON_END) {
+                        if (entry.isSeasonal && entry.revertAtEnd) {
+                            applyAfterSeason(context, entry, entries, schedPrefs, listPrefs)
+                        }
+                        return@withTimeout
+                    }
+                    // While a seasonal schedule's dates are on, weekly schedules stand aside.
+                    if (!entry.isSeasonal && entries.any { it.id != entry.id && it.seasonActive() }) {
+                        schedPrefs.recordTrigger(entryId, "skipped: seasonal schedule on")
                         return@withTimeout
                     }
 
