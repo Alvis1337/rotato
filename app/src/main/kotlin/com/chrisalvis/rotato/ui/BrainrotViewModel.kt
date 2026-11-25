@@ -348,8 +348,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     /** Composite "source:id" dedup — session-long to prevent repeat items */
     private val displayedKeys = mutableSetOf<String>()
     /**
-     * What was on screen before a pull to refresh: kept out of the new feed while there's anything
-     * else to show, and only used to top up a batch that would otherwise come up short.
+     * What was on screen before a pull to refresh, plus everything shown in earlier sessions:
+     * kept out of the feed while there's anything else to show, and only used to top up a batch
+     * that would otherwise come up short (a narrow search that has run out of new posts).
      */
     private var refreshAvoid: Set<String> = emptySet()
     private val persistentBlockedKeys = mutableSetOf<String>()
@@ -435,7 +436,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         persistentBlockedKeys.clear()
         persistentBlockedKeys.addAll(prefs.blockedImageKeys.first())
         displayedKeys.addAll(persistentBlockedKeys)
-        displayedKeys.addAll(prefs.seenWallpaperKeys.first())
+        // Seen before is a soft "not again": it was a hard one, so a narrow search could come up
+        // empty, and a reset wiped it, which brought the same posts straight back.
+        refreshAvoid = prefs.seenWallpaperKeys.first()
         migrateBlacklistToNeverTier()
         val localEnabled = sources.first()
         if (localEnabled.isEmpty()) {
@@ -472,14 +475,14 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun loadMore(reset: Boolean = false, avoid: Set<String> = emptySet()) {
         if (reset) {
-            refreshAvoid = avoid
             fetchJob?.cancel()
             fetchJob = null
             _gridItems.update { emptyList() }
             displayedKeys.clear()
             displayedKeys.addAll(persistentBlockedKeys)
             clearBatchSelection()
-            viewModelScope.launch(Dispatchers.IO) { prefs.clearSeenWallpaperKeys() }
+            // Keep the seen history: clearing it on every reset (NSFW, "Align with interests",
+            // a filter, pull to refresh) put the same posts back at the top each time.
             feedGeneration++
             pageCache.clear()
             currentDiscoverRequests = null
@@ -494,6 +497,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
 
         val generation = feedGeneration
         fetchJob = viewModelScope.launch {
+            if (reset) refreshAvoid = avoid + prefs.seenWallpaperKeys.first()
             // Respect "Wi-Fi only for Discover" setting
             val wifiOnly = prefs.wifiOnlyDiscover.first()
             if (wifiOnly) {
@@ -591,7 +595,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (blockedUrls.isNotEmpty() && wp.fullUrl in blockedUrls) { totalSkipped++; continue }
                 // With NSFW off nothing fetched as NSFW is ever shown, whatever cache it came from.
                 if (!nsfw && wp.isNsfw) { totalSkipped++; continue }
-                if (key in refreshAvoid) { held.putIfAbsent(key, wp); if (++totalSkipped >= 200) break; continue }
+                // Not counted towards the skip limit: a page that's mostly been seen before must
+                // not stop the drain before the fresh posts further down it are reached.
+                if (key in refreshAvoid) { held.putIfAbsent(key, wp); continue }
                 totalSkipped = 0
                 displayedKeys.add(key)
                 prefetchGridImage(ctx, wp)
@@ -635,28 +641,9 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 consecutiveEmptyFetches = 0
                 val boostTags = profileIncludes.ifEmpty { tierBoostTags }
-                // Loved tags lean early and disliked ones late, but with enough jitter that a batch
-                // never turns into one block of the same tag followed by another.
-                val orderedItems = if (boostTags.isEmpty() && tierDemoteTags.isEmpty()) newItems.shuffled()
-                // Each score (jitter included) is drawn once: a sort whose keys change between
-                // comparisons breaks TimSort's contract and can throw.
-                else newItems.map { wp ->
-                    val tags = wp.tags.map(::normalizeTag)
-                    wp to (if (tags.any { it in boostTags }) 1f else 0f) -
-                        (if (tags.any { it in tierDemoteTags }) 1f else 0f) +
-                        kotlin.random.Random.nextFloat() * 1.6f
-                }.sortedByDescending { it.second }.map { it.first }.let { ordered ->
-                    // "For you": rank each batch by learned taste and how well it'll work as a
-                    // wallpaper here, with a little jitter so the feed doesn't feel sorted.
-                    if (!learnedTaste.forYouEnabled.first() || explicitQuery.isNotBlank()) ordered
-                    else {
-                        val weights = learnedTaste.weights.first()
-                        ordered.mapIndexed { i, wp ->
-                            wp to com.chrisalvis.rotato.data.LearnedTaste.score(wp, weights, foldCanvasForRanking) -
-                                i * 0.02f + kotlin.random.Random.nextFloat() * 0.8f
-                        }.sortedByDescending { it.second }.map { it.first }
-                    }
-                }
+                val forYouWeights = if (learnedTaste.forYouEnabled.first() && explicitQuery.isBlank())
+                    learnedTaste.weights.first() else null
+                val orderedItems = rankForFeed(newItems, boostTags, tierDemoteTags, forYouWeights)
                 if (generation != feedGeneration) return@launch
                 _gridItems.update { it + orderedItems.notIn(it) }  // single batch update → one recomposition
                 _hasNewBatch.update { true }
@@ -668,6 +655,38 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
                 if (isInitial) _loading.update { false } else _loadingMore.update { false }
             }
         }
+    }
+
+    /**
+     * Orders a batch so taste leads without fixing the order. Each item's taste score (loved or
+     * disliked tags, plus "For you" when on) is standardised across the batch and drawn against
+     * Gumbel noise, which samples the order in proportion to exp(score): a strong match is likely
+     * near the top, never guaranteed. Before, "For you" scores (up to about 20) were sorted with
+     * under 1 point of jitter, so the same favourites came out in the same order every time.
+     */
+    private fun rankForFeed(
+        items: List<BrainrotWallpaper>,
+        boostTags: Set<String>,
+        demoteTags: Set<String>,
+        forYouWeights: Map<String, Float>?,
+    ): List<BrainrotWallpaper> {
+        if (items.size < 2) return items
+        val raw = items.map { wp ->
+            val tags = wp.tags.map(::normalizeTag)
+            var s = 0.0
+            if (boostTags.isNotEmpty() && tags.any { it in boostTags }) s += 1.0
+            if (demoteTags.isNotEmpty() && tags.any { it in demoteTags }) s -= 1.0
+            if (forYouWeights != null) s += com.chrisalvis.rotato.data.LearnedTaste.score(wp, forYouWeights, foldCanvasForRanking)
+            s
+        }
+        val mean = raw.average()
+        val sd = kotlin.math.sqrt(raw.sumOf { (it - mean) * (it - mean) } / raw.size)
+        if (sd < 1e-6) return items.shuffled()
+        // Keys are drawn once per item, so the sort's comparisons stay consistent.
+        return items.indices.map { i ->
+            val u = kotlin.random.Random.nextDouble().coerceIn(1e-12, 1 - 1e-12)
+            i to ((raw[i] - mean) / sd * TASTE_PULL - kotlin.math.ln(-kotlin.math.ln(u)))
+        }.sortedByDescending { it.second }.map { items[it.first] }
     }
 
     /** MAL-driven feed (linked list, no manual search) → anime category only on general sources. */
@@ -770,6 +789,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        /** How hard taste pulls a batch's order: one standard deviation above average ≈ e times as likely to lead. */
+        const val TASTE_PULL = 1.0
         /** API families whose sites carry video posts. */
         val VIDEO_PROTOCOLS = setOf(Protocol.GELBOORU, Protocol.DANBOORU, Protocol.REDDIT)
     }

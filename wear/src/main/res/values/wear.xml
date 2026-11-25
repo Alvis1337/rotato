@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@array/android_wear_capabilities">
+    <!-- Lets the phone app know a watch with Rotato is paired, so it only syncs when one is. -->
+    <string-array name="android_wear_capabilities" translatable="false">
+        <item>rotato_watch</item>
+    </string-array>
+    <string name="tile_label">Rotato wallpaper</string>
+    <string name="tile_description">Your phone\'s wallpaper, with Save and Next</string>
+    <string name="complication_label">Rotato wallpaper</string>
+</resources>
