@@ -62,6 +62,15 @@ This is the manual test pass to run before trusting it.
 - [ ] Tapping it OFF: rotation and NSFW mode should return to whatever they were before you activated stealth
 - [ ] Tile shows "Not set up" (or similar) if no stealth collection has been chosen yet, and tapping it does nothing destructive in that state
 
+## Discover variety
+
+- [ ] With NSFW on, "Align with interests" on and "For you" on, note the first ~10 posts, pull to refresh: a mostly different set, in a different order
+- [ ] Toggle NSFW or "Align with interests" off and on again: the feed doesn't come back with the same posts it just showed
+- [ ] Close and reopen the app: the first screen isn't a repeat of the last session's first screen
+- [ ] Loved tags still show up noticeably more often near the top, and disliked ones lower
+- [ ] A narrow search (one rare tag) still fills the grid, re-using posts you've seen once it runs out of new ones
+- [ ] Rule34 and Reddit: a few refreshes turn up different posts, not the same newest/top page each time
+
 ## Known gaps / things I'm least confident about
 - Stealth mode's "remember and restore previous NSFW mode" logic — the trickiest bit of state to get right, most worth double-checking by toggling it on/off a few times in a row
 - The downscale/upscale "blur" used for the notification thumbnail — never seen the actual rendered result, could look worse than intended
