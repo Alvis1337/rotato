@@ -79,6 +79,7 @@ fun ScheduleScreen(
             // Locked collections are offered only while unlocked for this session, and never
             // while NSFW features are hidden. Ones the schedule already uses stay selected.
             lists = pickerLists,
+            allListIds = lists.mapTo(HashSet()) { it.id },
             isEditing = entries.any { it.id == editEntry!!.id },
             onSave = { vm.saveEdit(it) },
             onDismiss = { vm.dismissEdit() },
@@ -400,6 +401,8 @@ private val StringSetSaver = Saver<Set<String>, ArrayList<String>>(save = { Arra
 private fun ScheduleEditDialog(
     entry: ScheduleEntry,
     lists: List<LocalList>,
+    /** Every existing collection id, shown or not (deleted ones aren't in it). */
+    allListIds: Set<String>,
     isEditing: Boolean,
     onSave: (ScheduleEntry) -> Unit,
     onDismiss: () -> Unit,
@@ -564,6 +567,17 @@ private fun ScheduleEditDialog(
                                 )
                             }
                         }
+                    }
+                    // Chosen collections this list doesn't show (locked and not unlocked right
+                    // now): say so, or the schedule looks like it has nothing selected.
+                    val notShown = selectedListIds.count { id -> id in allListIds && lists.none { it.id == id } }
+                    if (notShown > 0) {
+                        Text(
+                            if (notShown == 1) "Also uses 1 locked collection. Unlock it in Saved to change it."
+                            else "Also uses $notShown locked collections. Unlock them in Saved to change them.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     lists.forEach { list ->
                         val selected = list.id in selectedListIds

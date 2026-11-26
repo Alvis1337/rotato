@@ -424,7 +424,9 @@ class MainActivity : AppCompatActivity() {
                                 }
                             }
                             composable("settings_rotation_wallpaper") {
-                                SettingsPanes(settingsTwoPane, settingsList) {
+                                // Opened from the Wallpaper tab it stands alone: a Settings list
+                                // beside it would push categories onto the Wallpaper tab's stack.
+                                SettingsPanes(settingsTwoPane && !openedFromNow, settingsList) {
                                     RotationWallpaperSettingsScreen(
                                         viewModel = homeViewModel,
                                         onNavigateBack = { navController.popBackStack() },
