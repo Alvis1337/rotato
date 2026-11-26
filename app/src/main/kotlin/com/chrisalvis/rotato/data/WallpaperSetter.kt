@@ -80,22 +80,29 @@ suspend fun applyVideoWallpaperFromUrl(
     history: WallpaperHistoryItem,
 ): String? = withContext(Dispatchers.IO) {
     if (!LiveWallpaper.isActive(context)) return@withContext "Turn on the Rotato live wallpaper (Settings › Rotation) to use videos"
+    // Imgur's .gifv links are web pages; the same name with .mp4 is the video itself.
+    val videoUrl = if (url.substringBefore('?').endsWith(".gifv", ignoreCase = true)) {
+        url.substringBefore('?').dropLast(5) + ".mp4"
+    } else url
     val dir = File(context.filesDir, "live").apply { mkdirs() }
-    val local = imageSourceFor(context, url) as? File
-    val ext = url.substringBefore('?').substringAfterLast('.', "mp4").lowercase().takeIf { it.length in 2..4 } ?: "mp4"
+    val local = imageSourceFor(context, videoUrl) as? File
+    val ext = videoUrl.substringBefore('?').substringAfterLast('.', "mp4").lowercase().takeIf { it.length in 2..4 } ?: "mp4"
     val file = File(dir, "video_${System.currentTimeMillis()}.$ext")
     val ok = try {
         if (local != null) {
             local.copyTo(file, overwrite = true)
             true
         } else {
-            val req = Request.Builder().url(url)
+            val req = Request.Builder().url(videoUrl)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36")
                 .apply { if (referer.isNotBlank()) header("Referer", referer) }
                 .build()
             FeedRepository.httpClient.newCall(req).execute().use { resp ->
                 val body = resp.body
-                if (!resp.isSuccessful || body == null) false
+                // A site that blocks hotlinking often answers with a web page instead of the
+                // video; playing that would leave the wallpaper black.
+                val type = body?.contentType()?.let { "${it.type}/${it.subtype}" }.orEmpty().lowercase()
+                if (!resp.isSuccessful || body == null || type.startsWith("text/") || type.startsWith("image/")) false
                 else { file.outputStream().use { body.byteStream().copyTo(it) }; file.length() > 0 }
             }
         }

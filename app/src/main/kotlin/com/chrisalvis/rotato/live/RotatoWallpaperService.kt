@@ -8,16 +8,20 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.HardwareRenderer
 import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.RenderNode
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -26,6 +30,7 @@ import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
 import android.view.animation.DecelerateInterpolator
+import androidx.annotation.RequiresApi
 import com.chrisalvis.rotato.data.findFocusPoint
 import com.chrisalvis.rotato.data.focusedCrop
 import com.chrisalvis.rotato.data.loadScaledBitmap
@@ -82,6 +87,16 @@ class RotatoWallpaperService : WallpaperService() {
          * black; the surface is swapped for a fresh one before the video starts.
          */
         private var surfaceHeldCanvas = false
+        /**
+         * Android 10+: stills draw through Rotato's own renderer instead of locking a canvas on
+         * the surface. A locked canvas keeps hold of the surface for good, so a video started
+         * after an image couldn't attach its decoder and the wallpaper went black. The renderer
+         * is destroyed before a video starts, which lets go of the surface properly.
+         */
+        private var renderer: HardwareRenderer? = null
+        private var renderNode: RenderNode? = null
+        /** The video at this path couldn't play, so a still of its first frame is showing instead. */
+        private var posterFor: String? = null
         // Wallpaper surfaces start opaque, so the first swap goes to RGBA.
         private var opaqueFormat = true
         private var loadToken = 0
@@ -151,6 +166,7 @@ class RotatoWallpaperService : WallpaperService() {
             main.removeCallbacks(frameCallback)
             stopSensors()
             releasePlayer()
+            detachRenderer()
             loaderThread.quitSafely()
             current?.bitmap?.recycle()
             previous?.bitmap?.recycle()
@@ -163,6 +179,8 @@ class RotatoWallpaperService : WallpaperService() {
             super.onSurfaceCreated(holder)
             surfaceHeldVideo = false
             surfaceHeldCanvas = false
+            // A renderer bound to the old surface would draw nowhere; the next frame makes a new one.
+            detachRenderer()
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
@@ -188,6 +206,7 @@ class RotatoWallpaperService : WallpaperService() {
             surfaceReady = false
             main.removeCallbacks(frameCallback)
             releasePlayer()
+            detachRenderer()
             super.onSurfaceDestroyed(holder)
         }
 
@@ -257,6 +276,7 @@ class RotatoWallpaperService : WallpaperService() {
                 return
             }
             videoPath = null
+            posterFor = null
             val crops = LiveWallpaper.parseCrops(prefs.getString(LiveWallpaper.KEY_CROPS, null))
             loader.post {
                 // The published image is already fitted to the screen (its crops are in its
@@ -310,8 +330,11 @@ class RotatoWallpaperService : WallpaperService() {
             previous?.bitmap?.recycle()
             current = null
             previous = null
+            posterFor = null
             // With no live surface (this screen is off), wait for onSurfaceChanged to start it.
             if (!surfaceReady || !surfaceHolder.surface.isValid) return
+            // Let go of the surface so the decoder can attach to it.
+            detachRenderer()
             if (surfaceHeldCanvas) {
                 // Swap for a fresh surface; onSurfaceChanged starts the video on it.
                 surfaceHeldCanvas = false
@@ -339,8 +362,14 @@ class RotatoWallpaperService : WallpaperService() {
                     main.post {
                         if (player === mp) {
                             releasePlayer()
-                            // A surface that still couldn't take the decoder: swap it once more and retry.
-                            if (videoPath == path && videoRetries++ < 1) flipSurfaceFormat()
+                            // A surface that still couldn't take the decoder: swap it once more and
+                            // retry. If that fails too, show the video's first frame, not black.
+                            if (videoPath == path && videoRetries++ < 1) {
+                                flipSurfaceFormat()
+                                main.postDelayed({ if (videoPath == path && player == null && surfaceReady) playVideo(path) }, 350)
+                            } else if (videoPath == path) {
+                                showVideoPoster(path)
+                            }
                         }
                     }
                     true
@@ -353,7 +382,45 @@ class RotatoWallpaperService : WallpaperService() {
                 player = mp
             } catch (e: Exception) {
                 runCatching { mp.release() }
+                showVideoPoster(path)
             }
+        }
+
+        /** Shows the first frame of a video that won't play, so the wallpaper isn't left black. */
+        private fun showVideoPoster(path: String) {
+            loader.post {
+                val bmp = runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(path)
+                        retriever.getFrameAtTime(0)
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
+                }.getOrNull() ?: return@post
+                val focus = runCatching { findFocusPoint(bmp) }.getOrDefault(PointF(0.5f, 0.5f))
+                main.post {
+                    if (videoPath != path || player != null) {
+                        bmp.recycle()
+                        return@post
+                    }
+                    previous?.bitmap?.recycle()
+                    previous = null
+                    current?.bitmap?.recycle()
+                    current = Frame(bmp, focus, emptyMap())
+                    fadeStart = SystemClock.uptimeMillis() - fadeMs
+                    posterFor = path
+                    scheduleFrame()
+                }
+            }
+        }
+
+        private fun detachRenderer() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+            renderer?.let { runCatching { it.destroy() } }
+            renderer = null
+            renderNode?.let { runCatching { it.discardDisplayList() } }
+            renderNode = null
         }
 
         /**
@@ -390,49 +457,93 @@ class RotatoWallpaperService : WallpaperService() {
 
         private fun drawFrame() {
             // A video owns this surface (or is about to); drawing on it would block the decoder.
-            if (player != null || videoPath != null || width == 0) return
-            val holder = surfaceHolder
-            val canvas: Canvas = try {
-                holder.lockHardwareCanvas()
-            } catch (e: Exception) {
-                runCatching { holder.lockCanvas() }.getOrNull()
-            } ?: return
-            surfaceHeldCanvas = true
+            // A video that couldn't play shows its first frame instead.
+            if (player != null || (videoPath != null && posterFor != videoPath) || width == 0) return
             val now = SystemClock.uptimeMillis()
-            var animating = false
-            try {
-                canvas.drawColor(Color.BLACK)
-                val cur = current
-                val fadeT = if (fadeMs <= 0) 1f else ((now - fadeStart).toFloat() / fadeMs).coerceIn(0f, 1f)
-                val revealT = ((now - revealStart).toFloat() / revealMs).coerceIn(0f, 1f)
-                val reveal = 1f + 0.18f * (1f - interpolator.getInterpolation(revealT))
-                val prev = previous
-                if (prev != null && fadeT < 1f) {
-                    paint.alpha = 255
-                    drawImage(canvas, prev, now, reveal)
-                }
-                if (cur != null) {
-                    paint.alpha = (255 * interpolator.getInterpolation(fadeT)).toInt()
-                    drawImage(canvas, cur, now, reveal)
-                }
-                if (followSun && cur != null) {
-                    val time = LocalTime.now()
-                    val tint = LiveWallpaper.sunTint(time.hour + time.minute / 60f)
-                    if (Color.alpha(tint) > 0) canvas.drawColor(tint)
-                }
-                if (fadeT >= 1f && prev != null) {
-                    prev.bitmap.recycle()
-                    previous = null
-                }
-                animating = fadeT < 1f || revealT < 1f || (visible && !saving && (drift || parallax))
-            } finally {
-                runCatching { holder.unlockCanvasAndPost(canvas) }
-            }
+            val animating = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                drawWithRenderer(now)
+            } else {
+                drawWithLockedCanvas(now)
+            } ?: return
             // The sun moves slowly: with nothing animating, repaint once a minute so the tint keeps up.
             when {
                 animating && visible -> main.postDelayed(frameCallback, if (drift && !parallax && fadeMs <= 0) 50L else 16L)
                 followSun && visible -> main.postDelayed(frameCallback, 60_000L)
             }
+        }
+
+        /** Draws one frame through Rotato's own renderer. Null if there's nothing to draw into. */
+        @RequiresApi(Build.VERSION_CODES.Q)
+        private fun drawWithRenderer(now: Long): Boolean? {
+            val surface = surfaceHolder.surface
+            if (surface == null || !surface.isValid) return null
+            if (renderer == null || renderNode == null) {
+                detachRenderer()
+                val freshNode = RenderNode("rotato-live")
+                val fresh = runCatching {
+                    HardwareRenderer().apply {
+                        setContentRoot(freshNode)
+                        setSurface(surface)
+                    }
+                }.getOrNull() ?: return null
+                renderNode = freshNode
+                renderer = fresh
+            }
+            val r = renderer ?: return null
+            val node = renderNode ?: return null
+            node.setPosition(0, 0, width, height)
+            val canvas = node.beginRecording(width, height)
+            val animating = try {
+                paintFrame(canvas, now)
+            } finally {
+                node.endRecording()
+            }
+            runCatching { r.createRenderRequest().syncAndDraw() }
+            return animating
+        }
+
+        /** Android 8–9: draws one frame on a canvas locked on the surface. */
+        private fun drawWithLockedCanvas(now: Long): Boolean? {
+            val holder = surfaceHolder
+            val canvas: Canvas = try {
+                holder.lockHardwareCanvas()
+            } catch (e: Exception) {
+                runCatching { holder.lockCanvas() }.getOrNull()
+            } ?: return null
+            surfaceHeldCanvas = true
+            return try {
+                paintFrame(canvas, now)
+            } finally {
+                runCatching { holder.unlockCanvasAndPost(canvas) }
+            }
+        }
+
+        /** Paints the current frame (crossfade, reveal, drift, tint). True while it's animating. */
+        private fun paintFrame(canvas: Canvas, now: Long): Boolean {
+            canvas.drawColor(Color.BLACK)
+            val cur = current
+            val fadeT = if (fadeMs <= 0) 1f else ((now - fadeStart).toFloat() / fadeMs).coerceIn(0f, 1f)
+            val revealT = ((now - revealStart).toFloat() / revealMs).coerceIn(0f, 1f)
+            val reveal = 1f + 0.18f * (1f - interpolator.getInterpolation(revealT))
+            val prev = previous
+            if (prev != null && fadeT < 1f) {
+                paint.alpha = 255
+                drawImage(canvas, prev, now, reveal)
+            }
+            if (cur != null) {
+                paint.alpha = (255 * interpolator.getInterpolation(fadeT)).toInt()
+                drawImage(canvas, cur, now, reveal)
+            }
+            if (followSun && cur != null) {
+                val time = LocalTime.now()
+                val tint = LiveWallpaper.sunTint(time.hour + time.minute / 60f)
+                if (Color.alpha(tint) > 0) canvas.drawColor(tint)
+            }
+            if (fadeT >= 1f && prev != null) {
+                prev.bitmap.recycle()
+                previous = null
+            }
+            return fadeT < 1f || revealT < 1f || (visible && !saving && (drift || parallax))
         }
 
         private val srcRect = RectF()

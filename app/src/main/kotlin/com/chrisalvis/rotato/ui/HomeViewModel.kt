@@ -815,6 +815,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _setNowErrorMessage.update { null }
             try {
                 val error = com.chrisalvis.rotato.data.applyWallpaperFile(getApplication(), file, recordAsCurrent)
+                // Nothing on the Library screen watches setNowState, so say how it went here.
+                val isVideo = com.chrisalvis.rotato.live.LiveWallpaper.isVideoFile(file)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        getApplication(),
+                        error ?: if (isVideo) "Video wallpaper set!" else "Wallpaper set!",
+                        if (error != null) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
                 if (error != null) {
                     _setNowErrorMessage.update { error }
                     _setNowState.update { SetNowState.ERROR }
@@ -824,6 +833,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 resetSetNowUi()
             } catch (e: Exception) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "Couldn't set the wallpaper", android.widget.Toast.LENGTH_SHORT).show()
+                }
                 _setNowErrorMessage.update { e.message?.take(60) ?: "Unknown error" }
                 _setNowState.update { SetNowState.ERROR }
                 resetSetNowUi()
