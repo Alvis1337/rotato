@@ -269,8 +269,10 @@ private fun PlaceSection(vm: ToolsViewModel) {
         hasLocation = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
         ssid = vm.currentSsid()
     }
-    val usable = collections.filter { !it.isLocked }
-    fun name(id: String) = usable.firstOrNull { it.id == id }?.name ?: "a removed collection"
+    // Locked collections show while unlocked this session (never with the content filter on);
+    // a hidden one that's already chosen reads "Locked collection", not its name.
+    val usable = rememberPickerLists(collections)
+    fun name(id: String) = pickerLabelFor(id, collections, usable, "a removed collection").let { if (it == "Locked collection") "a locked collection" else it }
 
     SettingsSection(title = "Place rules") {
         Hint("Rotate from a different collection depending on the Wi-Fi you're on: one at home, one at work. Android only shares the Wi-Fi name with location access.")
@@ -333,8 +335,10 @@ private fun WeatherSection(vm: ToolsViewModel) {
             Toast.makeText(context, "No location fix yet. Search for your town instead.", Toast.LENGTH_SHORT).show()
         }
     }
-    val usable = collections.filter { !it.isLocked }
-    fun name(id: String) = usable.firstOrNull { it.id == id }?.name ?: "a removed collection"
+    // Locked collections show while unlocked this session (never with the content filter on);
+    // a hidden one that's already chosen reads "Locked collection", not its name.
+    val usable = rememberPickerLists(collections)
+    fun name(id: String) = pickerLabelFor(id, collections, usable, "a removed collection").let { if (it == "Locked collection") "a locked collection" else it }
 
     SettingsSection(title = "Weather rules") {
         Hint("Rotate from a different collection when it rains, snows or the sun is out. Weather comes from Open-Meteo, free and with no account.")
@@ -436,8 +440,10 @@ private fun NowPlayingSection(vm: ToolsViewModel) {
         lastArtist = vm.lastArtist()
         onPauseOrDispose { }
     }
-    val usable = collections.filter { !it.isLocked }
-    fun name(id: String) = usable.firstOrNull { it.id == id }?.name ?: "a removed collection"
+    // Locked collections show while unlocked this session (never with the content filter on);
+    // a hidden one that's already chosen reads "Locked collection", not its name.
+    val usable = rememberPickerLists(collections)
+    fun name(id: String) = pickerLabelFor(id, collections, usable, "a removed collection").let { if (it == "Locked collection") "a locked collection" else it }
     fun openAccess() {
         runCatching { context.startActivity(NowPlaying.accessIntent(context)) }
             .onFailure { runCatching { context.startActivity(NowPlaying.accessListIntent()) } }
