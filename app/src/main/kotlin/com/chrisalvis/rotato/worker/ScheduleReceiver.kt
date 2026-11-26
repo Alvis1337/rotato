@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -221,6 +222,23 @@ class ScheduleReceiver : BroadcastReceiver() {
             // Count only this list's wallpapers that are now present on disk.
             val onDisk = imageDir.listFiles()?.toList().orEmpty()
             return wallpapers.count { wp -> onDisk.findPoolFile(wp.source, wp.sourceId) != null }
+        }
+
+        /**
+         * Takes [listId] out of rotation: clears its flag and removes its images from the pool,
+         * keeping any that another collection still in rotation also holds. Only flipping the
+         * flag left every image already copied into the pool cycling as before.
+         */
+        suspend fun unlinkFromRotation(context: Context, listId: String, listPrefs: LocalListsPreferences) = withContext(Dispatchers.IO) {
+            listPrefs.setUseAsRotation(listId, false)
+            val stillLinkedIds = listPrefs.lists.first()
+                .filter { it.useAsRotation && it.id != listId }
+                .mapTo(HashSet()) { it.id }
+            val keepKeys = if (stillLinkedIds.isEmpty()) emptySet() else listPrefs.allWallpapers.first()
+                .filter { it.listId in stillLinkedIds }
+                .flatMap { poolKeys(it.source, it.sourceId) }
+                .toSet()
+            removeRotationFiles(context, listId, listPrefs, keepKeys)
         }
 
         internal suspend fun removeRotationFiles(

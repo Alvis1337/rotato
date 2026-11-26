@@ -413,14 +413,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleCollectionAsRotation(list: LocalList) {
-        viewModelScope.launch {
-            // Linking a collection to the Library is an explicit add of everything in it.
-            if (!list.useAsRotation) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Read the flag fresh: the row may hold a stale copy after a quick double tap.
+            val linked = localLists.lists.first().firstOrNull { it.id == list.id }?.useAsRotation ?: list.useAsRotation
+            if (linked) {
+                // Unlinking takes the collection's images back out of the pool too; only
+                // clearing the flag left them all rotating.
+                com.chrisalvis.rotato.worker.ScheduleReceiver.unlinkFromRotation(getApplication<Application>(), list.id, localLists)
+            } else {
+                // Linking a collection to the Library is an explicit add of everything in it.
                 preferences.clearLibraryRemovedKeys(
                     localLists.wallpapersForList(list.id).first().flatMap { poolKeys(it.source, it.sourceId) }
                 )
+                localLists.setUseAsRotation(list.id, true)
             }
-            localLists.setUseAsRotation(list.id, !list.useAsRotation)
         }
     }
 
