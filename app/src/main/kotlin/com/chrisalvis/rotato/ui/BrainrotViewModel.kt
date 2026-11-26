@@ -1024,7 +1024,8 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addToList(listId: String, wp: BrainrotWallpaper, leaveGrid: Boolean = true) {
+    /** [listNameHint] names a collection created a moment ago, before [lists] has caught up. */
+    fun addToList(listId: String, wp: BrainrotWallpaper, leaveGrid: Boolean = true, listNameHint: String? = null) {
         learn(wp, com.chrisalvis.rotato.data.LearnedTaste.Signal.SAVED)
         _selectedListId.update { listId }
         if (leaveGrid) removeFromGrid(wp)
@@ -1034,7 +1035,7 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
             // Saved videos download in the background (Wi-Fi only) so they're ready to rotate.
             if (ok && wp.isVideo) launch(Dispatchers.IO) { runCatching { com.chrisalvis.rotato.data.OfflinePack.keepVideo(ctx, wp) } }
             val list = lists.value.find { it.id == listId }
-            val listName = list?.name ?: "list"
+            val listName = list?.name ?: listNameHint ?: "list"
             if (ok) {
                 // If this list drives rotation, download the file now so it appears immediately.
                 if (list?.useAsRotation == true) {
@@ -1083,10 +1084,11 @@ class BrainrotViewModel(app: Application) : AndroidViewModel(app) {
         _selectedListId.update { listId }
     }
 
-    fun createList(name: String) {
+    fun createList(name: String, onCreated: ((LocalList) -> Unit)? = null) {
         viewModelScope.launch {
             val list = localLists.createList(name) ?: return@launch
             _selectedListId.update { list.id }
+            onCreated?.invoke(list)
         }
     }
 

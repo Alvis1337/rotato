@@ -22,7 +22,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Close
@@ -383,8 +388,10 @@ private fun TagTierRow(
                 )
             }
         }
-        IconButton(onClick = { onRemove(tag, isNsfw) }, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+        // Default size, not 32dp: the 48dp touch target spilled onto the "✕ Never" chip beside
+        // it, and the same ✕ glyph made the two easy to mix up.
+        IconButton(onClick = { onRemove(tag, isNsfw) }) {
+            Icon(Icons.Default.Delete, contentDescription = "Remove $tag", modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -423,8 +430,8 @@ private fun BlacklistTagRow(
                 )
             }
         }
-        IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Delete, contentDescription = "Remove $tag", modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -454,15 +461,30 @@ private fun TierChip(tier: TagTier, current: TagTier, label: String, onPick: (Ta
         label = "tierColor"
     )
     val contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    // Screen readers heard only "♥" / "↑" / "↓" / "✕" with no state; now a named, selectable option.
+    val spoken = when (tier) {
+        TagTier.LOVE -> "Love"
+        TagTier.LIKE -> "Like"
+        TagTier.DISLIKE -> "Dislike"
+        TagTier.NEVER -> "Never show"
+        else -> tier.name.lowercase().replaceFirstChar { it.uppercase() }
+    }
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(containerColor)
-            .clickable { onPick(tier) }
+            .selectable(selected = selected, role = Role.RadioButton, onClick = { onPick(tier) })
+            .semantics { contentDescription = spoken }
             .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = contentColor, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Text(
+            label,
+            color = contentColor,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            modifier = Modifier.clearAndSetSemantics { },
+        )
     }
 }
 
@@ -594,7 +616,20 @@ private fun ProfileEditorSheet(
                 TextButton(
                     onClick = {
                         if (name.isNotBlank()) {
-                            onSave(initial.copy(name = name.trim(), includeTags = includeTags, excludeTags = excludeTags))
+                            // A tag still typed in a field (not yet added with Enter or +) is
+                            // saved too; it used to be dropped without a word.
+                            // Same rule as Enter / +: the whole field is one tag.
+                            fun withPending(tags: List<String>, pending: String) =
+                                (tags + pending.trim().lowercase())
+                                    .filter { it.isNotBlank() }
+                                    .distinct()
+                            onSave(
+                                initial.copy(
+                                    name = name.trim(),
+                                    includeTags = withPending(includeTags, includeInput),
+                                    excludeTags = withPending(excludeTags, excludeInput),
+                                )
+                            )
                         }
                     },
                     enabled = name.isNotBlank()

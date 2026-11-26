@@ -108,7 +108,9 @@ class FeedRepository(private val imageDir: File) {
                 else -> "image/jpeg"
             }
             val ext = mimeType.substringAfterLast('/').let { if (it == "mp4") "mp4" else it }
-            val fileName = "${sanitizeFilename(sourceId)}.$ext"
+            // Ids taken from a URL's last segment can still be percent-encoded ("%20"), which
+            // used to come out as "_20" in the gallery file name.
+            val fileName = "${sanitizeFilename(android.net.Uri.decode(sourceId))}.$ext"
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI

@@ -35,7 +35,8 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = gitCommitCount
-        versionName = "1.0"
+        // Matches the release tag (v1.0.<commit count>); updates compare versionCode only.
+        versionName = "1.0.$gitCommitCount"
         resValue("string", "app_name", "Rotato")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

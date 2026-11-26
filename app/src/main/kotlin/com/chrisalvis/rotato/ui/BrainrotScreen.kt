@@ -34,6 +34,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -345,7 +349,17 @@ fun BrainrotScreen(
         }
         val doCreate = {
             if (newListName.isNotBlank()) {
-                vm.createList(newListName)
+                // Finish the pending save into exactly the collection just created. (A
+                // LaunchedEffect on selectedListId used to do this; once collections existed it
+                // could fire for the wrong one, and the "New" buttons never opened this dialog.)
+                val wp = pendingAddWallpaper
+                val batch = pendingBatchSave
+                vm.createList(newListName) { created ->
+                    wp?.let { vm.addToList(created.id, it, leaveGrid = false, listNameHint = created.name) }
+                    if (batch) vm.saveBatchToList(created.id)
+                }
+                pendingAddWallpaper = null
+                pendingBatchSave = false
                 showCreateListDialog = false
             }
         }
@@ -385,14 +399,17 @@ fun BrainrotScreen(
         )
     }
 
+    /**
+     * With [list], saves straight into it. Without one ("New" / "New collection…", or no
+     * collections yet), asks for a name and saves into the new collection. It used to quietly
+     * save into the last-used collection instead and drop the image from the feed.
+     */
     fun onAddToList(wp: BrainrotWallpaper, list: LocalList? = null) {
-        when {
-            lists.isEmpty() -> {
-                pendingAddWallpaper = wp
-                showCreateListDialog = true
-            }
-            list != null -> vm.addToList(list.id, wp)
-            else -> vm.addToList(selectedListId ?: lists.first().id, wp)
+        if (list != null) {
+            vm.addToList(list.id, wp)
+        } else {
+            pendingAddWallpaper = wp
+            showCreateListDialog = true
         }
     }
 
@@ -403,21 +420,6 @@ fun BrainrotScreen(
                 showCreateListDialog = true
             }
             else -> showBatchSaveMenu = true
-        }
-    }
-
-    // React to newly created list by completing pending add
-    LaunchedEffect(selectedListId, lists) {
-        val currentListId = selectedListId
-        if (currentListId != null && lists.isNotEmpty()) {
-            pendingAddWallpaper?.let { pending ->
-                vm.addToList(currentListId, pending)
-                pendingAddWallpaper = null
-            }
-            if (pendingBatchSave) {
-                vm.saveBatchToList(currentListId)
-                pendingBatchSave = false
-            }
         }
     }
 
@@ -1250,6 +1252,13 @@ private fun DiscoverThumbnailGridItem(
                     } else null,
                 )
             }
+            // The tap gestures above give screen readers nothing; name the tile and expose
+            // the same open / select actions.
+            .semantics(mergeDescendants = true) {
+                contentDescription = discoverTileDescription(wallpaper, isBlurred)
+                this.onClick(label = if (isBlurred) "Reveal" else "Open") { if (isBlurred) revealed = true else onClick(); true }
+                this.onLongClick(label = "Select") { onLongPress(); true }
+            }
     ) {
         if (previewSlot) {
             VideoPlayerView(
@@ -1400,6 +1409,13 @@ private fun DiscoverGridItem(
                         { onDoubleTap(); burst++ }
                     } else null,
                 )
+            }
+            // The tap gestures above give screen readers nothing; name the tile and expose
+            // the same open / select actions.
+            .semantics(mergeDescendants = true) {
+                contentDescription = discoverTileDescription(wallpaper, isBlurred)
+                this.onClick(label = if (isBlurred) "Reveal" else "Open") { if (isBlurred) revealed = true else onClick(); true }
+                this.onLongClick(label = "Select") { onLongPress(); true }
             }
     ) {
         if (previewSlot) {
@@ -3043,3 +3059,11 @@ private fun FoldPairPreviewDialog(
 }
 
 private fun lerpF(start: Float, stop: Float, fraction: Float): Float = start + (stop - start) * fraction
+
+/** What a screen reader says for a Discover tile: its first tags and where it's from. */
+private fun discoverTileDescription(wallpaper: BrainrotWallpaper, blurred: Boolean): String {
+    if (blurred) return "Hidden NSFW image, double-tap to reveal"
+    val tags = wallpaper.tags.take(3).joinToString(", ") { it.replace('_', ' ') }
+    val kind = if (wallpaper.isVideo) "Video" else "Image"
+    return listOf(kind, tags.ifBlank { null }, sourceDisplayName(wallpaper.source)).filterNotNull().joinToString(" · ")
+}

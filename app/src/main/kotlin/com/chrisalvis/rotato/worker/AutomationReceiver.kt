@@ -107,7 +107,11 @@ class AutomationReceiver : BroadcastReceiver() {
 class AutomationActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val forwarded = Intent(intent).setClass(this, AutomationReceiver::class.java)
+        // Flags must not carry over: activity flags reuse the same bits as receiver flags, and
+        // FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS (set because of excludeFromRecents) reads as
+        // FLAG_RECEIVER_EXCLUDE_BACKGROUND, so Android dropped the broadcast ("Background
+        // execution not allowed") and shortcuts/Routines/Tasker activity intents did nothing.
+        val forwarded = Intent(intent).setClass(this, AutomationReceiver::class.java).setFlags(0)
         sendBroadcast(forwarded)
         val label = when (intent.action) {
             AutomationReceiver.ACTION_NEXT -> "Next wallpaper"

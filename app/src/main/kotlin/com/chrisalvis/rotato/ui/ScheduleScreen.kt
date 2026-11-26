@@ -56,6 +56,7 @@ fun ScheduleScreen(
 ) {
     val entries by vm.entries.collectAsStateWithLifecycle()
     val lists by vm.lists.collectAsStateWithLifecycle()
+    val pickerLists = rememberPickerLists(lists)
     val editEntry by vm.editEntry.collectAsStateWithLifecycle()
     // Re-checked on resume so the warning clears after granting the permission in Settings.
     var needsExactAlarm by remember { mutableStateOf(vm.needsExactAlarmPermission) }
@@ -75,8 +76,9 @@ fun ScheduleScreen(
     if (editEntry != null) {
         ScheduleEditDialog(
             entry = editEntry!!,
-            // Locked collections aren't offered while NSFW features are hidden.
-            lists = if (LocalNsfwHidden.current) lists.filter { !it.isLocked } else lists,
+            // Locked collections are offered only while unlocked for this session, and never
+            // while NSFW features are hidden. Ones the schedule already uses stay selected.
+            lists = pickerLists,
             isEditing = entries.any { it.id == editEntry!!.id },
             onSave = { vm.saveEdit(it) },
             onDismiss = { vm.dismissEdit() },
@@ -183,14 +185,17 @@ fun ScheduleScreen(
                     val deletedCount = entry.listIds.count { it !in listMap }
                     val nsfwHidden = LocalNsfwHidden.current
                     val lockedCount = if (nsfwHidden) 0 else selectedLists.count { it.isLocked }
+                    // A locked collection that isn't unlocked right now isn't named here.
+                    val visibleIds = pickerLists.mapTo(HashSet()) { it.id }
+                    fun shownName(list: LocalList) = if (list.id in visibleIds) list.name else "Locked collection"
                     val collectionSummary = when {
                         entry.usesMainQueue -> "Main rotation queue"
-                        entry.listIds.size == 1 && deletedCount == 0 -> selectedLists.firstOrNull()?.name ?: "Deleted collection"
+                        entry.listIds.size == 1 && deletedCount == 0 -> selectedLists.firstOrNull()?.let(::shownName) ?: "Deleted collection"
                         deletedCount == entry.listIds.size -> "$deletedCount deleted collection${if (deletedCount != 1) "s" else ""}"
                         else -> "${entry.listIds.size} collections"
                     }
                     val collectionDetails = buildList {
-                        addAll(selectedLists.map { it.name })
+                        addAll(selectedLists.map(::shownName))
                         if (deletedCount > 0) {
                             add("$deletedCount deleted")
                         }
@@ -271,7 +276,12 @@ private fun ScheduleEntryCard(
                         Text(
                             buildString {
                                 append(if (entry.seasonActive()) "In season now · weekly schedules wait" else "Every year")
-                                if (entry.revertAtEnd) append(" · switches back after")
+                                // Used to read "switches back after" and stop there.
+                                entry.dateRange?.let { r ->
+                                    if (entry.revertAtEnd) {
+                                        append(" · switches back after ${DateRange.monthName(r.endMonth)} ${r.endDay}")
+                                    }
+                                }
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

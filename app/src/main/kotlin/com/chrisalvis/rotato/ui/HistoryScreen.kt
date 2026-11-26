@@ -186,7 +186,9 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
 fun HistoryScreen(modifier: Modifier = Modifier) {
     val vm: HistoryViewModel = viewModel()
     val history by vm.history.collectAsStateWithLifecycle()
-    val lists by vm.lists.collectAsStateWithLifecycle()
+    // Locked collections only while unlocked, and never with the content filter on; this
+    // dialog used to list them all by name.
+    val lists = rememberPickerLists(vm.lists.collectAsStateWithLifecycle().value)
     val context = LocalContext.current
     var saveToCollectionFor by remember { mutableStateOf<WallpaperHistoryItem?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }

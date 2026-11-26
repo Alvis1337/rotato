@@ -4,10 +4,10 @@ import kotlin.math.abs
 
 enum class MinResolution(val label: String, val width: Int, val height: Int) {
     ANY("Any", 0, 0),
-    HD("HD  (1280×720)", 1280, 720),
+    HD("HD (1280×720)", 1280, 720),
     FHD("FHD (1920×1080)", 1920, 1080),
     QHD("QHD (2560×1440)", 2560, 1440),
-    UHD("4K  (3840×2160)", 3840, 2160),
+    UHD("4K (3840×2160)", 3840, 2160),
     MY_PHONE("My Phone", -1, -1),
 }
 

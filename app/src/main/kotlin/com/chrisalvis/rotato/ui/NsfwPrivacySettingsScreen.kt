@@ -113,11 +113,14 @@ private fun StealthCollectionDropdown(
     lists: List<LocalList>,
     onSelect: (String) -> Unit,
 ) {
+    // Stealth mode exists to show something safe, so a locked collection never fits here; and
+    // naming one would give it away.
+    val safe = lists.filter { !it.isLocked }
     SettingsDropdown(
         label = "Stealth collection",
         description = "The QS \"Stealth Mode\" tile switches rotation entirely to this collection and forces NSFW off, until you tap it again.",
-        items = listOf<LocalList?>(null) + lists,
-        selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Not set",
+        items = listOf<LocalList?>(null) + safe,
+        selectedLabel = pickerLabelFor(selectedCollectionId, lists, safe, "Not set"),
         itemLabel = { it?.name ?: "Not set" },
         onSelect = { onSelect(it?.id ?: "") },
     )

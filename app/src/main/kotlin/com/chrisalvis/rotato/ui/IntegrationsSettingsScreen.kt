@@ -242,8 +242,15 @@ private fun MalMinScoreFilter(
     SettingsDropdown(
         label = "Minimum score",
         items = listOf(0) + (1..10).toList(),
-        selectedLabel = if (minScore == 0) "Any rating" else "Rated $minScore+",
-        itemLabel = { if (it == 0) "Any rating" else "Rated $it+" },
+        // 10 is MAL's top score, so "10+" read oddly.
+        selectedLabel = minScoreLabel(minScore),
+        itemLabel = { minScoreLabel(it) },
         onSelect = onSelect,
     )
+}
+
+private fun minScoreLabel(score: Int): String = when {
+    score <= 0 -> "Any rating"
+    score >= 10 -> "Rated 10"
+    else -> "Rated $score+"
 }

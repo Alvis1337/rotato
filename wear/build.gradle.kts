@@ -29,7 +29,8 @@ android {
         minSdk = 30
         targetSdk = 36
         versionCode = gitCommitCount
-        versionName = "1.0"
+        // Same as the phone app: matches the release tag (v1.0.<commit count>).
+        versionName = "1.0.$gitCommitCount"
         resValue("string", "app_name", "Rotato")
     }
 

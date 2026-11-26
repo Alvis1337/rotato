@@ -101,16 +101,32 @@ class LocalListsPreferences(private val context: Context) {
         }
     }
 
-    /** Moves a collection [delta] places earlier (negative) or later (positive) in the grid. */
-    suspend fun moveList(id: String, delta: Int) {
+    /**
+     * Moves a collection [delta] places earlier (negative) or later (positive) in the grid.
+     * With [visibleIds], places are counted among those collections only, so it passes the
+     * next one the user can see. Otherwise a hidden locked collection in between soaked up
+     * the move and nothing seemed to happen.
+     */
+    suspend fun moveList(id: String, delta: Int, visibleIds: Set<String>? = null) {
         ensureMigrated()
         db.withTransaction {
             val rows = dao.collections().toMutableList()
             val from = rows.indexOfFirst { it.id == id }
             if (from == -1) return@withTransaction
-            val to = (from + delta).coerceIn(0, rows.lastIndex)
-            if (to == from) return@withTransaction
-            rows.add(to, rows.removeAt(from))
+            if (visibleIds == null) {
+                val to = (from + delta).coerceIn(0, rows.lastIndex)
+                if (to == from) return@withTransaction
+                rows.add(to, rows.removeAt(from))
+            } else {
+                val shown = rows.filter { it.id == id || it.id in visibleIds }
+                val at = shown.indexOfFirst { it.id == id }
+                val target = (at + delta).coerceIn(0, shown.lastIndex)
+                if (target == at) return@withTransaction
+                val neighbourId = shown[target].id
+                val moving = rows.removeAt(from)
+                val neighbourAt = rows.indexOfFirst { it.id == neighbourId }
+                rows.add(if (delta > 0) neighbourAt + 1 else neighbourAt, moving)
+            }
             dao.upsertCollections(rows.mapIndexed { i, r -> r.copy(position = i) })
         }
     }

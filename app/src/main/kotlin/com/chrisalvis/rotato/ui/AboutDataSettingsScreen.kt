@@ -524,10 +524,23 @@ private fun AutoBackupRow(onChooseFile: () -> Unit) {
         )
     }
 
+    // The picked file's real name. A document URI's last segment is often just an id
+    // (the screen read "Backing up daily to 266").
+    val fileName by androidx.compose.runtime.produceState<String?>(null, uri) {
+        value = uri?.let { u ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                }.getOrNull()
+            }
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             if (uri == null) "Keep a backup file up to date every day. Pick a spot in Google Drive (or anywhere) once; restore it any time with Import."
-            else "Backing up daily to ${uri.lastPathSegment?.substringAfterLast('/') ?: "your file"}",
+            else "Backing up daily to ${fileName?.takeIf { it.isNotBlank() } ?: "your backup file"}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

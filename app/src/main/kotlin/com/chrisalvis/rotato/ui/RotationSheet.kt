@@ -309,8 +309,24 @@ internal fun rememberNextChangeText(settings: RotatoSettings, lastRotationMs: Lo
             value = System.currentTimeMillis()
         }
     }
+    val prefs = remember { com.chrisalvis.rotato.data.RotatoPreferences(context.applicationContext) }
+    val autoPause by prefs.autoPauseSettings.collectAsStateWithLifecycle(
+        initialValue = com.chrisalvis.rotato.data.AutoPauseSettings()
+    )
     if (!settings.isEnabled || lastRotationMs <= 0L) return null
     val next = lastRotationMs + settings.intervalMinutes * 60_000L
+    // Automatic changes skip "Pause at night": a time inside it (or "any moment" during it)
+    // wasn't going to happen.
+    val dueAt = maxOf(next, nowMs)
+    val dueHour = java.util.Calendar.getInstance().apply { timeInMillis = dueAt }.get(java.util.Calendar.HOUR_OF_DAY)
+    if (autoPause.isInNightWindow(dueHour)) {
+        val end = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, autoPause.nightEndHour)
+            set(java.util.Calendar.MINUTE, 0)
+        }
+        val endTime = android.text.format.DateFormat.getTimeFormat(context).format(end.time)
+        return "after quiet hours ($endTime)"
+    }
     if (next <= nowMs) return "any moment"
     val time = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(next))
     return if (android.text.format.DateUtils.isToday(next)) "at $time" else "tomorrow at $time"

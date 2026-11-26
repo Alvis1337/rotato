@@ -73,10 +73,11 @@ class ScheduleReceiver : BroadcastReceiver() {
             }
 
             val (imagesInPool, deferred) = syncRotationPoolOrDefer(context, entry.listIds, listPrefs)
+            val images = if (imagesInPool == 1) "1 image" else "$imagesInPool images"
             val triggerResult = when {
-                deferred -> "applied ($imagesInPool images, $BACKGROUND_NOTE)"
+                deferred -> "applied ($images, $BACKGROUND_NOTE)"
                 imagesInPool == 0 -> "applied (empty pool!)"
-                else -> "applied ($imagesInPool images)"
+                else -> "applied ($images)"
             }
             schedPrefs.recordTrigger(entry.id, triggerResult)
 
@@ -199,13 +200,22 @@ class ScheduleReceiver : BroadcastReceiver() {
             // miss lists that were unscheduled. Files that were removed from ALL collections
             // cannot be identified without a per-file manifest and are left in place.
             val validKeys = wallpapers.flatMap { poolKeys(it.source, it.sourceId) }.toSet()
-            val otherCollectionKeys = listPrefs.allWallpapers.first()
+            val allEntries = listPrefs.allWallpapers.first()
+            val otherCollectionKeys = allEntries
                 .filter { it.listId !in listIds }
+                .flatMap { poolKeys(it.source, it.sourceId) }
+                .toSet()
+            // Collections still linked to rotation (ones no schedule manages stay linked) keep
+            // their files. Deleting them here only made the Library sync download them all
+            // again: the pool count collapsed after "Apply now" and every file was re-fetched.
+            val stillLinkedIds = listPrefs.lists.first().filter { it.useAsRotation }.mapTo(HashSet()) { it.id }
+            val stillLinkedKeys = allEntries
+                .filter { it.listId in stillLinkedIds }
                 .flatMap { poolKeys(it.source, it.sourceId) }
                 .toSet()
             imageDir.listFiles()?.forEach { file ->
                 val stem = file.nameWithoutExtension
-                if (stem !in validKeys && stem in otherCollectionKeys) file.delete()
+                if (stem !in validKeys && stem in otherCollectionKeys && stem !in stillLinkedKeys) file.delete()
             }
 
             // Count only this list's wallpapers that are now present on disk.

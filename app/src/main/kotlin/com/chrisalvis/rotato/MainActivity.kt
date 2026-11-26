@@ -204,24 +204,36 @@ class MainActivity : AppCompatActivity() {
 
                 // Tabs: 0 Wallpaper ("now"), 1 Discover, 2 Saved ("home"), 3 Settings. Every
                 // screen that belongs to Settings lights its tab, wherever it was opened from.
+                // Rotation settings and Schedule also open from the Wallpaper tab's rotation
+                // card; then they belong to that tab, not Settings.
+                val openedFromNow = navBackStackEntry != null &&
+                    runCatching { navController.getBackStackEntry("now") }.isSuccess
                 val selectedTab = when (currentRoute) {
                     "now" -> 0
                     "home", "browse" -> 2
-                    "settings", "sources", "plugin_store", "schedule", "stats", "source_health",
-                    "settings_rotation_wallpaper", "settings_nsfw_privacy", "settings_discover_sources",
+                    "settings_rotation_wallpaper", "schedule" -> if (openedFromNow) 0 else 3
+                    "settings", "sources", "plugin_store", "stats", "source_health",
+                    "settings_nsfw_privacy", "settings_discover_sources",
                     "settings_integrations", "settings_about_data", "settings_tools" -> 3
                     // Taste opens from Discover and from Settings; follow where it came from.
                     "taste" -> if (navController.previousBackStackEntry?.destination?.route?.startsWith("settings") == true) 3 else 1
                     else -> 1
                 }
 
+                // Collect every state up front, unconditionally. These used to sit inside the
+                // short-circuit && / || below, so opening a route without the bottom bar skipped
+                // the collect calls, shifted the slot table, and crashed recomposition with a
+                // ClassCastException (Sources, Manage Sources, Source Health, App Tour).
+                val discoverSelectedItem by brainrotViewModel.selectedItem.collectAsStateWithLifecycle()
+                val discoverViewMode by brainrotViewModel.viewMode.collectAsStateWithLifecycle()
+                val besideGrid = com.chrisalvis.rotato.ui.viewerBesideGrid()
                 val showBottomBar = currentRoute !in setOf("sources", "source_health", "setup", "onboarding", "plugin_store")
-                    && (brainrotViewModel.selectedItem.collectAsStateWithLifecycle().value == null ||
+                    && (discoverSelectedItem == null ||
                         // Unfolded grid: the viewer opens beside the grid, so the tabs stay.
-                        (com.chrisalvis.rotato.ui.viewerBesideGrid() &&
-                            brainrotViewModel.viewMode.collectAsStateWithLifecycle().value.let {
-                                it == com.chrisalvis.rotato.ui.DiscoverViewMode.GRID || it == com.chrisalvis.rotato.ui.DiscoverViewMode.COMPACT
-                            } && currentRoute == "discover"))
+                        (besideGrid &&
+                            (discoverViewMode == com.chrisalvis.rotato.ui.DiscoverViewMode.GRID ||
+                                discoverViewMode == com.chrisalvis.rotato.ui.DiscoverViewMode.COMPACT) &&
+                            currentRoute == "discover"))
 
                 // Handle navigation from notifications, shortcuts, or schedule receiver
                 val pendingNav = _pendingNavigate.value
@@ -256,7 +268,12 @@ class MainActivity : AppCompatActivity() {
                     if (route == "home") homeViewModel.refreshFromFeeds()
                     // Tapping the tab you're in from a screen pushed on it (e.g. a Settings
                     // category) goes back to the tab itself.
-                    val backToTabRoot = selectedTab == index && currentRoute != route &&
+                    // Also when the tab's root sits lower on the back stack (e.g. Wallpaper →
+                    // Rotation settings → Schedule): navigate() with restoreState would just
+                    // restore that same stack and leave you where you were.
+                    val tabRootOnStack = runCatching { navController.getBackStackEntry(route) }.isSuccess
+                    val backToTabRoot = currentRoute != route &&
+                        (selectedTab == index || tabRootOnStack) &&
                         navController.popBackStack(route, inclusive = false)
                     if (!backToTabRoot) navController.navigate(route) {
                         if (route == "discover") {

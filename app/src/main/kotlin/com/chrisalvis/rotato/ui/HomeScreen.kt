@@ -858,6 +858,9 @@ private fun SaveToCollectionDialog(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit
 ) {
+    // Locked collections only while unlocked (never with the content filter on).
+    @Suppress("NAME_SHADOWING")
+    val collections = rememberPickerLists(collections)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Card(
             modifier = androidx.compose.ui.Modifier

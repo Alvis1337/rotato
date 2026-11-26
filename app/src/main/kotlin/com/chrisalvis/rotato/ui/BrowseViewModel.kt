@@ -1732,7 +1732,9 @@ class BrowseViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun moveList(list: LocalList, delta: Int) {
-        viewModelScope.launch { localLists.moveList(list.id, delta) }
+        // Count places among the collections on screen; hidden locked ones stay put.
+        val visible = lists.value.mapTo(HashSet()) { it.id }
+        viewModelScope.launch { localLists.moveList(list.id, delta, visible) }
     }
 
     fun mergeLists(from: LocalList, into: LocalList) {

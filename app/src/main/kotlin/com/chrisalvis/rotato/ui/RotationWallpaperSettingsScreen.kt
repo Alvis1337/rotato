@@ -2,6 +2,8 @@ package com.chrisalvis.rotato.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -98,12 +100,19 @@ fun RotationWallpaperSettingsScreen(
                     SettingsSection(title = "Rotation Interval") {
                         RotationInterval.entries.forEach { interval ->
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                // The whole row picks the option, not only the small radio circle.
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = settings.intervalMinutes == interval.minutes,
+                                        role = Role.RadioButton,
+                                        onClick = { viewModel.setIntervalMinutes(interval.minutes) },
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
                                     selected = settings.intervalMinutes == interval.minutes,
-                                    onClick = { viewModel.setIntervalMinutes(interval.minutes) }
+                                    onClick = null
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(interval.label)
@@ -131,12 +140,19 @@ fun RotationWallpaperSettingsScreen(
                     SettingsSection(title = "Wallpaper Target") {
                         WallpaperTarget.entries.forEach { target ->
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                // The whole row picks the option, not only the small radio circle.
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = settings.wallpaperTarget == target,
+                                        role = Role.RadioButton,
+                                        onClick = { viewModel.setWallpaperTarget(target) },
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
                                     selected = settings.wallpaperTarget == target,
-                                    onClick = { viewModel.setWallpaperTarget(target) }
+                                    onClick = null
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(target.label)
@@ -147,12 +163,19 @@ fun RotationWallpaperSettingsScreen(
                     SettingsSection(title = "Wallpaper Fit") {
                         com.chrisalvis.rotato.data.WallpaperFit.entries.forEach { fit ->
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                // The whole row picks the option, not only the small radio circle.
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = settings.wallpaperFit == fit,
+                                        role = Role.RadioButton,
+                                        onClick = { viewModel.setWallpaperFit(fit) },
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
                                     selected = settings.wallpaperFit == fit,
-                                    onClick = { viewModel.setWallpaperFit(fit) }
+                                    onClick = null
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(fit.label)
@@ -479,11 +502,14 @@ private fun WidgetCollectionDropdown(
     lists: List<LocalList>,
     onSelect: (String) -> Unit,
 ) {
+    // Locked collections stay out of this list unless unlocked (and always with the content
+    // filter on); a hidden one that's already chosen shows as "Locked collection", not its name.
+    val visible = rememberPickerLists(lists)
     SettingsDropdown(
         label = "Widget collection",
         description = "Choose which collection the home-screen widget previews.",
-        items = listOf<LocalList?>(null) + lists,
-        selectedLabel = lists.firstOrNull { it.id == selectedCollectionId }?.name ?: "Main rotation queue",
+        items = listOf<LocalList?>(null) + visible,
+        selectedLabel = pickerLabelFor(selectedCollectionId, lists, visible, "Main rotation queue"),
         itemLabel = { it?.name ?: "Main rotation queue" },
         onSelect = { onSelect(it?.id ?: "") },
     )
